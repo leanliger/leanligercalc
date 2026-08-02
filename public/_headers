@@ -1,0 +1,19 @@
+# Response headers for static-export deployments (Cloudflare Pages, Netlify).
+#
+# Next.js `headers()` in next.config.mjs does not run in a static export —
+# there is no server to emit them — so the frame-ancestors policy that lets
+# Whop embed this app has to be declared here instead.
+#
+# Everything under public/ is copied verbatim into out/ at build time, so this
+# file lands at the root of the deployed site where both platforms look for it.
+#
+# Keep this list in sync with FRAME_ANCESTORS in next.config.mjs.
+#
+# Do NOT add an X-Frame-Options line. Browsers honour it ahead of
+# frame-ancestors, and its only values (DENY / SAMEORIGIN) cannot express an
+# allow-list — one line here would silently break the Whop embed.
+
+/*
+  Content-Security-Policy: frame-ancestors 'self' https://whop.com https://*.whop.com;
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
