@@ -33,7 +33,7 @@ export function MilestoneTable({ projection, unit }: MilestoneTableProps) {
 
   return (
     <div className="space-y-3">
-      <div className="scrollbar-thin overflow-x-auto rounded-lg border border-border">
+      <div className="relative scrollbar-thin overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <caption className="sr-only">
             Week-by-week projected body weight, body fat, cumulative loss, and calorie

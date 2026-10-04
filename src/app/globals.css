@@ -2,95 +2,151 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Brand palette — metallic gold on charcoal.
+ *
+ *   #9A7629  →  41 58% 38%   base gold (crown / shield / monogram)
+ *   #0F0F0F  →   0 0%  6%    textured leather charcoal
+ *   #D2A74B  →  41 60% 56%   luminous gold (raised edges, highlights)
+ *
+ * Dark is the brand's native expression and the default; light mode is a warm
+ * ivory translation of the same hue family so the app stays usable in daylight
+ * without looking like a different product.
+ *
+ * Values are space-separated HSL with no `hsl()` wrapper — that is what
+ * Tailwind's opacity modifiers (`bg-primary/40`) require. Pasting a hex code
+ * here fails silently.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 30% 11%;
+    --background: 40 30% 97%;
+    --foreground: 40 15% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 30% 11%;
+    --card-foreground: 40 15% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 30% 11%;
+    --popover-foreground: 40 15% 11%;
 
-    --primary: 199 89% 42%;
-    --primary-foreground: 0 0% 100%;
+    /* Darkened from the brand gold: #9A7629 on white is 4.2:1, just under the
+       4.5:1 AA threshold for body text. This clears it. */
+    --primary: 41 62% 30%;
+    --primary-foreground: 40 30% 98%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 222 30% 16%;
+    --secondary: 40 22% 93%;
+    --secondary-foreground: 40 15% 18%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 40%;
+    --muted: 40 22% 93%;
+    --muted-foreground: 40 10% 38%;
 
-    --accent: 220 14% 94%;
-    --accent-foreground: 222 30% 16%;
+    --accent: 40 24% 90%;
+    --accent-foreground: 40 15% 18%;
 
-    --destructive: 0 72% 45%;
+    --destructive: 0 72% 42%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 62% 32%;
+    --success: 152 55% 28%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 33 92% 38%;
+    --warning: 32 88% 33%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 220 13% 88%;
-    --input: 220 13% 88%;
-    --ring: 199 89% 42%;
+    --border: 40 18% 86%;
+    --input: 40 18% 84%;
+    --ring: 41 58% 38%;
 
-    --macro-protein: 199 89% 42%;
-    --macro-carb: 262 72% 52%;
-    --macro-fat: 33 92% 42%;
+    --macro-protein: 41 58% 34%;
+    --macro-carb: 188 60% 27%;
+    --macro-fat: 18 62% 38%;
 
-    --day-high: 152 55% 36%;
-    --day-medium: 199 80% 44%;
-    --day-low: 262 65% 55%;
+    /* On a light canvas these cannot follow the dark theme's brightness ramp:
+       the day colours are used as *text* for the boost/cut percentages, and a
+       pale "low" fails contrast. The ordinal feel comes from saturation
+       instead — vivid gold to muted taupe — with all three above 4.5:1. */
+    --day-high: 43 68% 30%;
+    --day-medium: 32 42% 34%;
+    --day-low: 38 18% 40%;
+
+    /* Roadmap calendar: traffic-light day types. Each fill has its own
+       foreground because no single text colour reads on all three — yellow
+       needs dark text, while red and green this deep need white. Every pair
+       clears 4.5:1. Yellow is only 1.5:1 against a white card, so roadmap
+       badges carry a hairline ring to keep their edge visible. */
+    --roadmap-high: 0 72% 44%;
+    --roadmap-high-foreground: 0 0% 100%;
+    --roadmap-medium: 48 98% 52%;
+    --roadmap-medium-foreground: 40 15% 11%;
+    --roadmap-low: 142 70% 28%;
+    --roadmap-low-foreground: 0 0% 100%;
 
     --radius: 0.75rem;
   }
 
   .dark {
-    --background: 224 32% 7%;
-    --foreground: 210 30% 96%;
+    /* The brand proper: #0F0F0F canvas, gold everything. */
+    --background: 0 0% 6%;
+    --foreground: 40 25% 92%;
 
-    --card: 224 28% 10%;
-    --card-foreground: 210 30% 96%;
+    /* Cards lift off the canvas by a couple of points and carry a warm tint,
+       so panels read as brushed metal rather than flat grey. */
+    --card: 40 8% 9%;
+    --card-foreground: 40 25% 92%;
 
-    --popover: 224 28% 11%;
-    --popover-foreground: 210 30% 96%;
+    --popover: 40 8% 11%;
+    --popover-foreground: 40 25% 92%;
 
-    --primary: 195 92% 58%;
-    --primary-foreground: 224 40% 8%;
+    /* #D2A74B — 8.6:1 on the charcoal canvas. */
+    --primary: 41 60% 56%;
+    --primary-foreground: 0 0% 6%;
 
-    --secondary: 223 22% 16%;
-    --secondary-foreground: 210 30% 94%;
+    --secondary: 40 8% 16%;
+    --secondary-foreground: 40 25% 90%;
 
-    --muted: 223 22% 16%;
-    --muted-foreground: 217 15% 68%;
+    --muted: 40 8% 15%;
+    --muted-foreground: 40 12% 66%;
 
-    --accent: 223 22% 19%;
-    --accent-foreground: 210 30% 94%;
+    --accent: 40 10% 19%;
+    --accent-foreground: 40 25% 92%;
 
-    --destructive: 0 76% 62%;
-    --destructive-foreground: 224 40% 8%;
+    /* Red and green stay red and green. The app raises genuine health warnings
+       — essential-fat floors, lean-mass loss — and those must not be mistaken
+       for brand accents. Only their warmth is nudged toward the palette. */
+    --destructive: 4 72% 61%;
+    --destructive-foreground: 0 0% 6%;
 
-    --success: 152 62% 52%;
-    --success-foreground: 224 40% 8%;
+    --success: 148 48% 52%;
+    --success-foreground: 0 0% 6%;
 
-    --warning: 38 95% 60%;
-    --warning-foreground: 224 40% 8%;
+    --warning: 38 85% 58%;
+    --warning-foreground: 0 0% 6%;
 
-    --border: 220 18% 22%;
-    --input: 220 18% 24%;
-    --ring: 195 92% 58%;
+    --border: 40 10% 20%;
+    --input: 40 10% 23%;
+    --ring: 41 60% 56%;
 
-    --macro-protein: 195 92% 60%;
-    --macro-carb: 265 88% 72%;
-    --macro-fat: 38 95% 62%;
+    /* Macros are categorical — three values that must be told apart at a
+       glance in a stacked bar. A gold monochrome ramp would make them
+       indistinguishable, so carbs and fat take hues that flank the gold
+       without fighting it: a cool teal and a warm copper. */
+    --macro-protein: 41 62% 58%;
+    --macro-carb: 188 50% 58%;
+    --macro-fat: 18 65% 60%;
 
-    --day-high: 152 62% 52%;
-    --day-medium: 195 92% 60%;
-    --day-low: 265 85% 72%;
+    /* Day types are ordinal — high through low — so here a gold ramp is the
+       right call, and it keeps the brand intact where the eye lands most. */
+    --day-high: 43 72% 62%;
+    --day-medium: 41 50% 50%;
+    --day-low: 38 32% 48%;
+
+    /* On charcoal all three fills are bright enough to take near-black text
+       (5.3:1 red, 13.3:1 yellow, 8.1:1 green). The yellow is pushed toward
+       lemon (hue 50) so it doesn't read as the brand gold (hue 41). */
+    --roadmap-high: 0 76% 62%;
+    --roadmap-high-foreground: 0 0% 6%;
+    --roadmap-medium: 50 95% 55%;
+    --roadmap-medium-foreground: 0 0% 6%;
+    --roadmap-low: 142 60% 47%;
+    --roadmap-low-foreground: 0 0% 6%;
   }
 
   * {

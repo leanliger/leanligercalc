@@ -196,6 +196,112 @@ export interface CarbCyclingInputs {
   highCarbBoost: number;
   /** Carb reduction on low days as a fraction of baseline carbs, e.g. 0.25. */
   lowCarbCut: number;
+  /**
+   * Grams of carbohydrate removed per day to create the deficit. 0 is
+   * maintenance. The conventional working range is 50–125g, which is a
+   * 200–500 kcal/day deficit.
+   */
+  carbDeficitGrams: number;
+  /**
+   * Which day type falls on each weekday, Monday first (7 entries). Null means
+   * "spread the counts above automatically". A pattern whose counts no longer
+   * match highDays/mediumDays/lowDays is treated as stale and ignored.
+   */
+  weekdayPattern: DayType[] | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Roadmap                                                             */
+/* ------------------------------------------------------------------ */
+
+/** One calendar day of the plan. */
+export interface RoadmapDay {
+  /** ISO date. */
+  date: string;
+  /** 0-based day index from the start of the diet. */
+  index: number;
+  /** 0-based diet week this day belongs to. */
+  week: number;
+  /** Monday = 0 … Sunday = 6. */
+  weekday: number;
+  type: DayType;
+  protein: number;
+  carbs: number;
+  fat: number;
+  calories: number;
+  /** True on the day the goal is reached (the day after the last diet day). */
+  isGoalDay: boolean;
+}
+
+/** One diet week — the unit the calorie target changes on. */
+export interface RoadmapWeek {
+  week: number;
+  /** ISO date of the week's first day. */
+  startDate: string;
+  /** Average daily calories across the week; matches the timeline target. */
+  targetCalories: number;
+  /** Change from the previous week's average, negative when intake drops. */
+  calorieChange: number;
+  /** Check-in adjustment in force this week, kcal/day (0 if none). */
+  adjustment: number;
+  /** Projected scale weight at the start of the week, pounds. */
+  weight: number;
+  bodyFat: number;
+  note: string | null;
+  /** Day plans for this week, keyed by type. */
+  plans: Record<DayType, MacroTargets>;
+  feasible: boolean;
+  warnings: TimelineWarning[];
+}
+
+export interface RoadmapResult {
+  startDate: string;
+  goalDate: string;
+  /** Diet days, excluding the goal day itself. */
+  totalDays: number;
+  days: RoadmapDay[];
+  weeks: RoadmapWeek[];
+  /** Monday-first weekday pattern actually used. */
+  pattern: DayType[];
+  goalWeight: number;
+  goalBodyFat: number;
+  warnings: TimelineWarning[];
+  feasible: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* Macro baseline                                                      */
+/* ------------------------------------------------------------------ */
+
+/** One macro, with the arithmetic behind it exposed for display. */
+export interface MacroLine {
+  grams: number;
+  calories: number;
+  /** Share of the day's total calories, 0–100. */
+  percentOfCalories: number;
+  /** Grams per pound of body weight. */
+  perPound: number;
+}
+
+export interface MacroSplit {
+  protein: MacroLine;
+  fat: MacroLine;
+  carbs: MacroLine;
+  totalCalories: number;
+}
+
+export interface MacroBaselineResult {
+  /** Macros at maintenance, before any deficit is applied. */
+  maintenance: MacroSplit;
+  /** Macros after removing `carbDeficitGrams` of carbohydrate. */
+  target: MacroSplit;
+  /** Daily calorie deficit created, i.e. carbDeficitGrams × 4. */
+  dailyDeficit: number;
+  weeklyDeficit: number;
+  /** Projected pounds lost per week at that deficit. */
+  projectedWeeklyLoss: number;
+  warnings: TimelineWarning[];
+  feasible: boolean;
 }
 
 export interface MacroTargets {

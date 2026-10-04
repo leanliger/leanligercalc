@@ -1,0 +1,67 @@
+{
+  // Cloudflare Worker: the statically exported app plus the check-in API.
+  //
+  // Deploy with `npm run deploy` (builds the static export, then
+  // `wrangler deploy`). Drag-and-drop uploads in the dashboard can no longer
+  // be used — they upload files only, with no Worker script and no database.
+
+  // Must match the Cloudflare project name exactly. `wrangler deploy` reads
+  // this to decide which Worker to publish to — a mismatch silently creates a
+  // second Worker instead of updating the live one.
+  "name": "leanligercalc",
+  "compatibility_date": "2026-10-01",
+
+  // API routes. Everything else is static.
+  "main": "worker/index.ts",
+
+  "assets": {
+    "directory": "./out",
+    "binding": "ASSETS",
+    // Without this, a request for /api/* matches no static file and falls
+    // through to the 404 page below — the Worker would never see it. The
+    // same applies to Whop's view paths, which the Worker maps to the app.
+    "run_worker_first": ["/api/*", "/experiences/*", "/dashboard/*"],
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "leanligercalc",
+      // Created with `npx wrangler d1 create leanligercalc` (region ENAM).
+      "database_id": "3d941855-d0c7-47a8-9357-ce7f3ae8b3b5",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Every minute: send intermittent fasting notifications through Whop
+  // (worker/reminders.ts). Does nothing until the WHOP_API_KEY secret is set.
+  "triggers": { "crons": ["* * * * *"] },
+
+  // Per-IP limit on the public food-database routes (/api/food/*), so the
+  // Worker can't be used as a free proxy to Open Food Facts / USDA. Generous
+  // enough for someone scanning a whole shopping bag.
+  "ratelimits": [
+    {
+      "name": "FOOD_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 40, "period": 60 }
+    }
+  ],
+
+  "vars": {
+    // Your Whop app id (app_xxxxxxxxxxxxxx) from the Whop developer dashboard.
+    // It is public — not a secret. While empty, check-ins save to the user's
+    // browser only, and the app says so.
+    "WHOP_APP_ID": "app_y7y0Lv6xjv3rhR"
+  },
+  // Secret for fasting notifications: your Whop app's API key, with the
+  // notification:create permission. Set with `npx wrangler secret put WHOP_API_KEY`.
+  //
+  // Optional secret, set with `npx wrangler secret put USDA_API_KEY` (never
+  // put it in this file). Adds USDA FoodData Central to food search, which
+  // covers whole foods like "chicken breast" far better than Open Food Facts.
+
+  "observability": { "enabled": true }
+}

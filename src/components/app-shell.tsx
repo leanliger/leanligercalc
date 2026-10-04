@@ -1,7 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Link2, RotateCcw, Salad, TrendingDown } from "lucide-react";
+import {
+  Activity,
+  CalendarRange,
+  CloudOff,
+  Link2,
+  RotateCcw,
+  Salad,
+  Scale,
+  TrendingDown,
+  Utensils,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -12,16 +22,34 @@ import { CopyButton } from "@/components/copy-button";
 import { FatLossCalculator } from "@/components/fat-loss-calculator";
 import { CarbCyclingCalculator } from "@/components/carb-cycling-calculator";
 import { ProfileCard } from "@/components/profile-card";
+import { RoadmapCalendar } from "@/components/roadmap-calendar";
+import { CheckinTab } from "@/components/checkin-tab";
+import { MacrosTab } from "@/components/macros-tab";
+import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
+import {
+  createStore,
+  detectSession,
+  type CheckinStore,
+  type SessionInfo,
+} from "@/lib/checkin-store";
+import { addDays, daysBetween, todayISO } from "@/lib/dates";
+import { FOOD_DAYS_AHEAD, type FoodEntry, type FoodLog, type FoodProduct } from "@/lib/food";
 import {
   DEFAULT_APP_STATE,
   buildShareUrl,
   clearStorage,
   decodeStateFromQuery,
   loadFromStorage,
+  sanitizeAppState,
   saveToStorage,
   syncUrl,
   type AppState,
+  type AppTab,
 } from "@/lib/persistence";
+import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
+import type { HabitDef, HabitLog } from "@/lib/habits";
+import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/fasting";
+import type { WeeklyReview } from "@/lib/reviews";
 import type {
   BiometricProfile,
   CarbCyclingInputs,
@@ -34,28 +62,283 @@ const UNIT_OPTIONS = [
   { value: "kg" as const, label: "kg" },
 ];
 
+const PLAN_SAVE_DEBOUNCE_MS = 800;
+
+/**
+ * The plan as the cloud should hold it. The active tab is left out: it's
+ * navigation, not data, and including it made every tab switch a database
+ * write.
+ */
+function cloudDoc(state: AppState): string {
+  return JSON.stringify({ ...state, activeTab: undefined });
+}
+
+function sortByDate<T extends { date: string }>(list: T[]): T[] {
+  return [...list].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** Food logs load in pages: this many days back at startup and per page. */
+const FOOD_PAGE_DAYS = 35;
+
+/** The food-log days loaded at startup: recent weeks plus the days ahead. */
+function foodWindow(today: string): { from: string; to: string } {
+  return { from: addDays(today, -FOOD_PAGE_DAYS), to: addDays(today, FOOD_DAYS_AHEAD + 2) };
+}
+
+/** Replace one day's log; an empty day is removed. */
+function withFoodDay(list: FoodLog[], date: string, entries: FoodEntry[]): FoodLog[] {
+  const rest = list.filter((l) => l.date !== date);
+  return sortByDate(entries.length > 0 ? [...rest, { date, entries }] : rest);
+}
+
+function newId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `adj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Startup, in order:
+ *
+ *  1. Settings from a shared link win over this browser's saved settings —
+ *     but adjustments are never in links, so they always come from storage.
+ *     (Without that, reloading a page whose URL carries settings would load
+ *     zero adjustments, and the next auto-save would erase them.)
+ *  2. Ask the Worker who we are. Inside a configured Whop app → cloud mode,
+ *     and the saved plan replaces the local one. Otherwise → local mode.
+ *  3. In cloud mode, any weigh-ins logged locally before sync existed are
+ *     uploaded, so nothing is stranded on one device. Cloud wins on clashes.
+ */
+async function bootstrap(): Promise<{
+  state: AppState;
+  session: SessionInfo;
+  store: CheckinStore;
+  weighIns: WeighIn[];
+  habitLogs: HabitLog[];
+  reviews: WeeklyReview[];
+  foodLogs: FoodLog[];
+  /** First day covered by `foodLogs`; older days load on demand. */
+  foodFrom: string;
+  myFoods: FoodProduct[];
+  /** The plan exactly as loaded from the cloud, if there was one. */
+  cloudState: AppState | null;
+}> {
+  const fromUrl = decodeStateFromQuery(window.location.search);
+  const stored = loadFromStorage();
+  let state: AppState = fromUrl ?? stored ?? DEFAULT_APP_STATE;
+  if (fromUrl) state = { ...state, tracking: stored?.tracking ?? state.tracking };
+
+  let session = await detectSession();
+  const food = foodWindow(todayISO());
+
+  if (session.mode === "cloud") {
+    const cloud = createStore("cloud");
+    const local = createStore("local");
+    try {
+      const plan = await cloud.loadPlan();
+      const saved = plan ? sanitizeAppState(plan) : null;
+      if (saved) state = fromUrl ? { ...state, tracking: saved.tracking } : saved;
+
+      let weighIns = await cloud.list();
+      const onDevice = await local.list();
+      const known = new Set(weighIns.map((w) => w.date));
+      const toUpload = onDevice.filter((w) => !known.has(w.date));
+      for (const w of toUpload) await cloud.save(w);
+      if (toUpload.length > 0) weighIns = await cloud.list();
+      // Same for habit logs: upload days the cloud doesn't have yet.
+      let habitLogs = await cloud.listHabits();
+      const habitsOnDevice = await local.listHabits();
+      const knownDays = new Set(habitLogs.map((l) => l.date));
+      const habitsToUpload = habitsOnDevice.filter((l) => !knownDays.has(l.date));
+      for (const l of habitsToUpload) await cloud.saveHabits(l);
+      if (habitsToUpload.length > 0) habitLogs = await cloud.listHabits();
+      // And weekly reviews.
+      let reviews = await cloud.listReviews();
+      const reviewsOnDevice = await local.listReviews();
+      const knownWeeks = new Set(reviews.map((r) => r.weekStart));
+      const reviewsToUpload = reviewsOnDevice.filter((r) => !knownWeeks.has(r.weekStart));
+      for (const r of reviewsToUpload) await cloud.saveReview(r);
+      if (reviewsToUpload.length > 0) reviews = await cloud.listReviews();
+
+      // And food logs and saved foods.
+      const foodOnDevice = await local.listFoodLogs("2000-01-01", addDays(food.to, 1));
+      if (foodOnDevice.length > 0) {
+        const cloudDays = await cloud.listFoodLogs(foodOnDevice[0]!.date, foodOnDevice[foodOnDevice.length - 1]!.date);
+        const knownFoodDays = new Set(cloudDays.map((l) => l.date));
+        for (const l of foodOnDevice) if (!knownFoodDays.has(l.date)) await cloud.saveFoodLog(l);
+      }
+      let myFoods = await cloud.listMyFoods();
+      const myFoodsOnDevice = await local.listMyFoods();
+      const knownFoods = new Set(myFoods.map((x) => x.key));
+      const foodsToUpload = myFoodsOnDevice.filter((x) => !knownFoods.has(x.key));
+      for (const x of foodsToUpload) await cloud.saveMyFood(x);
+      if (foodsToUpload.length > 0) myFoods = await cloud.listMyFoods();
+      const foodLogs = await cloud.listFoodLogs(food.from, food.to);
+
+      if (
+        onDevice.length > 0 ||
+        habitsOnDevice.length > 0 ||
+        reviewsOnDevice.length > 0 ||
+        foodOnDevice.length > 0 ||
+        myFoodsOnDevice.length > 0
+      ) {
+        await local.deleteAll();
+      }
+
+      return {
+        state,
+        session,
+        store: cloud,
+        weighIns: sortByDate(weighIns),
+        habitLogs,
+        reviews,
+        foodLogs,
+        foodFrom: food.from,
+        myFoods,
+        cloudState: saved,
+      };
+    } catch {
+      // Signed in, but the database call failed: keep working locally.
+      session = { mode: "local", reason: "offline" };
+    }
+  }
+
+  const store = createStore("local");
+  return {
+    state,
+    session,
+    store,
+    weighIns: await store.list(),
+    habitLogs: await store.listHabits(),
+    reviews: await store.listReviews(),
+    foodLogs: await store.listFoodLogs(food.from, food.to),
+    foodFrom: food.from,
+    myFoods: await store.listMyFoods(),
+    cloudState: null,
+  };
+}
+
 export function AppShell() {
   const [state, setState] = React.useState<AppState>(DEFAULT_APP_STATE);
   const [linkedToTimeline, setLinkedToTimeline] = React.useState(false);
-  // Rendering defaults on the server and hydrating persisted state afterwards
-  // avoids a hydration mismatch, since neither localStorage nor the query
-  // string exists during SSR.
-  const [hydrated, setHydrated] = React.useState(false);
+  // Nothing date- or storage-dependent renders until the client is ready —
+  // this is a static export, so build-time HTML would carry the build date.
+  const [ready, setReady] = React.useState(false);
+  const [today, setToday] = React.useState("");
+  const [session, setSession] = React.useState<SessionInfo>({ mode: "local", reason: "no-server" });
+  const [weighIns, setWeighIns] = React.useState<WeighIn[]>([]);
+  const [habitLogs, setHabitLogs] = React.useState<HabitLog[]>([]);
+  const [reviews, setReviews] = React.useState<WeeklyReview[]>([]);
+  const [foodLogs, setFoodLogs] = React.useState<FoodLog[]>([]);
+  const [myFoods, setMyFoods] = React.useState<FoodProduct[]>([]);
+  const [syncError, setSyncError] = React.useState(false);
+  const storeRef = React.useRef<CheckinStore | null>(null);
+  // First food-log day loaded so far, and the chain that keeps food saves in
+  // order (two quick adds must reach the database in the order they happened).
+  const foodFrom = React.useRef("");
+  const foodQueue = React.useRef<Promise<unknown>>(Promise.resolve());
+  // What the server holds for fasting notifications ("off", or the request
+  // last sent), so they're only re-sent when something actually changed.
+  const reminderSynced = React.useRef<string | null>(null);
+  const [reminderError, setReminderError] = React.useState<string | null>(null);
+  // What the cloud currently holds (as `cloudDoc`). A save happens only when
+  // the plan differs from it — so loading the plan doesn't immediately write
+  // it back, tab switches don't write, and "delete all my data" doesn't
+  // re-create the row it just deleted.
+  const lastSynced = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    const fromUrl = decodeStateFromQuery(window.location.search);
-    const restored = fromUrl ?? loadFromStorage();
-    if (restored) setState(restored);
-    setHydrated(true);
+    let cancelled = false;
+    setToday(todayISO());
+    bootstrap()
+      // Whatever goes wrong, the calculators must still open — worst case on
+      // defaults, in local mode.
+      .catch(async () => ({
+        state: loadFromStorage() ?? DEFAULT_APP_STATE,
+        session: { mode: "local" as const, reason: "offline" as const },
+        store: createStore("local"),
+        weighIns: [] as WeighIn[],
+        habitLogs: [] as HabitLog[],
+        reviews: [] as WeeklyReview[],
+        foodLogs: [] as FoodLog[],
+        foodFrom: foodWindow(todayISO()).from,
+        myFoods: [] as FoodProduct[],
+        cloudState: null,
+      }))
+      .then((result) => {
+      if (cancelled) return;
+      storeRef.current = result.store;
+      lastSynced.current = result.cloudState ? cloudDoc(result.cloudState) : null;
+      setSession(result.session);
+      setWeighIns(result.weighIns);
+      setHabitLogs(result.habitLogs);
+      setReviews(result.reviews);
+      setFoodLogs(result.foodLogs);
+      setMyFoods(result.myFoods);
+      foodFrom.current = result.foodFrom;
+      // Notifications on: re-send once per visit (picks up a new time zone).
+      reminderSynced.current = result.state.tracking.fasting.notify ? null : "off";
+      setState(result.state);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Persist on every change, but only once the real state has been restored —
-  // otherwise the first render would overwrite storage with the defaults.
+  // Persist locally on every change; in cloud mode also save the plan to the
+  // database, debounced so dragging a slider is one write, not fifty.
   React.useEffect(() => {
-    if (!hydrated) return;
+    if (!ready) return;
     saveToStorage(state);
     syncUrl(state);
-  }, [state, hydrated]);
+    if (session.mode !== "cloud") return;
+    const doc = cloudDoc(state);
+    if (doc === lastSynced.current) return;
+    const timer = setTimeout(() => {
+      storeRef.current
+        ?.savePlan(state)
+        .then(() => {
+          lastSynced.current = doc;
+          setSyncError(false);
+        })
+        .catch(() => setSyncError(true));
+    }, PLAN_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [state, ready, session.mode]);
+
+  // Keep the server's fasting notifications in step with the meal times.
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud" || !session.notifications) return;
+    const fasting = state.tracking.fasting;
+    const experienceId = experienceIdFromPath(window.location.pathname);
+    const want =
+      fasting.notify && fasting.meals.length > 0 && experienceId
+        ? JSON.stringify({
+            experienceId,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            meals: sortedMeals(fasting.meals).map(({ label, time }) => ({ label, time })),
+          })
+        : "off";
+    if (want === reminderSynced.current) return;
+    const timer = setTimeout(() => {
+      const store = storeRef.current;
+      if (!store) return;
+      (want === "off" ? store.deleteFastingReminders() : store.saveFastingReminders(JSON.parse(want)))
+        .then(() => {
+          reminderSynced.current = want;
+          setReminderError(null);
+        })
+        .catch((e: unknown) =>
+          setReminderError(e instanceof Error ? e.message : "Couldn't update notifications. Try again."),
+        );
+    }, PLAN_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [ready, session, state.tracking.fasting]);
+
+  const setTab = React.useCallback((tab: AppTab) => {
+    setState((prev) => ({ ...prev, activeTab: tab }));
+  }, []);
 
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
     setState((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
@@ -71,8 +354,6 @@ export function AppShell() {
 
   const handleSendToCarbCycling = React.useCallback(
     (payload: { dailyCalories: number; tdee: number }) => {
-      // Biometrics already live on the shared profile, so only the derived
-      // energy figures need to cross over.
       setState((prev) => ({
         ...prev,
         activeTab: "carbs",
@@ -87,11 +368,147 @@ export function AppShell() {
     [],
   );
 
+  // Resets the calculator inputs. Applied adjustments are progress history, not
+  // inputs, so they survive; only "delete all my data" removes them.
   const handleReset = React.useCallback(() => {
     clearStorage();
-    setState(DEFAULT_APP_STATE);
+    setState((prev) => ({ ...DEFAULT_APP_STATE, tracking: prev.tracking }));
     setLinkedToTimeline(false);
   }, []);
+
+  /* ------------------------------ check-ins ------------------------------ */
+
+  const saveWeighIn = React.useCallback(async (w: WeighIn) => {
+    const saved = await storeRef.current!.save(w);
+    setWeighIns((prev) => sortByDate([...prev.filter((x) => x.date !== saved.date), saved]));
+  }, []);
+
+  const deleteWeighIn = React.useCallback(async (date: string) => {
+    await storeRef.current!.remove(date);
+    setWeighIns((prev) => prev.filter((x) => x.date !== date));
+  }, []);
+
+  const applyAdjustment = React.useCallback(
+    (rec: Recommendation, _analysis: ProgressAnalysis) => {
+      const adjustment: CalorieAdjustment = {
+        id: newId(),
+        appliedOn: today,
+        effectiveFrom: rec.effectiveFrom,
+        kcal: rec.kcal,
+        reason: rec.reason,
+      };
+      setState((prev) => ({
+        ...prev,
+        tracking: { ...prev.tracking, adjustments: [...prev.tracking.adjustments, adjustment] },
+      }));
+    },
+    [today],
+  );
+
+  const removeAdjustment = React.useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      tracking: { ...prev.tracking, adjustments: prev.tracking.adjustments.filter((a) => a.id !== id) },
+    }));
+  }, []);
+
+  const saveHabitDay = React.useCallback(async (log: HabitLog) => {
+    const saved = await storeRef.current!.saveHabits(log);
+    setHabitLogs((prev) => {
+      const rest = prev.filter((l) => l.date !== saved.date);
+      const next = Object.keys(saved.entries).length > 0 ? [...rest, saved] : rest;
+      return next.sort((a, b) => (a.date < b.date ? -1 : 1));
+    });
+  }, []);
+
+  const saveReview = React.useCallback(async (review: WeeklyReview) => {
+    const saved = await storeRef.current!.saveReview(review);
+    setReviews((prev) => {
+      const rest = prev.filter((r) => r.weekStart !== saved.weekStart);
+      const empty = !saved.wins.some((w) => w) && !saved.friction && !saved.rule;
+      return (empty ? rest : [...rest, saved]).sort((a, b) => (a.weekStart < b.weekStart ? -1 : 1));
+    });
+  }, []);
+
+  /* -------------------------------- food -------------------------------- */
+
+  // Shown straight away, saved in the background, in order. If a save fails,
+  // the day is reloaded so the screen matches what was actually stored.
+  const saveFoodDay = React.useCallback((date: string, entries: FoodEntry[]) => {
+    setFoodLogs((prev) => withFoodDay(prev, date, entries));
+    const run = foodQueue.current
+      .catch(() => {})
+      .then(() => storeRef.current!.saveFoodLog({ date, entries }));
+    foodQueue.current = run;
+    return run.then(
+      () => undefined,
+      async (e: unknown) => {
+        try {
+          const [stored] = await storeRef.current!.listFoodLogs(date, date);
+          setFoodLogs((prev) => withFoodDay(prev, date, stored?.entries ?? []));
+        } catch {
+          /* leave the screen as it is */
+        }
+        throw e instanceof Error ? e : new Error("Couldn't save. Try again.");
+      },
+    );
+  }, []);
+
+  // Older days load a page at a time as the member steps back through them.
+  const ensureFoodLoaded = React.useCallback((date: string) => {
+    const loadedFrom = foodFrom.current;
+    if (!loadedFrom || date >= loadedFrom || !storeRef.current) return;
+    const to = addDays(loadedFrom, -1);
+    let from = addDays(date, -FOOD_PAGE_DAYS);
+    if (daysBetween(from, to) > 365) from = addDays(to, -365);
+    foodFrom.current = from;
+    storeRef.current
+      .listFoodLogs(from, to)
+      .then((older) => {
+        setFoodLogs((prev) => {
+          const have = new Set(prev.map((l) => l.date));
+          return sortByDate([...prev, ...older.filter((l) => !have.has(l.date))]);
+        });
+      })
+      .catch(() => {
+        foodFrom.current = loadedFrom; // try again next time
+      });
+  }, []);
+
+  const saveMyFood = React.useCallback(async (food: FoodProduct) => {
+    const saved = await storeRef.current!.saveMyFood(food);
+    setMyFoods((prev) => [saved, ...prev.filter((x) => x.key !== saved.key)]);
+    return saved;
+  }, []);
+
+  const removeMyFood = React.useCallback(async (id: string) => {
+    await storeRef.current!.removeMyFood(id);
+    setMyFoods((prev) => prev.filter((x) => x.key !== `mine:${id}`));
+  }, []);
+
+  const updateFasting = React.useCallback((fasting: FastingSettings) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, fasting } }));
+  }, []);
+
+  const updateHabitDefs = React.useCallback((habits: HabitDef[]) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, habits } }));
+  }, []);
+
+  const deleteAllData = React.useCallback(async () => {
+    await storeRef.current!.deleteAll();
+    clearStorage();
+    const reset: AppState = { ...DEFAULT_APP_STATE, unit: state.unit, activeTab: "checkin" };
+    // Treat the empty defaults as already "synced" so they aren't written
+    // straight back into the row that was just deleted.
+    lastSynced.current = cloudDoc(reset);
+    reminderSynced.current = "off"; // the server deleted them with everything else
+    setWeighIns([]);
+    setHabitLogs([]);
+    setReviews([]);
+    setFoodLogs([]);
+    setMyFoods([]);
+    setState(reset);
+  }, [state.unit]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -145,70 +562,163 @@ export function AppShell() {
         </header>
 
         <main className="container py-6">
-          <Tabs
-            value={state.activeTab}
-            onValueChange={(value) =>
-              setState((prev) => ({
-                ...prev,
-                activeTab: value as AppState["activeTab"],
-              }))
-            }
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <TabsList>
-                <TabsTrigger value="timeline">
-                  <TrendingDown />
-                  Fat Loss Timeline
-                </TabsTrigger>
-                <TabsTrigger value="carbs">
-                  <Salad />
-                  Carb Cycling
-                </TabsTrigger>
-              </TabsList>
-
-              {linkedToTimeline ? (
-                <Badge variant="success">
-                  <Link2 />
-                  Carb plan linked to timeline
-                </Badge>
-              ) : null}
+          {/* The calculators render client-side only. This is a static
+              export, so anything rendered at build time is frozen at the build
+              date — and nearly everything here depends on "today". Rendering it
+              into the HTML caused a hydration mismatch (React #418) on every
+              visit after the build day. */}
+          {!ready ? (
+            <div aria-busy="true" aria-label="Loading calculator" className="space-y-4">
+              <div className="h-11 w-full max-w-md animate-pulse rounded-lg bg-muted/40" />
+              <div className="grid gap-5 lg:grid-cols-[22rem_1fr]">
+                <div className="h-[32rem] animate-pulse rounded-lg bg-muted/30" />
+                <div className="h-[32rem] animate-pulse rounded-lg bg-muted/30" />
+              </div>
             </div>
+          ) : (
+            <Tabs value={state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
+              <div className="flex flex-wrap items-center gap-3">
+                <TabsList className="relative scrollbar-thin max-w-full overflow-x-auto [&>button]:px-2 sm:[&>button]:px-4 [&_svg]:hidden sm:[&_svg]:block">
+                  <TabsTrigger value="timeline">
+                    <TrendingDown />
+                    <span className="sm:hidden">Timeline</span>
+                    <span className="hidden sm:inline">Fat Loss Timeline</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="carbs">
+                    <Salad />
+                    <span className="sm:hidden">Carbs</span>
+                    <span className="hidden sm:inline">Carb Cycling</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="roadmap">
+                    <CalendarRange />
+                    Roadmap
+                  </TabsTrigger>
+                  <TabsTrigger value="macros">
+                    <Utensils />
+                    Macros
+                  </TabsTrigger>
+                  <TabsTrigger value="checkin">
+                    <Scale />
+                    Check-in
+                  </TabsTrigger>
+                </TabsList>
 
-            <TabsContent value="timeline">
-              <FatLossCalculator
-                profile={state.profile}
-                inputs={state.fatLoss}
-                onChange={updateFatLoss}
-                unit={state.unit}
-                onSendToCarbCycling={handleSendToCarbCycling}
-                profileSlot={
-                  <ProfileCard
-                    profile={state.profile}
-                    onChange={updateProfile}
-                    unit={state.unit}
-                  />
-                }
-              />
-            </TabsContent>
+                {linkedToTimeline ? (
+                  <Badge variant="success">
+                    <Link2 />
+                    Carb plan linked to timeline
+                  </Badge>
+                ) : null}
+                {syncError ? (
+                  <Badge variant="warning" role="status">
+                    <CloudOff />
+                    Couldn&apos;t sync — changes kept on this device
+                  </Badge>
+                ) : null}
+              </div>
 
-            <TabsContent value="carbs">
-              <CarbCyclingCalculator
-                profile={state.profile}
-                inputs={state.carbs}
-                onChange={updateCarbs}
-                unit={state.unit}
-                linkedToTimeline={linkedToTimeline}
-                onClearLink={() => setLinkedToTimeline(false)}
-                profileSlot={
-                  <ProfileCard
-                    profile={state.profile}
-                    onChange={updateProfile}
-                    unit={state.unit}
-                  />
-                }
-              />
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="timeline">
+                <FatLossCalculator
+                  profile={state.profile}
+                  inputs={state.fatLoss}
+                  onChange={updateFatLoss}
+                  unit={state.unit}
+                  onSendToCarbCycling={handleSendToCarbCycling}
+                  profileSlot={
+                    <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="carbs">
+                <CarbCyclingCalculator
+                  profile={state.profile}
+                  inputs={state.carbs}
+                  onChange={updateCarbs}
+                  unit={state.unit}
+                  linkedToTimeline={linkedToTimeline}
+                  onClearLink={() => setLinkedToTimeline(false)}
+                  profileSlot={
+                    <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="roadmap">
+                <RoadmapCalendar
+                  profile={state.profile}
+                  fatLoss={state.fatLoss}
+                  carbs={state.carbs}
+                  unit={state.unit}
+                  weighIns={weighIns}
+                  adjustments={state.tracking.adjustments}
+                  onCarbsChange={updateCarbs}
+                  onNavigate={setTab}
+                />
+              </TabsContent>
+
+              <TabsContent value="macros">
+                <MacrosTab
+                  profile={state.profile}
+                  fatLoss={state.fatLoss}
+                  carbs={state.carbs}
+                  adjustments={state.tracking.adjustments}
+                  today={today}
+                  session={session}
+                  foodLogs={foodLogs}
+                  onEnsureLoaded={ensureFoodLoaded}
+                  onSaveFoodDay={saveFoodDay}
+                  myFoods={myFoods}
+                  onSaveMyFood={saveMyFood}
+                  onRemoveMyFood={removeMyFood}
+                  habits={state.tracking.habits}
+                  habitLogs={habitLogs}
+                  onSaveHabits={saveHabitDay}
+                  fasting={state.tracking.fasting}
+                  onFastingChange={updateFasting}
+                  notifications={{
+                    availability:
+                      session.mode !== "cloud"
+                        ? "local"
+                        : !session.notifications
+                          ? "no-key"
+                          : experienceIdFromPath(window.location.pathname)
+                            ? "ok"
+                            : "no-experience",
+                    error: reminderError,
+                  }}
+                  onNavigate={setTab}
+                />
+              </TabsContent>
+
+              <TabsContent value="checkin">
+                <CheckinTab
+                  profile={state.profile}
+                  fatLoss={state.fatLoss}
+                  unit={state.unit}
+                  today={today}
+                  session={session}
+                  weighIns={weighIns}
+                  adjustments={state.tracking.adjustments}
+                  carbs={state.carbs}
+                  habits={state.tracking.habits}
+                  habitLogs={habitLogs}
+                  onSaveHabits={saveHabitDay}
+                  reviews={reviews}
+                  onSaveReview={saveReview}
+                  onHabitsChange={updateHabitDefs}
+                  onSave={saveWeighIn}
+                  onDelete={deleteWeighIn}
+                  onApplyAdjustment={applyAdjustment}
+                  onRemoveAdjustment={removeAdjustment}
+                  onDeleteAll={deleteAllData}
+                  foodLogs={foodLogs}
+                  foodCount={foodLogs.length + myFoods.length}
+                  onNavigate={setTab}
+                />
+              </TabsContent>
+            </Tabs>
+          )}
         </main>
 
         <footer className="border-t border-border py-6">
@@ -224,6 +734,16 @@ export function AppShell() {
               advice. Talk to a physician or registered dietitian before starting an
               aggressive diet, especially if you have a history of disordered eating or any
               medical condition.
+            </p>
+            <p>
+              <a
+                href="/privacy/"
+                target="_blank"
+                rel="noopener"
+                className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                Privacy policy
+              </a>
             </p>
           </div>
         </footer>

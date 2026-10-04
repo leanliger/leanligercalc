@@ -2,6 +2,7 @@ node_modules/
 .next/
 out/
 build/
+.wrangler/
 .DS_Store
 *.pem
 npm-debug.log*
@@ -11,3 +12,9 @@ yarn-error.log*
 !.env.example
 next-env.d.ts.timestamp
 tsconfig.tsbuildinfo
+
+# Wrangler local secrets (DEV_USER_ID etc.) — never commit
+.dev.vars
+
+# Barcode decoder, copied from node_modules by scripts/copy-zxing.mjs
+public/zxing/

@@ -57,6 +57,21 @@ const config: Config = {
           medium: "hsl(var(--day-medium))",
           low: "hsl(var(--day-low))",
         },
+        // Roadmap calendar only: red / yellow / green day types.
+        roadmap: {
+          high: {
+            DEFAULT: "hsl(var(--roadmap-high))",
+            foreground: "hsl(var(--roadmap-high-foreground))",
+          },
+          medium: {
+            DEFAULT: "hsl(var(--roadmap-medium))",
+            foreground: "hsl(var(--roadmap-medium-foreground))",
+          },
+          low: {
+            DEFAULT: "hsl(var(--roadmap-low))",
+            foreground: "hsl(var(--roadmap-low-foreground))",
+          },
+        },
         success: {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",

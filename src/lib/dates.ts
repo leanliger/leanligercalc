@@ -78,6 +78,48 @@ export function formatShort(iso: string): string {
   return SHORT_FORMAT.format(parseISODate(iso));
 }
 
+const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "October 2026". `monthKey` is a "yyyy-mm" string. */
+export function formatMonthYear(monthKey: string): string {
+  return MONTH_YEAR_FORMAT.format(parseISODate(`${monthKey}-01`));
+}
+
+/** "yyyy-mm" for the month containing an ISO date. */
+export function monthKeyOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+/** Shift a "yyyy-mm" month key by a number of months. */
+export function addMonths(monthKey: string, months: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1 + months, 1));
+  return toISODate(date).slice(0, 7);
+}
+
+/**
+ * Calendar cells for a month, Monday-first, padded with nulls before the 1st
+ * and after the last day so the result is always whole weeks.
+ */
+export function monthGrid(monthKey: string): (string | null)[] {
+  const first = parseISODate(`${monthKey}-01`);
+  const leading = (first.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(
+    Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+
+  const cells: (string | null)[] = Array(leading).fill(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push(`${monthKey}-${String(day).padStart(2, "0")}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 /** "12 weeks (2 months, 3 weeks)" style duration copy. */
 export function describeDuration(weeks: number): string {
   if (!Number.isFinite(weeks) || weeks <= 0) return "0 weeks";

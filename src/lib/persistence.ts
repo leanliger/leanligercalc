@@ -31,17 +31,34 @@ import type {
   WeightUnit,
 } from "./types";
 import { clamp } from "./units";
+import { patternFromString, patternToString } from "./weekday-pattern";
+import { sanitizeAdjustments, type CalorieAdjustment } from "./tracking";
+import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
+import { DEFAULT_FASTING, sanitizeFasting, type FastingSettings } from "./fasting";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
 // shared profile, so old payloads no longer deserialise correctly.
 const STORAGE_KEY = "prep-calculator:v2";
 
+export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "checkin";
+const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "checkin"];
+
+/** Personal progress state. Never put in shareable URLs. */
+export interface TrackingState {
+  adjustments: CalorieAdjustment[];
+  /** Which habits this member tracks. Daily logs are stored separately. */
+  habits: HabitDef[];
+  /** Intermittent fasting meal times (Macros tab). */
+  fasting: FastingSettings;
+}
+
 export interface AppState {
   unit: WeightUnit;
-  activeTab: "timeline" | "carbs";
+  activeTab: AppTab;
   profile: BiometricProfile;
   fatLoss: FatLossInputs;
   carbs: CarbCyclingInputs;
+  tracking: TrackingState;
 }
 
 export const DEFAULT_APP_STATE: AppState = {
@@ -50,6 +67,7 @@ export const DEFAULT_APP_STATE: AppState = {
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
+  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING },
 };
 
 /* --------------------------- sanitisation --------------------------- */
@@ -149,24 +167,43 @@ export function sanitizeCarbs(
     lowDays: num(raw.lowDays, d.lowDays, 0, 7),
     highCarbBoost: num(raw.highCarbBoost, d.highCarbBoost, 0, 0.6),
     lowCarbCut: num(raw.lowCarbCut, d.lowCarbCut, 0, 0.9),
+    carbDeficitGrams: num(raw.carbDeficitGrams, d.carbDeficitGrams, 0, 300),
+    weekdayPattern: patternFromString(raw.weekdayPattern),
   };
 }
 
 /* ------------------------------ storage ------------------------------ */
+
+/**
+ * Rebuild a trusted AppState from anything — local storage, or the plan
+ * document saved in the cloud database. Every field is re-validated, so a
+ * corrupted or tampered document can only ever produce defaults.
+ */
+export function sanitizeAppState(raw: unknown): AppState {
+  const parsed = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<
+    Record<keyof AppState, unknown>
+  >;
+  const obj = (v: unknown) => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {});
+  return {
+    unit: oneOf<WeightUnit>(parsed.unit, ["lb", "kg"], DEFAULT_UNIT),
+    activeTab: oneOf<AppTab>(parsed.activeTab, APP_TABS, "timeline"),
+    profile: sanitizeProfile(obj(parsed.profile)),
+    fatLoss: sanitizeFatLoss(obj(parsed.fatLoss)),
+    carbs: sanitizeCarbs(obj(parsed.carbs)),
+    tracking: {
+      adjustments: sanitizeAdjustments(obj(parsed.tracking).adjustments),
+      habits: sanitizeHabitDefs(obj(parsed.tracking).habits),
+      fasting: sanitizeFasting(obj(parsed.tracking).fasting),
+    },
+  };
+}
 
 export function loadFromStorage(): AppState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    return {
-      unit: oneOf<WeightUnit>(parsed.unit, ["lb", "kg"], DEFAULT_UNIT),
-      activeTab: oneOf(parsed.activeTab, ["timeline", "carbs"] as const, "timeline"),
-      profile: sanitizeProfile(parsed.profile ?? {}),
-      fatLoss: sanitizeFatLoss(parsed.fatLoss ?? {}),
-      carbs: sanitizeCarbs(parsed.carbs ?? {}),
-    };
+    return sanitizeAppState(JSON.parse(raw));
   } catch {
     // Corrupt or unavailable storage is not worth surfacing — fall back to
     // defaults and let the user re-enter.
@@ -225,6 +262,8 @@ const URL_KEYS = {
   ld: "lowDays",
   hcb: "highCarbBoost",
   lcc: "lowCarbCut",
+  cdg: "carbDeficitGrams",
+  wp: "weekdayPattern",
 } as const;
 
 type UrlKey = keyof typeof URL_KEYS;
@@ -234,7 +273,7 @@ const FAT_LOSS_KEYS: UrlKey[] = [
   "gt", "tw", "tbf", "r", "m", "sd", "ed", "al", "tdo", "ma",
 ];
 const CARB_KEYS: UrlKey[] = [
-  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc",
+  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "cdg", "wp",
 ];
 
 export function encodeStateToQuery(state: AppState): string {
@@ -260,7 +299,9 @@ export function encodeStateToQuery(state: AppState): string {
     const field = URL_KEYS[key] as keyof CarbCyclingInputs;
     const value = state.carbs[field];
     if (value === null || value === undefined) continue;
-    params.set(key, String(value));
+    // The weekday pattern travels as seven letters ("HMLMHLM") rather than a
+    // comma-joined array, to keep shared links short and readable.
+    params.set(key, Array.isArray(value) ? patternToString(value) : String(value));
   }
 
   return params.toString();
@@ -289,10 +330,11 @@ export function decodeStateFromQuery(search: string): AppState | null {
 
   return {
     unit: oneOf<WeightUnit>(params.get("u"), ["lb", "kg"], DEFAULT_UNIT),
-    activeTab: oneOf(params.get("t"), ["timeline", "carbs"] as const, "timeline"),
+    activeTab: oneOf<AppTab>(params.get("t"), APP_TABS, "timeline"),
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),
+    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING },
   };
 }
 

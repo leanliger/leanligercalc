@@ -36,14 +36,21 @@ export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
   goal: "fatLoss",
   dailyCalorieTarget: null,
   proteinBasis: "bodyWeight",
-  proteinPerLb: 1.1,
-  fatFloorPercent: 0.22,
+  // Midpoints of the documented working ranges: 0.8–1.0 g/lb protein and
+  // 25–30% of calories from fat. Both sliders reach further in each direction
+  // for people who want to push past the defaults.
+  proteinPerLb: 0.9,
+  fatFloorPercent: 0.27,
   fatFloorGramsPerLb: 0.3,
   highDays: 2,
   mediumDays: 3,
   lowDays: 2,
   highCarbBoost: 0.2,
   lowCarbCut: 0.25,
+  // 100g of carbs ≈ a 400 kcal/day deficit — the middle of the 50–125g range.
+  carbDeficitGrams: 100,
+  // Null = place high/medium/low days automatically from the counts above.
+  weekdayPattern: null,
 };
 
 export const DEFAULT_UNIT: WeightUnit = "lb";

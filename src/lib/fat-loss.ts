@@ -62,6 +62,11 @@ export const RISK_RATE_THRESHOLD = 0.01;
 const MIN_CALORIE_FLOOR_PER_LB = 8;
 const ABSOLUTE_MIN_CALORIES = 1200;
 
+/** Lowest daily intake the app will ever prescribe at a given body weight. */
+export function intakeFloor(weightLb: number): number {
+  return Math.max(ABSOLUTE_MIN_CALORIES, weightLb * MIN_CALORIE_FLOOR_PER_LB);
+}
+
 /** Maximum modelled metabolic adaptation, reached late in a long diet. */
 const MAX_ADAPTATION = 0.1;
 const ADAPTATION_HALF_LIFE_WEEKS = 12;
@@ -254,8 +259,9 @@ function simulate(
   let fatMass = weight * (startBodyFat / 100);
   let leanMass = weight - fatMass;
 
-  const anchorDate =
-    inputs.mode === "startDate" ? inputs.startDate : inputs.startDate || todayISO();
+  // Provisional: in event-date mode the real start is only known once the
+  // simulation finishes, and `calculateFatLossTimeline` re-anchors the rows.
+  const anchorDate = inputs.startDate || todayISO();
 
   const projection: WeekProjection[] = [];
   let cumulativeLoss = 0;
@@ -499,6 +505,14 @@ export function calculateFatLossTimeline(
   } else {
     requiredStartDate = inputs.startDate;
     finishDate = addWeeks(inputs.startDate, weeksRequired);
+  }
+
+  // The simulation runs before the required start date is known, so it dates
+  // its rows from the start-date field. In event-date mode that is wrong — the
+  // diet begins `weeksRequired` before the show, not on whatever happens to be
+  // in the start-date input — so re-anchor every row on the real start.
+  for (const row of projection) {
+    row.date = addWeeks(requiredStartDate, row.week);
   }
 
   const base: Omit<FatLossResult, "warnings"> = {

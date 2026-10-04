@@ -120,7 +120,7 @@ export function FatLossCalculator({
   const firstWeek = result.projection[0];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
       {/* ----------------------------- Inputs ----------------------------- */}
       <div className="space-y-5 lg:sticky lg:top-4">
         {profileSlot}
@@ -318,7 +318,7 @@ export function FatLossCalculator({
         <WarningList warnings={result.warnings} />
 
         <Card>
-          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0">
             <div className="space-y-1">
               <CardTitle className="flex items-center gap-2">
                 <Timer className="h-4 w-4 text-primary" />
@@ -330,7 +330,7 @@ export function FatLossCalculator({
                   : "Set a goal below your current weight"}
               </CardDescription>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <CopyButton getText={() => summary} label="Copy plan" />
               <Button
                 variant="secondary"

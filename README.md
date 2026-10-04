@@ -1,9 +1,12 @@
 # Prep Calculator
 
-Two integrated tools for contest prep and body recomposition planning:
+Five integrated tools for contest prep and body recomposition planning:
 
 1. **Fat Loss Timeline** — reverse-engineers prep duration (or a required start date) from a safe weekly fat loss rate, with a week-by-week milestone table and projection chart.
 2. **Carb Cycling** — builds a weekly high / medium / low carb rotation whose 7-day calorie, protein, carb, and fat totals average out *exactly* to your target.
+3. **Roadmap** — expands the two into a day-by-day calendar from start date to goal date: calories and macros for every single day.
+4. **Macros** — a food log against each day's targets (scan a barcode, search by name, or type numbers from the label), plus an intermittent fasting timer.
+5. **Check-in** — log weigh-ins, see predicted vs actual, and get calorie adjustments worked out from your real rate of loss.
 
 The timeline's derived calorie target can be handed straight over to the carb cycling tool with one click.
 
@@ -38,9 +41,14 @@ src/
     body-composition.ts     BMR, TDEE, and body fat from biometrics
     fat-loss.ts             Timeline simulation engine
     carb-cycling.ts         Weekly macro rotation engine
+    weekday-pattern.ts      Which weekday is high / medium / low
+    roadmap.ts              Day-by-day plan from timeline + rotation
     format.ts               Display formatting
     defaults.ts             Default inputs and schedule presets
     persistence.ts          LocalStorage + URL query state, with sanitisation
+    food.ts                 Food log types, validation, label maths, database normalising
+    food-lookup.ts          Barcode lookup + food search (via the Worker)
+    barcode-reader.ts       Camera / photo barcode decoding (native or ZXing)
     utils.ts                cn() class merger
   components/
     ui/                     shadcn-style Radix primitives
@@ -50,6 +58,11 @@ src/
     carb-cycling-calculator.tsx
     weight-curve-chart.tsx  Recharts weight + body fat curve
     weekly-macro-chart.tsx  Recharts 7-day calorie bars
+    roadmap-calendar.tsx    Month calendar, day detail, week list
+    weekday-pattern-editor.tsx  Click-to-cycle Mon–Sun day types
+    macros-tab.tsx          Daily targets, food log, My foods
+    add-food-card.tsx       Scan / search / quick add / amount picker
+    barcode-scanner.tsx     Live camera view with a photo fallback
     milestone-table.tsx
     macro-card.tsx
     field.tsx, stat.tsx, warnings.tsx, copy-button.tsx, theme-toggle.tsx
@@ -133,6 +146,163 @@ Three exact weekly macro totals imply an exact weekly calorie total, so the aver
 - **Impossible schedules.** A large high-day boost with too few medium days requires negative medium-day carbs. Because the displayed value is clamped at zero, the *pre-clamp* number is what gets checked — otherwise a broken plan is indistinguishable from one that legitimately lands on zero.
 - **Crowded-out carbs.** When protein plus the fat floor already consume the whole calorie target, the plan is marked infeasible rather than silently producing negative carbs.
 
+## The roadmap
+
+The roadmap combines the two engines, each doing what it is best at:
+
+- The **timeline** sets how much to eat each week. Its targets step down as body weight and maintenance fall, so week 12 is not week 1.
+- The **carb-cycling engine** splits that week's budget across high / medium / low days.
+
+The carb-cycling allocation is re-run **for every week**, not once, because both of its inputs move: the calorie target drops, and protein and the fat floor are set per pound of a body weight that is also dropping. Each week still averages exactly to its timeline target (verified within 0.3 kcal/day across all 18 weeks of the default plan).
+
+The daily target and carb deficit on the Carb Cycling tab are deliberately *not* used here — the timeline is what gets you to the goal on a specific date.
+
+**Which day is which.** The carb-cycling engine only needs counts ("2 high, 3 medium, 2 low"); a calendar needs to know that Monday is a high day. `weekday-pattern.ts` places them automatically — high days spread through the week, low days offset half a gap so they fall between hard sessions:
+
+| Schedule | Auto pattern (Mon → Sun) |
+|---|---|
+| 2 / 3 / 2 | H M L M H L M |
+| 3 / 2 / 2 | H M H L M H L |
+| 1 / 3 / 3 | H L M M L M L |
+
+Users can click any weekday to change it, on either the Carb Cycling or Roadmap tab. The counts follow the pattern, and changing the counts directly discards a hand-placed pattern so it can't go stale. The pattern travels in shared links as seven letters (`wp=HMLMHLM`).
+
+**Calendar.** One month at a time, Monday-first. Each day shows its type, calories, and (on wider screens) P/C/F grams; weeks with an allocation problem carry a dot. It's a proper ARIA grid with a single tab stop — arrow keys move by day and week, Home/End jump within the week, and moving past a month edge pages the calendar. Selecting a day shows its full macros, that week's projected weight, the change in intake from the previous week, any coaching note, and copy buttons for the day or the whole week.
+
+## Check-ins: predicted vs actual
+
+The **Check-in** tab is where members log weigh-ins. The app compares them with the plan and recommends calorie changes; the Roadmap plots the same comparison and shows logged weights on the calendar.
+
+### Where the data lives
+
+| Mode | When | Storage |
+|---|---|---|
+| **Cloud** | Opened inside a configured Whop app | Cloudflare D1, keyed by the member's Whop user id — follows them across devices |
+| **Local** | Anywhere else: direct link, plain embed, Whop not yet configured | This browser only, and the app says so |
+
+The mode is decided at startup by `GET /api/session`. When a member who logged locally later opens the app in cloud mode, their local weigh-ins are uploaded (the cloud copy wins if both have the same day) and the local copy is cleared, so nothing is stranded on one device.
+
+### Identity
+
+Inside a Whop app iframe, Whop's proxy adds a signed JWT (`x-whop-user-token`) to every same-origin request. `worker/auth.ts` verifies it the same way Whop's official `@whop/api` package does — ES256, issuer `urn:whopcom:exp-proxy`, `sub` is the user id — with two tightenings: the audience **must** equal `WHOP_APP_ID` (Whop's own verifier treats it as optional), and keys come from Whop's published JWKS rather than one hard-coded key, so a key rotation can't lock everyone out. The user id is only ever taken from a verified token, never from a request body or URL.
+
+### The adjustment maths (`src/lib/adaptive.ts`)
+
+- **Rate, not single readings.** A least-squares line through up to 21 days of weigh-ins; daily weight swings 2–4 lb on water alone.
+- **Enough data first.** At least 6 weigh-ins spanning at least 10 days before any verdict.
+- **Dead band.** Within 0.2 lb/week (or 15% of the planned rate) is on track.
+- **Real maintenance** = intake + (weekly loss × energy per lb) / 7, using the timeline's fat-vs-lean energy density. Logged calories are used when at least 5 days in the window have them; otherwise planned intake is assumed and the app says so.
+- **Small steps.** Each change is capped at ±300 kcal/day, rounded to 25, starts at the next diet-week boundary (so every week still averages exactly to its target), and never goes below the intake floor — any shortfall becomes an activity target instead.
+- **Let it settle.** No new recommendation for 14 days after a change takes effect.
+- **Faster isn't better.** Losing well ahead of plan recommends eating *more*, since fast loss costs lean mass.
+
+Accepted changes are stored with the plan and shift the roadmap's calories from their week onward. The timeline's predicted weights deliberately don't move — that's the line being steered back to.
+
+### API (`worker/index.ts`)
+
+| Route | Purpose |
+|---|---|
+| `GET /api/session` | Cloud or local, and why |
+| `GET /api/weigh-ins` | All of my weigh-ins |
+| `PUT /api/weigh-ins/:date` | Create or replace one day |
+| `DELETE /api/weigh-ins/:date` | Remove one day |
+| `GET` / `PUT /api/plan` | My saved setup, including applied adjustments |
+| `GET /api/food-logs?from&to` | My food logs in a date range (≤ 400 days) |
+| `PUT /api/food-logs/:date` | Replace one day's food log (`[]` deletes it) |
+| `GET /api/my-foods` · `PUT` / `DELETE /api/my-foods/:id` | Foods I typed in myself |
+| `PUT` / `DELETE /api/fasting-reminders` | Turn my fasting notifications on (or update them) / off |
+| `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
+| `GET /api/food/search?q=` | **Public.** Search products by name |
+| `DELETE /api/me` | Delete everything stored about me |
+
+Writes require `application/json` (so cross-site HTML forms can't reach them), bodies are size-capped, every field is re-validated server-side with the same rules the browser uses (`src/lib/tracking.ts`), and responses are `Cache-Control: no-store`.
+
+### Switching on cloud sync
+
+Until these steps are done the app runs in local mode everywhere — nothing breaks.
+
+1. **Log in to Cloudflare from this machine** (opens a browser):
+   ```bash
+   npx wrangler login
+   ```
+2. **Create the database** and paste the printed `database_id` into `wrangler.jsonc`:
+   ```bash
+   npx wrangler d1 create leanligercalc
+   ```
+3. **Create the tables:**
+   ```bash
+   npm run db:migrate
+   ```
+4. **Create a Whop app** in Whop's developer dashboard. In its **Hosting** section set the base URL to `https://leanligercalc.lean-liger-fitness.workers.dev` and leave the app path at Whop's default, `/experiences/[experienceId]` — the Worker serves the app at `/experiences/*` and `/dashboard/*`. Install it into your whop, and paste its app id (`app_…`) into `WHOP_APP_ID` in `wrangler.jsonc`. The app id is public, not a secret.
+5. **Fasting notifications (optional):** in the Whop developer dashboard, give the app the `notification:create` permission, copy its **API key**, and store it as a secret. Paste the key only when Wrangler prompts for it:
+   ```bash
+   npx wrangler secret put WHOP_API_KEY
+   ```
+6. **Deploy:**
+   ```bash
+   npm run deploy
+   ```
+
+From then on, **always deploy with `npm run deploy`**. A drag-and-drop upload in the Cloudflare dashboard replaces the Worker with static files only, which silently removes the check-in API.
+
+### Local development
+
+```bash
+npm run dev:worker
+```
+
+builds the static export, applies migrations to a local database, and runs the real Worker at `http://127.0.0.1:8787`. To exercise fasting notifications locally without contacting Whop, run `wrangler dev --test-scheduled --var WHOP_API_KEY:test --var WHOP_API_BASE:http://127.0.0.1:9999` against a stub server, and trigger the scheduler through the local explorer (`POST /cdn-cgi/local/explorer/api/local/scheduled?worker=leanligercalc` with `{"cron":"* * * * *"}`). Copy `.dev.vars.example` to `.dev.vars` to act as a test user without Whop's proxy. That shortcut is honoured **only** for requests to localhost, so it can't be used against production even if the variable leaked into production config.
+
+### Privacy
+
+Body weight and food logs are health data. Members can delete everything from the Check-in tab at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Check-in delete card. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
+
+## Daily habits and the weekly scorecard
+
+The Check-in tab includes the **Daily Self-Accountability Scorecard**:
+
+- **Seven daily non-negotiables**, ticked each day: protein target (±10 g), calorie target, pre-logged meals, step target, hydration (100+ oz), 7+ hours sleep, completed workout. Protein and calorie rows show that day's targets from the roadmap. Members can rename, reorder, remove or add habits (tick-box or number goal); "Scorecard" restores the seven.
+- **Rest days**, up to 3 per Mon–Sun week, excuse the workout habit only.
+- **Weekly consistency score** = ticks completed ÷ (habits × 7 − rest days) × 100, with the sheet's zones: 80–100% green, 60–79% yellow, under 60% red. The printed formula, `(checks / 49) − (rest days) × 100`, can't be computed literally (it subtracts days from a fraction); this is the intent the sheet encodes, since only the workout row's total is left open. A week in progress is scored on days so far, today's unticked boxes aren't misses until the day is over, and days before a member's first log don't count.
+- **Weekly self-audit**: the friction audit — what trigger caused the week’s biggest slip-up. (The sheet’s “top 3 wins” and “adjustment rule for next week” were removed from the app; the `wins` and `rule` fields still exist in the data model, so older entries are kept but no longer shown.)
+
+Habit definitions sync with the plan; daily logs (`habit_logs`) and reviews (`weekly_reviews`) have their own tables, added by migrations `0002` and `0003`. "Delete all my data" removes all of it.
+
+## Macros: food log and barcode scanning
+
+The **Macros** tab tracks what a member eats against that day's targets — the Roadmap's numbers for the day, or the Carb Cycling tab's week for days outside the Roadmap.
+
+**Adding food**
+
+- **Scan** — a live camera view reads EAN-13, EAN-8, UPC-A and UPC-E barcodes. Chrome on Android uses the browser's built-in `BarcodeDetector`; everywhere else (including every iPhone, which has no such API) uses ZXing compiled to WebAssembly. The ~1 MB decoder loads only on the first scan and is served from this site (`public/zxing/`, copied from `node_modules` by `scripts/copy-zxing.mjs` on every build), not a CDN.
+- **Photo fallback** — if the live camera is unavailable or blocked, members take a photo of the barcode instead; the file picker hands over a picture without granting the page camera access, so this works even inside an embed that doesn't allow the camera.
+- **Type the barcode**, **search by name**, or **quick add** straight from the label. Recent foods re-add in one tap.
+- **My foods** — anything typed in can be saved. A saved barcode beats the database, so a product that's missing or wrong only has to be entered once ("Fix numbers").
+
+**Where the numbers come from**
+
+| Source | Used for | Setup |
+|---|---|---|
+| [Open Food Facts](https://world.openfoodfacts.org) | Barcodes and search | None — free, no key |
+| [USDA FoodData Central](https://fdc.nal.usda.gov) | Extra barcodes; whole foods in search ("chicken breast") | Optional: `npx wrangler secret put USDA_API_KEY` with a free key from <https://fdc.nal.usda.gov/api-key-signup> |
+
+Lookups go through the Worker, which caches every answer in the `food_cache` table (found products 30 days, misses and searches 1 day), so each product is fetched upstream once rather than once per member. These two routes are public — food logging has to work outside Whop too — and hold no personal data; a per-IP rate limit (`FOOD_LIMITER`, 40 a minute) stops the Worker being used as a free proxy. If the Worker can't get an answer, barcode lookups fall back to asking Open Food Facts directly from the browser.
+
+Open Food Facts is crowd-sourced: most products are right, some are wrong (per-serving numbers typed into the per-100 g fields is the usual mistake). The amount picker always shows the calories and macros it's about to log, flags labels whose calories don't match their macros (4/4/9), and the attribution line reminds members to check against the label.
+
+**Habit scorecard link.** Once a day has food logged, its *Hit daily protein target* and *Hit calorie target* boxes on the Check-in scorecard follow the log: protein within ±10 g, calories within ±100 kcal. Those two rows also show eaten vs target ("165 / 180 g").
+
+**Intermittent fasting.** Members enter their meal times (or start from a 16:8, 18:6, 20:4 or OMAD preset and adjust). The eating window runs from the first meal to the last and the fast from the last meal to the next day's first, so 12:00 / 16:00 / 20:00 shows as **16:8**. A ring timer counts down to the next meal: while fasting it shows hours fasted of the total, inside the window it shows the next meal and when the window closes, and for 30 minutes after each meal time it says *Time for Meal 2 — eat now*. Times are the device's local clock, windows can't cross midnight, and the meal times sync with the plan (`tracking.fasting`). Logic: `src/lib/fasting.ts`; card: `src/components/fasting-card.tsx`.
+
+**Fasting notifications (Whop).** Members can switch on a Whop notification for when their eating window opens (at the first meal) and closes (30 minutes after the last meal, when the timer switches to "fasting"). They arrive in the Whop mobile app and on whop.com. How it works:
+
+- Switching it on saves the first/last meal, the member's time zone and their Whop experience id (from the `/experiences/exp_…` URL) to `fasting_reminders` (migration `0005`). Switching it off, clearing the meal times, or "Delete all my data" removes the row.
+- A Cron Trigger runs every minute (`worker/reminders.ts`). For each member it works out their local time; when an event is due it calls Whop's [create notification API](https://docs.whop.com/api-reference/notifications/create-notification) with `user_ids` set to that member only. Each notification goes out once per local day, with a 10-minute catch-up window for a late run (including across midnight), and failures are retried on the next run inside that window.
+- It needs the proper Whop app (for member identity) and its API key with the `notification:create` permission. Until `WHOP_API_KEY` is set, the scheduler does nothing and the switch explains that notifications aren't available yet.
+- Limits: up to 40 sends per minute (the free plan allows 50 outgoing requests per run; the rest go the next minute). The table is read once a minute, which stays inside D1's free read allowance for a few thousand members.
+
+**Storage.** Food logs (`food_logs`, one row per day) and saved foods (`my_foods`) follow the same cloud/local rules as weigh-ins; on-device logs keep the last 365 days. Meals can be pre-logged up to 7 days ahead. "Delete all my data" removes all of it. Tables are added by migration `0004`.
+
 ## Validation and warnings
 
 | Condition | Level |
@@ -187,11 +357,28 @@ npm run build:static
 
 That writes `out/` (~1.5 MB). Cloudflare Pages settings:
 
+Cloudflare has two flows, and the fields differ:
+
+**Pages (git integration)** — no deploy command exists; Cloudflare uploads the folder itself:
+
 | Setting | Value |
 |---|---|
 | Build command | `npm run build:static` |
 | Build output directory | `out` |
 | Framework preset | None |
+
+**Workers Builds** — uses [`wrangler.jsonc`](wrangler.jsonc), an assets-only Worker with no `main` entry point since the app has no server side:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build:static` |
+| Deploy command | `npx wrangler deploy` |
+
+Or deploy straight from your machine without git:
+
+```bash
+npx wrangler pages deploy out --project-name=prep-calculator
+```
 
 `headers()` does **not** run in a static export, so the CSP is served from [`public/_headers`](public/_headers) instead, which Next copies to `out/_headers` at build time. Cloudflare Pages and Netlify both read that file. **The frame-ancestors list is duplicated between `next.config.mjs` and `public/_headers` — change both together.**
 
@@ -259,6 +446,11 @@ Running the app end-to-end surfaced two issues that neither type checking nor th
 - The two tabs reported different weekly losses for the same deficit (1.5 lb vs 1.36 lb), because carb cycling divided by a flat 3500 kcal/lb while the timeline priced lean tissue separately. Both now route through `weeklyLossFromDeficit()`.
 - The milestone table's footer counted the week-0 baseline row, so an 18-week prep advertised "19 weeks".
 - The inches half of the feet/inches height pair had a non-breaking-space label, leaving it with no accessible name — screen readers announced its value instead. It now carries an `sr-only` label and an explicit `aria-label`.
+
+Later fixes surfaced the same way:
+
+- **Event-date mode dated every milestone wrong.** The simulation dated its weekly rows from the start-date field before the required start was known, so "I know my show date" mode showed the milestone table starting on the wrong day. Rows are now re-anchored on the computed required start.
+- **Every visit after the build day threw React error #418.** This is a static export, and the default start date is "today" — so the HTML froze the build date while the browser computed the real one, and React discarded the server HTML on every load. The calculators now render client-side only, behind a skeleton; the built HTML contains no dates at all, which makes the mismatch impossible rather than merely unlikely.
 
 There is no test runner wired into `package.json`. Adding Vitest and porting these cases into `src/lib/*.test.ts` would be the natural next step.
 

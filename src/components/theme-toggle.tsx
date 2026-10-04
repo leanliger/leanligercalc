@@ -20,13 +20,16 @@ export function ThemeToggle() {
   const [theme, setTheme] = React.useState<Theme | null>(null);
 
   React.useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const initial: Theme =
-      stored === "light" || stored === "dark"
-        ? stored
-        : window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
+    // Must match the pre-paint script in `layout.tsx`: dark unless the user has
+    // explicitly chosen light. Any divergence shows up as the icon flipping on
+    // load.
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      /* storage blocked in a third-party frame; fall through to the default */
+    }
+    const initial: Theme = stored === "light" ? "light" : "dark";
     setTheme(initial);
     applyTheme(initial);
   }, []);

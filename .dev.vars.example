@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local development with `npm run dev:worker`.
+# .dev.vars is gitignored and is never deployed.
+#
+# Pretend every request on localhost comes from this Whop user, so cloud
+# check-ins can be tested without Whop's proxy. auth.ts only honours this
+# for requests to localhost, so it cannot be used against production.
+DEV_USER_ID=user_local_dev

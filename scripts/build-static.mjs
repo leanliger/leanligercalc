@@ -7,6 +7,7 @@
  * dependency.
  */
 import { spawn } from "node:child_process";
+import "./copy-zxing.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 

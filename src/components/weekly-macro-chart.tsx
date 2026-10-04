@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { DAY_LABELS } from "@/lib/carb-cycling";
 import type { CarbCyclingResult, DayType } from "@/lib/types";
+import { WEEKDAY_SHORT } from "@/lib/weekday-pattern";
 
 const DAY_COLORS: Record<DayType, string> = {
   high: "hsl(var(--day-high))",
@@ -30,62 +31,37 @@ interface WeekBar {
 }
 
 /**
- * The seven scheduled days laid out in order, so the user can see the actual
- * shape of the week rather than just three summary cards.
- *
- * Days are ordered high → medium → low and then interleaved, which is how these
- * schedules are normally written: hard sessions get the high days, and low days
- * land on rest days rather than back-to-back.
+ * The seven days laid out Monday to Sunday using the same weekday pattern the
+ * roadmap calendar uses, so "Monday" means the same thing in both places.
  */
-function buildWeek(result: CarbCyclingResult): WeekBar[] {
-  const pool: WeekBar[] = [];
-  for (const plan of result.days) {
-    for (let i = 0; i < plan.count; i++) {
-      pool.push({
-        day: "",
-        type: plan.type,
+function buildWeek(result: CarbCyclingResult, pattern: readonly DayType[]): WeekBar[] {
+  const byType = new Map(result.days.map((d) => [d.type, d]));
+  return pattern.flatMap((type, index) => {
+    const plan = byType.get(type);
+    if (!plan) return [];
+    return [
+      {
+        day: WEEKDAY_SHORT[index] ?? `D${index + 1}`,
+        type,
         calories: plan.calories,
         carbs: plan.carbs,
         protein: plan.protein,
         fat: plan.fat,
-      });
-    }
-  }
-
-  // Spread the high days evenly through the week instead of stacking them.
-  const highs = pool.filter((d) => d.type === "high");
-  const mediums = pool.filter((d) => d.type === "medium");
-  const lows = pool.filter((d) => d.type === "low");
-  const ordered: WeekBar[] = [];
-  const total = pool.length;
-  const spacing = highs.length > 0 ? Math.max(Math.floor(total / highs.length), 1) : total;
-
-  let highIndex = 0;
-  let lowIndex = 0;
-  let mediumIndex = 0;
-
-  for (let i = 0; i < total; i++) {
-    let next: WeekBar | undefined;
-    if (highIndex < highs.length && i % spacing === 0) {
-      next = highs[highIndex++];
-    } else if (mediumIndex < mediums.length) {
-      next = mediums[mediumIndex++];
-    } else if (lowIndex < lows.length) {
-      next = lows[lowIndex++];
-    } else if (highIndex < highs.length) {
-      next = highs[highIndex++];
-    }
-    if (next) ordered.push(next);
-  }
-
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  return ordered.map((entry, index) => ({ ...entry, day: labels[index] ?? `D${index + 1}` }));
+      },
+    ];
+  });
 }
 
-export function WeeklyMacroChart({ result }: { result: CarbCyclingResult }) {
-  const data = React.useMemo(() => buildWeek(result), [result]);
+export function WeeklyMacroChart({
+  result,
+  pattern,
+}: {
+  result: CarbCyclingResult;
+  pattern: readonly DayType[];
+}) {
+  const data = React.useMemo(() => buildWeek(result, pattern), [result, pattern]);
 
-  if (data.length === 0) {
+  if (data.length === 0 || result.baseline.carbs <= 0) {
     return (
       <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
         Set a 7-day schedule to see the weekly shape.

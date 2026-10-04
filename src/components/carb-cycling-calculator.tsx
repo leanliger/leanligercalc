@@ -18,6 +18,7 @@ import { Stat } from "@/components/stat";
 import { WarningList } from "@/components/warnings";
 import { CopyButton } from "@/components/copy-button";
 import { MacroCard } from "@/components/macro-card";
+import { MacroBaselineCard } from "@/components/macro-baseline-card";
 import { WeeklyMacroChart } from "@/components/weekly-macro-chart";
 import {
   GOAL_DEFICITS,
@@ -39,6 +40,8 @@ import type {
 } from "@/lib/types";
 import { fromLb, round } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { WeekdayPatternEditor } from "@/components/weekday-pattern-editor";
+import { countsFromPattern, resolveWeekdayPattern } from "@/lib/weekday-pattern";
 
 interface CarbCyclingCalculatorProps {
   profile: BiometricProfile;
@@ -134,6 +137,12 @@ export function CarbCyclingCalculator({
   );
   const protein = resolveProtein(profile, inputs);
   const totalDays = inputs.highDays + inputs.mediumDays + inputs.lowDays;
+  const pattern = React.useMemo(() => resolveWeekdayPattern(inputs), [inputs]);
+
+  // Changing the counts invalidates any hand-placed weekday pattern, so drop it
+  // and let the new counts be placed automatically.
+  const setCounts = (patch: Partial<Pick<CarbCyclingInputs, "highDays" | "mediumDays" | "lowDays">>) =>
+    onChange({ ...patch, weekdayPattern: null });
 
   const summary = React.useMemo(
     () => formatCarbPlanSummary(result, fromLb(profile.weight, unit), unit),
@@ -144,7 +153,7 @@ export function CarbCyclingCalculator({
   const derivedTarget = Math.round(inputs.tdee * (1 - GOAL_DEFICITS[inputs.goal]));
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
       {/* ----------------------------- Inputs ----------------------------- */}
       <div className="space-y-5 lg:sticky lg:top-4">
         {profileSlot}
@@ -299,19 +308,19 @@ export function CarbCyclingCalculator({
               <DayCounter
                 label="High"
                 value={inputs.highDays}
-                onChange={(value) => onChange({ highDays: value })}
+                onChange={(value) => setCounts({ highDays: value })}
                 accent="bg-day-high"
               />
               <DayCounter
                 label="Medium"
                 value={inputs.mediumDays}
-                onChange={(value) => onChange({ mediumDays: value })}
+                onChange={(value) => setCounts({ mediumDays: value })}
                 accent="bg-day-medium"
               />
               <DayCounter
                 label="Low"
                 value={inputs.lowDays}
-                onChange={(value) => onChange({ lowDays: value })}
+                onChange={(value) => setCounts({ lowDays: value })}
                 accent="bg-day-low"
               />
             </div>
@@ -329,7 +338,7 @@ export function CarbCyclingCalculator({
                     size="sm"
                     title={preset.hint}
                     onClick={() =>
-                      onChange({
+                      setCounts({
                         highDays: preset.high,
                         mediumDays: preset.medium,
                         lowDays: preset.low,
@@ -341,6 +350,23 @@ export function CarbCyclingCalculator({
                 );
               })}
             </div>
+
+            {totalDays === 7 ? (
+              <WeekdayPatternEditor
+                pattern={pattern}
+                isCustom={inputs.weekdayPattern !== null}
+                onChange={(next) => {
+                  const counts = countsFromPattern(next);
+                  onChange({
+                    weekdayPattern: next,
+                    highDays: counts.high,
+                    mediumDays: counts.medium,
+                    lowDays: counts.low,
+                  });
+                }}
+                onReset={() => onChange({ weekdayPattern: null })}
+              />
+            ) : null}
           </div>
 
           {/* --------------------------- Amplitude ------------------------ */}
@@ -395,6 +421,24 @@ export function CarbCyclingCalculator({
 
       {/* ----------------------------- Results ---------------------------- */}
       <div className="space-y-5">
+        {/* The plain daily split comes first: most people want "what do I eat
+            today" before they want a seven-day rotation. */}
+        <MacroBaselineCard
+          profile={profile}
+          maintenanceCalories={inputs.tdee}
+          proteinPerLb={inputs.proteinPerLb}
+          fatPercent={inputs.fatFloorPercent}
+          carbDeficitGrams={inputs.carbDeficitGrams}
+          unit={unit}
+          onProteinChange={(v) => onChange({ proteinPerLb: v })}
+          onFatPercentChange={(v) => onChange({ fatFloorPercent: v })}
+          onDeficitChange={(v) => onChange({ carbDeficitGrams: v })}
+          onApplyToPlan={(kcal) => {
+            onChange({ dailyCalorieTarget: kcal });
+            onClearLink();
+          }}
+        />
+
         <WarningList warnings={result.warnings} />
 
         <Card>
@@ -462,7 +506,7 @@ export function CarbCyclingCalculator({
                   Arrange high days around your hardest sessions
                 </p>
               </div>
-              <WeeklyMacroChart result={result} />
+              <WeeklyMacroChart result={result} pattern={pattern} />
             </div>
           </CardContent>
         </Card>
@@ -476,7 +520,7 @@ export function CarbCyclingCalculator({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="scrollbar-thin overflow-x-auto rounded-lg border border-border">
+            <div className="relative scrollbar-thin overflow-x-auto rounded-lg border border-border">
               <table className="w-full min-w-[34rem] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">

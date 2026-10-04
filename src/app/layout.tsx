@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0f18" },
+    { media: "(prefers-color-scheme: light)", color: "#faf7f0" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f0f0f" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -20,18 +20,25 @@ export const viewport: Viewport = {
 /**
  * Applies the stored theme before first paint. Without this the page renders
  * light and then snaps to dark once React hydrates, which is jarring on every
- * single load for dark-mode users.
+ * single load.
+ *
+ * Dark is the default rather than following the OS: the brand is gold on
+ * charcoal, and a visitor whose system is set to light would otherwise land on
+ * a version of the product that isn't really it. An explicit choice from the
+ * theme toggle still wins.
  */
 const THEME_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem('prep-calculator:theme');
-    var dark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (dark) {
+    if (stored !== 'light') {
       document.documentElement.classList.add('dark');
       document.documentElement.style.colorScheme = 'dark';
     }
-  } catch (e) {}
+  } catch (e) {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+  }
 })();
 `;
 

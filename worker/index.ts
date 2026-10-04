@@ -1,0 +1,573 @@
+/**
+ * Cloudflare Worker: static site + check-in API.
+ *
+ * Everything outside /api/* is the statically exported Next.js app, served
+ * straight from the ASSETS binding (and so still gets the frame-ancestors
+ * policy from public/_headers). /api/* is handled here.
+ *
+ *   GET    /api/session            who am I / is cloud storage available
+ *   GET    /api/weigh-ins          all of my weigh-ins, oldest first
+ *   PUT    /api/weigh-ins/:date    create or replace one day's weigh-in
+ *   DELETE /api/weigh-ins/:date    remove one day's weigh-in
+ *   GET    /api/plan               my saved calculator setup
+ *   PUT    /api/plan               save my calculator setup
+ *   GET    /api/habits             all of my daily habit logs
+ *   PUT    /api/habits/:date       replace one day's habit log ({} deletes it)
+ *   GET    /api/reviews            all of my weekly self-audits
+ *   PUT    /api/reviews/:monday    save one week's self-audit (empty deletes it)
+ *   GET    /api/food-logs?from&to  my food logs in a date range
+ *   PUT    /api/food-logs/:date    replace one day's food log ([] deletes it)
+ *   GET    /api/my-foods           foods I typed in myself
+ *   PUT    /api/my-foods/:id       save one of my foods
+ *   DELETE /api/my-foods/:id       remove one of my foods
+ *   PUT    /api/fasting-reminders  turn on / update my fasting notifications
+ *   DELETE /api/fasting-reminders  turn them off
+ *   DELETE /api/me                 delete everything stored about me
+ *
+ * The user id only ever comes from a verified Whop token (see auth.ts) and is
+ * never read from a request body or URL.
+ *
+ * Two food-database routes are public, since they hold no personal data and
+ * food logging must work outside Whop too (see food.ts):
+ *
+ *   GET    /api/food/barcode/:code product details for a barcode
+ *   GET    /api/food/search?q=     search products by name
+ *
+ * A Cron Trigger also runs every minute to send fasting notifications through
+ * Whop (see reminders.ts).
+ */
+
+import { authenticate, type AuthEnv } from "./auth";
+import {
+  MAX_WEIGH_INS,
+  PLAN_MAX_BYTES,
+  validateWeighIn,
+  type WeighIn,
+} from "../src/lib/tracking";
+import { MAX_HABIT_LOGS, validateHabitEntries, type HabitLog } from "../src/lib/habits";
+import { MAX_REVIEWS, isEmptyReview, validateReview, type WeeklyReview } from "../src/lib/reviews";
+import {
+  MAX_FOOD_LOG_DAYS,
+  MAX_FOOD_RANGE_DAYS,
+  MAX_MY_FOODS,
+  validateFoodLog,
+  validateMyFood,
+  type FoodEntry,
+  type FoodLog,
+  type FoodProduct,
+} from "../src/lib/food";
+import { addDays, isValidISODate } from "../src/lib/dates";
+import { lookupBarcode, rateLimited, searchFoods, type FoodEnv, type FoodResult } from "./food";
+import { deleteReminder, saveReminder, sendDueReminders, type ReminderEnv } from "./reminders";
+import { validateReminderRequest } from "../src/lib/fasting";
+import { secretValue } from "./secrets";
+
+export interface Env extends AuthEnv, FoodEnv, ReminderEnv {
+  DB: D1Database;
+  ASSETS: Fetcher;
+}
+
+const MAX_BODY_BYTES = PLAN_MAX_BYTES + 1024;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      // Personal health data: never cache it anywhere.
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+const noContent = () =>
+  new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+
+const error = (status: number, message: string) => json({ error: message }, status);
+
+/**
+ * Read a JSON body with a hard size cap. Requiring application/json also means
+ * a cross-site HTML form cannot reach these endpoints without a CORS
+ * preflight, which this API never grants.
+ */
+async function readJson(request: Request): Promise<{ ok: true; value: unknown } | { ok: false; response: Response }> {
+  const type = request.headers.get("content-type") ?? "";
+  if (!type.toLowerCase().startsWith("application/json")) {
+    return { ok: false, response: error(415, "Content-Type must be application/json.") };
+  }
+  const text = await request.text();
+  if (text.length > MAX_BODY_BYTES) {
+    return { ok: false, response: error(413, "Request body too large.") };
+  }
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false, response: error(400, "Body is not valid JSON.") };
+  }
+}
+
+interface WeighInRow {
+  date: string;
+  weight_lb: number;
+  calories: number | null;
+  note: string | null;
+}
+
+const toWeighIn = (row: WeighInRow): WeighIn => ({
+  date: row.date,
+  weightLb: row.weight_lb,
+  calories: row.calories,
+  note: row.note,
+});
+
+function foodResponse(result: FoodResult): Response {
+  if (result.ok) return json(result.body);
+  return json({ error: result.error, upstream: result.upstream ?? false }, result.status);
+}
+
+async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname.replace(/\/+$/, "");
+  const method = request.method.toUpperCase();
+
+  /* ------------------- food database (public, no identity) ------------------ */
+
+  if (path === "/api/food/search" || path.startsWith("/api/food/barcode/")) {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    if (await rateLimited(env, request)) {
+      return json({ error: "Too many lookups. Wait a minute and try again.", upstream: false }, 429);
+    }
+    if (path === "/api/food/search") return foodResponse(await searchFoods(env, url.searchParams.get("q") ?? ""));
+    return foodResponse(await lookupBarcode(env, path.slice("/api/food/barcode/".length)));
+  }
+
+  const user = await authenticate(request, env);
+
+  if (path === "/api/session") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    // A 200 even when there's no identity: "which storage mode applies?" has a
+    // valid answer either way. Returning 401 here made every visitor outside
+    // Whop log a console error on load. The data endpoints below still 401.
+    if (!user) {
+      return json({
+        storage: "local",
+        reason: env.WHOP_APP_ID ? "not-signed-in" : "not-configured",
+      });
+    }
+    return json({ storage: "cloud", userId: user.userId, notifications: Boolean(secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) });
+  }
+
+  if (!user) return error(401, "Open this app inside Whop to save check-ins to your account.");
+  const userId = user.userId;
+
+  /* ------------------------------ weigh-ins ------------------------------ */
+
+  if (path === "/api/weigh-ins") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT date, weight_lb, calories, note FROM weigh_ins WHERE user_id = ? ORDER BY date ASC LIMIT ?",
+    )
+      .bind(userId, MAX_WEIGH_INS)
+      .all<WeighInRow>();
+    return json({ weighIns: results.map(toWeighIn) });
+  }
+
+  const match = /^\/api\/weigh-ins\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (match) {
+    const date = match[1]!;
+
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = validateWeighIn(body.value, date);
+      if (!result.ok) return error(422, result.error);
+      const w = result.value;
+
+      // Cap total rows per user, but always allow replacing an existing day.
+      const count = await env.DB.prepare(
+        "SELECT COUNT(*) AS n, SUM(CASE WHEN date = ? THEN 1 ELSE 0 END) AS existing FROM weigh_ins WHERE user_id = ?",
+      )
+        .bind(date, userId)
+        .first<{ n: number; existing: number | null }>();
+      if (count && count.n >= MAX_WEIGH_INS && !count.existing) {
+        return error(409, `Storage limit of ${MAX_WEIGH_INS} weigh-ins reached.`);
+      }
+
+      await env.DB.prepare(
+        `INSERT INTO weigh_ins (user_id, date, weight_lb, calories, note)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, date) DO UPDATE SET
+           weight_lb  = excluded.weight_lb,
+           calories   = excluded.calories,
+           note       = excluded.note,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      )
+        .bind(userId, w.date, w.weightLb, w.calories, w.note)
+        .run();
+      return json({ weighIn: w });
+    }
+
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ? AND date = ?")
+        .bind(userId, date)
+        .run();
+      return noContent();
+    }
+
+    return error(405, "Method not allowed.");
+  }
+
+  /* ------------------------------- habits ------------------------------- */
+
+  if (path === "/api/habits") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT date, entries FROM habit_logs WHERE user_id = ? ORDER BY date ASC LIMIT ?",
+    )
+      .bind(userId, MAX_HABIT_LOGS)
+      .all<{ date: string; entries: string }>();
+    const logs: HabitLog[] = [];
+    for (const row of results) {
+      try {
+        logs.push({ date: row.date, entries: JSON.parse(row.entries) });
+      } catch {
+        /* skip a corrupt row rather than fail the whole list */
+      }
+    }
+    return json({ logs });
+  }
+
+  const habitMatch = /^\/api\/habits\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (habitMatch) {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const date = habitMatch[1]!;
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateHabitEntries(body.value, date);
+    if (!result.ok) return error(422, result.error);
+    const { entries } = result.value;
+
+    // An empty day is the same as no record: delete instead of storing "{}".
+    if (Object.keys(entries).length === 0) {
+      await env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ? AND date = ?")
+        .bind(userId, date)
+        .run();
+      return json({ log: { date, entries } });
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN date = ? THEN 1 ELSE 0 END) AS existing FROM habit_logs WHERE user_id = ?",
+    )
+      .bind(date, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_HABIT_LOGS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_HABIT_LOGS} habit days reached.`);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO habit_logs (user_id, date, entries) VALUES (?, ?, ?)
+       ON CONFLICT (user_id, date) DO UPDATE SET
+         entries    = excluded.entries,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, date, JSON.stringify(entries))
+      .run();
+    return json({ log: { date, entries } });
+  }
+
+  /* --------------------------- weekly reviews --------------------------- */
+
+  if (path === "/api/reviews") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT week_start, wins, friction, rule FROM weekly_reviews WHERE user_id = ? ORDER BY week_start ASC LIMIT ?",
+    )
+      .bind(userId, MAX_REVIEWS)
+      .all<{ week_start: string; wins: string; friction: string; rule: string }>();
+    const reviews: WeeklyReview[] = [];
+    for (const row of results) {
+      try {
+        const wins = JSON.parse(row.wins) as string[];
+        reviews.push({
+          weekStart: row.week_start,
+          wins: [wins[0] ?? "", wins[1] ?? "", wins[2] ?? ""],
+          friction: row.friction,
+          rule: row.rule,
+        });
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    return json({ reviews });
+  }
+
+  const reviewMatch = /^\/api\/reviews\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (reviewMatch) {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const weekStart = reviewMatch[1]!;
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateReview(body.value, weekStart);
+    if (!result.ok) return error(422, result.error);
+    const r = result.value;
+
+    if (isEmptyReview(r)) {
+      await env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ? AND week_start = ?")
+        .bind(userId, weekStart)
+        .run();
+      return json({ review: r });
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN week_start = ? THEN 1 ELSE 0 END) AS existing FROM weekly_reviews WHERE user_id = ?",
+    )
+      .bind(weekStart, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_REVIEWS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_REVIEWS} weekly reviews reached.`);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO weekly_reviews (user_id, week_start, wins, friction, rule) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, week_start) DO UPDATE SET
+         wins       = excluded.wins,
+         friction   = excluded.friction,
+         rule       = excluded.rule,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, weekStart, JSON.stringify(r.wins), r.friction, r.rule)
+      .run();
+    return json({ review: r });
+  }
+
+  /* ------------------------------ food logs ------------------------------ */
+
+  if (path === "/api/food-logs") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const from = url.searchParams.get("from") ?? "";
+    const to = url.searchParams.get("to") ?? "";
+    if (!isValidISODate(from) || !isValidISODate(to) || from > to || addDays(from, MAX_FOOD_RANGE_DAYS) < to) {
+      return error(422, `Give a from/to date range of at most ${MAX_FOOD_RANGE_DAYS} days.`);
+    }
+    const { results } = await env.DB.prepare(
+      "SELECT date, entries FROM food_logs WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC",
+    )
+      .bind(userId, from, to)
+      .all<{ date: string; entries: string }>();
+    const logs: FoodLog[] = [];
+    for (const row of results) {
+      try {
+        logs.push({ date: row.date, entries: JSON.parse(row.entries) as FoodEntry[] });
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    return json({ logs });
+  }
+
+  const foodMatch = /^\/api\/food-logs\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (foodMatch) {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const date = foodMatch[1]!;
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateFoodLog(body.value, date);
+    if (!result.ok) return error(422, result.error);
+    const { entries } = result.value;
+
+    // An empty day is the same as no record.
+    if (entries.length === 0) {
+      await env.DB.prepare("DELETE FROM food_logs WHERE user_id = ? AND date = ?").bind(userId, date).run();
+      return json({ log: result.value });
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN date = ? THEN 1 ELSE 0 END) AS existing FROM food_logs WHERE user_id = ?",
+    )
+      .bind(date, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_FOOD_LOG_DAYS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_FOOD_LOG_DAYS} food-log days reached.`);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO food_logs (user_id, date, entries) VALUES (?, ?, ?)
+       ON CONFLICT (user_id, date) DO UPDATE SET
+         entries    = excluded.entries,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, date, JSON.stringify(entries))
+      .run();
+    return json({ log: result.value });
+  }
+
+  /* ------------------------------- my foods ------------------------------- */
+
+  if (path === "/api/my-foods") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT id, data FROM my_foods WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?",
+    )
+      .bind(userId, MAX_MY_FOODS)
+      .all<{ id: string; data: string }>();
+    const foods: FoodProduct[] = [];
+    for (const row of results) {
+      try {
+        const check = validateMyFood(JSON.parse(row.data), row.id);
+        if (check.ok) foods.push(check.value);
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    return json({ foods });
+  }
+
+  const myFoodMatch = /^\/api\/my-foods\/([A-Za-z0-9_-]{1,64})$/.exec(path);
+  if (myFoodMatch) {
+    const id = myFoodMatch[1]!;
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM my_foods WHERE user_id = ? AND id = ?").bind(userId, id).run();
+      return noContent();
+    }
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateMyFood(body.value, id);
+    if (!result.ok) return error(422, result.error);
+    const food = result.value;
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN id = ? THEN 1 ELSE 0 END) AS existing FROM my_foods WHERE user_id = ?",
+    )
+      .bind(id, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_MY_FOODS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_MY_FOODS} saved foods reached.`);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO my_foods (user_id, id, barcode, data) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, id) DO UPDATE SET
+         barcode    = excluded.barcode,
+         data       = excluded.data,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, id, food.barcode, JSON.stringify(food))
+      .run();
+    return json({ food });
+  }
+
+  /* -------------------------- fasting reminders -------------------------- */
+
+  if (path === "/api/fasting-reminders") {
+    if (method === "DELETE") {
+      await deleteReminder(env, userId);
+      return noContent();
+    }
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    if (!secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) return error(503, "Notifications aren't switched on for this app yet.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateReminderRequest(body.value);
+    if (!result.ok) return error(422, result.error);
+    await saveReminder(env, userId, result.value);
+    return json({ ok: true });
+  }
+
+  /* -------------------------------- plan -------------------------------- */
+
+  if (path === "/api/plan") {
+    if (method === "GET") {
+      const row = await env.DB.prepare("SELECT state, updated_at FROM plans WHERE user_id = ?")
+        .bind(userId)
+        .first<{ state: string; updated_at: string }>();
+      if (!row) return json({ state: null, updatedAt: null });
+      let state: unknown = null;
+      try {
+        state = JSON.parse(row.state);
+      } catch {
+        state = null;
+      }
+      return json({ state, updatedAt: row.updated_at });
+    }
+
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const state = (body.value as { state?: unknown } | null)?.state;
+      if (typeof state !== "object" || state === null || Array.isArray(state)) {
+        return error(422, "Expected { state: {...} }.");
+      }
+      // Stored opaquely and re-sanitised by the client on every load, so a
+      // tampered document can only ever produce the client's defaults.
+      const serialized = JSON.stringify(state);
+      if (serialized.length > PLAN_MAX_BYTES) return error(413, "Plan too large.");
+      await env.DB.prepare(
+        `INSERT INTO plans (user_id, state) VALUES (?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET
+           state      = excluded.state,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      )
+        .bind(userId, serialized)
+        .run();
+      return noContent();
+    }
+
+    return error(405, "Method not allowed.");
+  }
+
+  /* ------------------------------ delete me ------------------------------ */
+
+  if (path === "/api/me") {
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM my_foods WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM fasting_reminders WHERE user_id = ?").bind(userId),
+    ]);
+    return noContent();
+  }
+
+  return error(404, "Not found.");
+}
+
+/**
+ * Whop loads an app at its configured view path — by default
+ * /experiences/[experienceId] for the member-facing view and
+ * /dashboard/[companyId] for the creator's dashboard. This is a single-page
+ * app, so those paths (including deep links under them) serve the same
+ * index.html. Without this they fell through to the static 404 page.
+ */
+const WHOP_VIEW_PATH = /^\/(experiences|dashboard)\/[A-Za-z0-9_-]+(\/.*)?$/;
+
+export default {
+  async fetch(request, env): Promise<Response> {
+    const url = new URL(request.url);
+    if (WHOP_VIEW_PATH.test(url.pathname)) {
+      return env.ASSETS.fetch(new Request(new URL("/", url), request));
+    }
+    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    try {
+      return await handleApi(request, env, url);
+    } catch (e) {
+      // Log server-side; never echo internals (or SQL) to the client.
+      console.error("api error", e);
+      return error(500, "Something went wrong. Please try again.");
+    }
+  },
+
+  // Every minute (wrangler.jsonc "triggers"): fasting notifications.
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(
+      sendDueReminders(env, new Date(controller.scheduledTime))
+        .then((r) => {
+          if (r.due > 0) console.log("fasting reminders", r);
+        })
+        .catch((e) => console.error("fasting reminders crashed", e)),
+    );
+  },
+} satisfies ExportedHandler<Env>;
