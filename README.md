@@ -211,6 +211,7 @@ Accepted changes are stored with the plan and shift the roadmap's calories from 
 | `PUT /api/food-logs/:date` | Replace one day's food log (`[]` deletes it) |
 | `GET /api/my-foods` · `PUT` / `DELETE /api/my-foods/:id` | Foods I typed in myself |
 | `PUT` / `DELETE /api/fasting-reminders` | Turn my fasting notifications on (or update them) / off |
+| `PUT` / `DELETE /api/reminders` | Set my weigh-in / habits / recap reminder times / turn them all off |
 | `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
 | `GET /api/food/search?q=` | **Public.** Search products by name |
 | `DELETE /api/me` | Delete everything stored about me |
@@ -265,6 +266,10 @@ The Check-in tab includes the **Daily Self-Accountability Scorecard**:
 - **Rest days**, up to 3 per Mon–Sun week, excuse the workout habit only.
 - **Weekly consistency score** = ticks completed ÷ (habits × 7 − rest days) × 100, with the sheet's zones: 80–100% green, 60–79% yellow, under 60% red. The printed formula, `(checks / 49) − (rest days) × 100`, can't be computed literally (it subtracts days from a fraction); this is the intent the sheet encodes, since only the workout row's total is left open. A week in progress is scored on days so far, today's unticked boxes aren't misses until the day is over, and days before a member's first log don't count.
 - **Weekly self-audit**: the friction audit — what trigger caused the week’s biggest slip-up. (The sheet’s “top 3 wins” and “adjustment rule for next week” were removed from the app; the `wins` and `rule` fields still exist in the data model, so older entries are kept but no longer shown.)
+
+- **Streaks & consistency** (`src/lib/streaks.ts`, `consistency-card.tsx`), all derived from the daily logs — nothing extra is stored. Each habit shows a flame streak on the daily checklist and its share of the last 30 days; the card adds an overall streak of days at **80%+ of that day’s habits** (not “all seven”, so one miss doesn’t erase weeks of work), consecutive **Green Zone weeks**, best-ever streaks, and an 8-week trend. Same rules as the scorecard: a rest day neither extends nor breaks the workout streak, today never counts against you until it’s over, and days before the first log don’t count.
+
+- **Reminders** (Check-in tab, `src/lib/reminders.ts`, `reminders-card.tsx`): optional Whop notifications at times each member picks — a **morning weigh-in** (skipped if today's weight is already logged), an **evening habits** nudge ("3 habits left today · keep your 12-day streak going", skipped once everything's done), and a **Sunday recap** (scorecard %, weight change vs last week's average, average protein from the food log). They share the fasting scheduler (`worker/reminders.ts`), its once-per-day and catch-up rules, and its 40-sends-per-minute budget; preferences sync with the plan and are copied to the `reminders` table (migration `0006`).
 
 Habit definitions sync with the plan; daily logs (`habit_logs`) and reviews (`weekly_reviews`) have their own tables, added by migrations `0002` and `0003`. "Delete all my data" removes all of it.
 

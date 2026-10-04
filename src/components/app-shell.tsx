@@ -25,6 +25,7 @@ import { ProfileCard } from "@/components/profile-card";
 import { RoadmapCalendar } from "@/components/roadmap-calendar";
 import { CheckinTab } from "@/components/checkin-tab";
 import { MacrosTab } from "@/components/macros-tab";
+import type { NotificationStatus } from "@/components/fasting-card";
 import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
 import {
   createStore,
@@ -49,6 +50,7 @@ import {
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
 import type { HabitDef, HabitLog } from "@/lib/habits";
 import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/fasting";
+import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { WeeklyReview } from "@/lib/reviews";
 import type {
   BiometricProfile,
@@ -241,6 +243,9 @@ export function AppShell() {
   // last sent), so they're only re-sent when something actually changed.
   const reminderSynced = React.useRef<string | null>(null);
   const [reminderError, setReminderError] = React.useState<string | null>(null);
+  // The same, for the weigh-in / habits / recap reminders.
+  const checkinRemindersSynced = React.useRef<string | null>(null);
+  const [checkinReminderError, setCheckinReminderError] = React.useState<string | null>(null);
   // What the cloud currently holds (as `cloudDoc`). A save happens only when
   // the plan differs from it — so loading the plan doesn't immediately write
   // it back, tab switches don't write, and "delete all my data" doesn't
@@ -278,6 +283,7 @@ export function AppShell() {
       foodFrom.current = result.foodFrom;
       // Notifications on: re-send once per visit (picks up a new time zone).
       reminderSynced.current = result.state.tracking.fasting.notify ? null : "off";
+      checkinRemindersSynced.current = Object.values(result.state.tracking.reminders).some((r) => r.on) ? null : "off";
       setState(result.state);
       setReady(true);
     });
@@ -335,6 +341,30 @@ export function AppShell() {
     }, PLAN_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [ready, session, state.tracking.fasting]);
+
+  // Keep the server's check-in reminders in step with the member's choices.
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud" || !session.notifications) return;
+    const experienceId = experienceIdFromPath(window.location.pathname);
+    const req = experienceId
+      ? remindersRequest(state.tracking.reminders, experienceId, Intl.DateTimeFormat().resolvedOptions().timeZone)
+      : null;
+    const want = req ? JSON.stringify(req) : "off";
+    if (want === checkinRemindersSynced.current) return;
+    const timer = setTimeout(() => {
+      const store = storeRef.current;
+      if (!store) return;
+      (req ? store.saveReminders(req) : store.deleteReminders())
+        .then(() => {
+          checkinRemindersSynced.current = want;
+          setCheckinReminderError(null);
+        })
+        .catch((e: unknown) =>
+          setCheckinReminderError(e instanceof Error ? e.message : "Couldn't update reminders. Try again."),
+        );
+    }, PLAN_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [ready, session, state.tracking.reminders]);
 
   const setTab = React.useCallback((tab: AppTab) => {
     setState((prev) => ({ ...prev, activeTab: tab }));
@@ -486,6 +516,10 @@ export function AppShell() {
     setMyFoods((prev) => prev.filter((x) => x.key !== `mine:${id}`));
   }, []);
 
+  const updateReminders = React.useCallback((reminders: ReminderPrefs) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, reminders } }));
+  }, []);
+
   const updateFasting = React.useCallback((fasting: FastingSettings) => {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, fasting } }));
   }, []);
@@ -502,6 +536,7 @@ export function AppShell() {
     // straight back into the row that was just deleted.
     lastSynced.current = cloudDoc(reset);
     reminderSynced.current = "off"; // the server deleted them with everything else
+    checkinRemindersSynced.current = "off";
     setWeighIns([]);
     setHabitLogs([]);
     setReviews([]);
@@ -509,6 +544,17 @@ export function AppShell() {
     setMyFoods([]);
     setState(reset);
   }, [state.unit]);
+
+  // Whether Whop notifications can be switched on here (fasting and check-in).
+  const notifyAvailability: NotificationStatus["availability"] = !ready
+    ? "local"
+    : session.mode !== "cloud"
+      ? "local"
+      : !session.notifications
+        ? "no-key"
+        : experienceIdFromPath(window.location.pathname)
+          ? "ok"
+          : "no-experience";
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -676,17 +722,7 @@ export function AppShell() {
                   onSaveHabits={saveHabitDay}
                   fasting={state.tracking.fasting}
                   onFastingChange={updateFasting}
-                  notifications={{
-                    availability:
-                      session.mode !== "cloud"
-                        ? "local"
-                        : !session.notifications
-                          ? "no-key"
-                          : experienceIdFromPath(window.location.pathname)
-                            ? "ok"
-                            : "no-experience",
-                    error: reminderError,
-                  }}
+                  notifications={{ availability: notifyAvailability, error: reminderError }}
                   onNavigate={setTab}
                 />
               </TabsContent>
@@ -714,6 +750,9 @@ export function AppShell() {
                   onDeleteAll={deleteAllData}
                   foodLogs={foodLogs}
                   foodCount={foodLogs.length + myFoods.length}
+                  reminders={state.tracking.reminders}
+                  onRemindersChange={updateReminders}
+                  reminderStatus={{ availability: notifyAvailability, error: checkinReminderError }}
                   onNavigate={setTab}
                 />
               </TabsContent>

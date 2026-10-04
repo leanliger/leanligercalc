@@ -76,8 +76,9 @@ export default function PrivacyPage() {
               &ldquo;My foods&rdquo; (including barcodes).
             </li>
             <li>
-              Intermittent fasting meal times and, if you switch on notifications, your time zone and which Whop
-              community you opened the app from (so notifications reach you there).
+              Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit and
+              weekly recap reminders. If you switch any notifications on, also your time zone and which Whop community you
+              opened the app from (so they reach you there at the right time).
             </li>
           </List>
           <p>
@@ -103,7 +104,7 @@ export default function PrivacyPage() {
             <li>To calculate your timeline, carb cycling plan, roadmap and daily macro targets.</li>
             <li>To compare your weigh-ins with your plan and suggest calorie adjustments.</li>
             <li>To show your habit scorecard, food log, and fasting timer.</li>
-            <li>To send the fasting notifications you switch on.</li>
+            <li>To send the notifications and reminders you switch on.</li>
             <li>To keep your data in sync across the devices where you open the app in Whop.</li>
           </List>
           <p>
@@ -137,9 +138,10 @@ export default function PrivacyPage() {
               on our behalf.
             </li>
             <li>
-              <strong>Whop</strong> provides sign-in and delivers notifications. When fasting notifications are on, we send
-              Whop your user ID and the notification text (for example your meal names and times) so it can deliver them to
-              you.
+              <strong>Whop</strong> provides sign-in and delivers notifications. When you switch notifications on, we send
+              Whop your user ID and the text of each notification so it can deliver it to you — for example your meal times,
+              how many habits are left today and your streak, or your weekly recap (scorecard, weight change and average
+              protein).
             </li>
             <li>
               <strong>Open Food Facts</strong> and <strong>USDA FoodData Central</strong> provide nutrition data. When you
@@ -169,14 +171,15 @@ export default function PrivacyPage() {
             <li>
               <strong>Delete everything:</strong> open the <strong>Check-in</strong> tab and use{" "}
               <strong>&ldquo;Delete all my data&rdquo;</strong>. This permanently removes your weigh-ins, habits, weekly
-              notes, food logs, saved foods, plan and fasting notifications.
+              notes, food logs, saved foods, plan, and notification settings.
             </li>
             <li>
               <strong>Delete or change individual items</strong> directly in the app: weigh-ins, foods, habits and meal
               times can all be edited or removed.
             </li>
             <li>
-              <strong>Turn off notifications</strong> at any time from the fasting card on the Macros tab.
+              <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
+              Macros tab, and weigh-in, habit and recap reminders from the Reminders card on the Check-in tab.
             </li>
             <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.

@@ -28,6 +28,10 @@ import { Stat } from "@/components/stat";
 import { ProgressChart } from "@/components/progress-chart";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
+import { ConsistencyCard } from "@/components/consistency-card";
+import { RemindersCard } from "@/components/reminders-card";
+import type { NotificationStatus } from "@/components/fasting-card";
+import type { ReminderPrefs } from "@/lib/reminders";
 import { buildRoadmap } from "@/lib/roadmap";
 import { weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import type { WeeklyReview } from "@/lib/reviews";
@@ -74,6 +78,9 @@ interface CheckinTabProps {
   foodLogs: FoodLog[];
   /** Food-log days and saved foods, for the delete-all count. */
   foodCount: number;
+  reminders: ReminderPrefs;
+  onRemindersChange: (prefs: ReminderPrefs) => void;
+  reminderStatus: NotificationStatus;
   onNavigate: (tab: "timeline" | "roadmap") => void;
 }
 
@@ -116,6 +123,9 @@ export function CheckinTab({
   onDeleteAll,
   foodLogs,
   foodCount,
+  reminders,
+  onRemindersChange,
+  reminderStatus,
   onNavigate,
 }: CheckinTabProps) {
   const timeline = React.useMemo(() => calculateFatLossTimeline(profile, fatLoss), [profile, fatLoss]);
@@ -345,6 +355,8 @@ export function CheckinTab({
           onSave={onSaveHabits}
           onHabitsChange={onHabitsChange}
         />
+
+        <RemindersCard prefs={reminders} onChange={onRemindersChange} status={reminderStatus} />
       </div>
 
       {/* ------------------------------ right ------------------------------- */}
@@ -431,6 +443,8 @@ export function CheckinTab({
           weekTargets={weekTargets}
           onSaveReview={onSaveReview}
         />
+
+        <ConsistencyCard habits={habits} logs={habitLogs} today={today} />
 
         {adjustments.length > 0 ? (
           <Card>

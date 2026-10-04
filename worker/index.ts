@@ -22,6 +22,8 @@
  *   DELETE /api/my-foods/:id       remove one of my foods
  *   PUT    /api/fasting-reminders  turn on / update my fasting notifications
  *   DELETE /api/fasting-reminders  turn them off
+ *   PUT    /api/reminders          set my weigh-in / habits / recap reminders
+ *   DELETE /api/reminders          turn them all off
  *   DELETE /api/me                 delete everything stored about me
  *
  * The user id only ever comes from a verified Whop token (see auth.ts) and is
@@ -58,8 +60,16 @@ import {
 } from "../src/lib/food";
 import { addDays, isValidISODate } from "../src/lib/dates";
 import { lookupBarcode, rateLimited, searchFoods, type FoodEnv, type FoodResult } from "./food";
-import { deleteReminder, saveReminder, sendDueReminders, type ReminderEnv } from "./reminders";
+import {
+  deleteReminder,
+  deleteReminders,
+  saveReminder,
+  saveReminders,
+  sendDueReminders,
+  type ReminderEnv,
+} from "./reminders";
 import { validateReminderRequest } from "../src/lib/fasting";
+import { validateRemindersRequest } from "../src/lib/reminders";
 import { secretValue } from "./secrets";
 
 export interface Env extends AuthEnv, FoodEnv, ReminderEnv {
@@ -474,6 +484,23 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return json({ ok: true });
   }
 
+  /* --------------------------- check-in reminders --------------------------- */
+
+  if (path === "/api/reminders") {
+    if (method === "DELETE") {
+      await deleteReminders(env, userId);
+      return noContent();
+    }
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    if (!secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) return error(503, "Notifications aren't switched on for this app yet.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateRemindersRequest(body.value);
+    if (!result.ok) return error(422, result.error);
+    await saveReminders(env, userId, result.value);
+    return json({ ok: true });
+  }
+
   /* -------------------------------- plan -------------------------------- */
 
   if (path === "/api/plan") {
@@ -528,6 +555,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM my_foods WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM fasting_reminders WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM reminders WHERE user_id = ?").bind(userId),
     ]);
     return noContent();
   }
@@ -565,7 +593,7 @@ export default {
     ctx.waitUntil(
       sendDueReminders(env, new Date(controller.scheduledTime))
         .then((r) => {
-          if (r.due > 0) console.log("fasting reminders", r);
+          if (r.fasting.due > 0 || r.checkin.due > 0) console.log("reminders", r);
         })
         .catch((e) => console.error("fasting reminders crashed", e)),
     );

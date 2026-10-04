@@ -35,6 +35,7 @@ import { patternFromString, patternToString } from "./weekday-pattern";
 import { sanitizeAdjustments, type CalorieAdjustment } from "./tracking";
 import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
 import { DEFAULT_FASTING, sanitizeFasting, type FastingSettings } from "./fasting";
+import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./reminders";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
 // shared profile, so old payloads no longer deserialise correctly.
@@ -50,6 +51,8 @@ export interface TrackingState {
   habits: HabitDef[];
   /** Intermittent fasting meal times (Macros tab). */
   fasting: FastingSettings;
+  /** Weigh-in, habits and Sunday recap reminders (Check-in tab). */
+  reminders: ReminderPrefs;
 }
 
 export interface AppState {
@@ -67,7 +70,7 @@ export const DEFAULT_APP_STATE: AppState = {
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
-  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING },
+  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS },
 };
 
 /* --------------------------- sanitisation --------------------------- */
@@ -194,6 +197,7 @@ export function sanitizeAppState(raw: unknown): AppState {
       adjustments: sanitizeAdjustments(obj(parsed.tracking).adjustments),
       habits: sanitizeHabitDefs(obj(parsed.tracking).habits),
       fasting: sanitizeFasting(obj(parsed.tracking).fasting),
+      reminders: sanitizeReminderPrefs(obj(parsed.tracking).reminders),
     },
   };
 }
@@ -334,7 +338,7 @@ export function decodeStateFromQuery(search: string): AppState | null {
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),
-    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING },
+    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS },
   };
 }
 

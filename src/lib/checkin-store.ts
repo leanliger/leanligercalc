@@ -17,6 +17,7 @@ import { validateHabitEntries, type HabitLog } from "./habits";
 import { isEmptyReview, validateReview, type WeeklyReview } from "./reviews";
 import { myFoodId, validateFoodLog, validateMyFood, type FoodLog, type FoodProduct } from "./food";
 import { addDays, todayISO } from "./dates";
+import type { RemindersRequest } from "./reminders";
 
 export type StorageMode = "cloud" | "local";
 
@@ -287,6 +288,9 @@ export interface CheckinStore {
   /** Turn on, or update, fasting notifications (cloud only). */
   saveFastingReminders(req: ReminderRequest): Promise<void>;
   deleteFastingReminders(): Promise<void>;
+  /** Weigh-in / habits / recap reminders (cloud only). */
+  saveReminders(req: RemindersRequest): Promise<void>;
+  deleteReminders(): Promise<void>;
   loadPlan(): Promise<unknown | null>;
   savePlan(state: unknown): Promise<void>;
   /** Delete everything: weigh-ins, habits, reviews, food logs, my foods and the plan. */
@@ -373,6 +377,12 @@ export function createStore(mode: StorageMode): CheckinStore {
       async deleteFastingReminders() {
         await expectOk(await api("/api/fasting-reminders", { method: "DELETE" }));
       },
+      async saveReminders(req) {
+        await expectOk(await api("/api/reminders", { method: "PUT", body: JSON.stringify(req) }));
+      },
+      async deleteReminders() {
+        await expectOk(await api("/api/reminders", { method: "DELETE" }));
+      },
       async loadPlan() {
         const res = await expectOk(await api("/api/plan"));
         return ((await res.json()) as { state: unknown }).state ?? null;
@@ -456,6 +466,10 @@ export function createStore(mode: StorageMode): CheckinStore {
       throw new Error("Notifications work when the app is open inside Whop.");
     },
     async deleteFastingReminders() {},
+    async saveReminders() {
+      throw new Error("Reminders work when the app is open inside Whop.");
+    },
+    async deleteReminders() {},
     // In local mode the plan is already kept by persistence.ts.
     async loadPlan() {
       return null;

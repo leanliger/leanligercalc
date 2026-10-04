@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   ClipboardCheck,
+  Flame,
   ListChecks,
   Minus,
   Pencil,
@@ -54,6 +55,7 @@ import {
   type Zone,
 } from "@/lib/habits";
 import { REVIEW_FIELD_MAX, emptyReview, type WeeklyReview } from "@/lib/reviews";
+import { habitStreak } from "@/lib/streaks";
 import type { RoadmapDay } from "@/lib/types";
 import type { Macros } from "@/lib/food";
 import { cn } from "@/lib/utils";
@@ -147,6 +149,16 @@ export function HabitsCard({
         .catch(() => setStatus("error"));
     }, SAVE_DEBOUNCE_MS);
   };
+
+  // Streaks as of the day shown, counting the ticks on screen even before
+  // they've saved.
+  const streaks = React.useMemo(() => {
+    const withDraft = new Map(logMap);
+    withDraft.set(date, draft);
+    const firstSaved = logs[0]?.date ?? null;
+    const first = firstSaved && firstSaved < date ? firstSaved : Object.keys(draft).length > 0 ? date : firstSaved;
+    return new Map(habits.map((h) => [h.id, habitStreak(h, withDraft, date, today, first).current]));
+  }, [habits, logMap, logs, date, draft, today]);
 
   const plan = dayPlanFor(date);
   const progress = dayProgress(habits, draft);
@@ -275,9 +287,9 @@ export function HabitsCard({
                     <span className="ml-auto text-xs">Rest day — not counted</span>
                   </li>
                 ) : h.kind === "check" ? (
-                  <CheckRow key={h.id} def={h} hint={hint(h)} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
+                  <CheckRow key={h.id} def={h} hint={hint(h)} streak={streaks.get(h.id) ?? 0} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
                 ) : (
-                  <CountRow key={`${h.id}-${date}`} def={h} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
+                  <CountRow key={`${h.id}-${date}`} def={h} streak={streaks.get(h.id) ?? 0} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
                 ),
               )}
             </ul>
@@ -295,14 +307,31 @@ export function HabitsCard({
   );
 }
 
+/** A small flame and day count; nothing until there's a streak. */
+export function StreakBadge({ days, className }: { days: number; className?: string }) {
+  if (days < 1) return null;
+  return (
+    <span
+      className={cn("tabular inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold", days >= 3 ? "text-primary" : "text-muted-foreground", className)}
+      title={`${days}-day streak`}
+    >
+      <Flame className="h-3.5 w-3.5" aria-hidden />
+      <span aria-hidden>{days}</span>
+      <span className="sr-only">, {days}-day streak</span>
+    </span>
+  );
+}
+
 function CheckRow({
   def,
   hint,
+  streak,
   value,
   onChange,
 }: {
   def: HabitDef;
   hint: string | null;
+  streak: number;
   value: boolean | number | undefined;
   onChange: (v: boolean) => void;
 }) {
@@ -331,6 +360,7 @@ function CheckRow({
         </span>
         <span className="min-w-0 flex-1 font-medium">{def.name}</span>
         {hint ? <span className="tabular shrink-0 text-xs text-muted-foreground">{hint}</span> : null}
+        <StreakBadge days={streak} />
       </button>
     </li>
   );
@@ -338,10 +368,12 @@ function CheckRow({
 
 function CountRow({
   def,
+  streak,
   value,
   onChange,
 }: {
   def: HabitDef;
+  streak: number;
   value: boolean | number | undefined;
   onChange: (v: number | undefined) => void;
 }) {
@@ -377,6 +409,7 @@ function CountRow({
         <span className="tabular ml-auto text-xs text-muted-foreground">
           goal {formatHabitValue(target)} {def.unit ?? ""}
         </span>
+        <StreakBadge days={streak} />
       </div>
       <div className="flex items-center gap-1.5">
         <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => commit(current - step)} disabled={current <= 0} aria-label={`Decrease ${def.name}`}>
