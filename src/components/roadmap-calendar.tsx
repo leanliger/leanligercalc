@@ -356,7 +356,7 @@ export function RoadmapCalendar({
           <WarningList warnings={roadmap.warnings} />
 
           <p className="text-xs text-muted-foreground">
-            The daily target and carb deficit on the Carb Cycling tab aren&apos;t used
+            The daily target and carb deficit on the Weekly plan aren&apos;t used
             here — the timeline sets calories week by week so you arrive on{" "}
             {formatLong(goalDate)}.
           </p>

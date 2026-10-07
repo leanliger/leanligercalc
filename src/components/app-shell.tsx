@@ -3,7 +3,6 @@
 import * as React from "react";
 import {
   Activity,
-  CalendarRange,
   CloudOff,
   Dumbbell,
   Link2,
@@ -25,7 +24,7 @@ import { FatLossCalculator } from "@/components/fat-loss-calculator";
 import { CarbCyclingCalculator } from "@/components/carb-cycling-calculator";
 import { ProfileCard } from "@/components/profile-card";
 import { RoadmapCalendar } from "@/components/roadmap-calendar";
-import { CheckinTab } from "@/components/checkin-tab";
+import { CheckinTab, type CheckinSection } from "@/components/checkin-tab";
 import { MacrosTab } from "@/components/macros-tab";
 import { LeaderboardTab } from "@/components/leaderboard-tab";
 import { TrainingTab } from "@/components/training-tab";
@@ -415,6 +414,18 @@ export function AppShell() {
     setState((prev) => ({ ...prev, activeTab: tab }));
   }, []);
 
+  // Which Check-in sub-section is open. Links into Check-in from other tabs
+  // open the section they're about (habits from Macros and the leaderboard,
+  // weigh-ins from the roadmap).
+  const [checkinSection, setCheckinSection] = React.useState<CheckinSection>("weigh-in");
+  const navigateFor = React.useMemo(() => {
+    const to = (section: CheckinSection) => (tab: AppTab) => {
+      if (tab === "checkin") setCheckinSection(section);
+      setTab(tab);
+    };
+    return { weighIn: to("weigh-in"), habits: to("habits") };
+  }, [setTab]);
+
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
     setState((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
   }, []);
@@ -745,7 +756,9 @@ export function AppShell() {
               </div>
             </div>
           ) : (
-            <Tabs value={state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
+            // The roadmap is a sub-section of Carb Cycling; "roadmap" stays a
+            // destination of its own so links to it (and saved tabs) still work.
+            <Tabs value={state.activeTab === "roadmap" ? "carbs" : state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
               <div className="flex flex-wrap items-center gap-3">
                 <TabsList className="relative scrollbar-thin max-w-full gap-0.5 overflow-x-auto sm:gap-1 [&>button]:px-1.5 [&>button]:text-[13px] sm:[&>button]:px-4 sm:[&>button]:text-sm [&_svg]:hidden sm:[&_svg]:block">
                   <TabsTrigger value="timeline">
@@ -758,23 +771,19 @@ export function AppShell() {
                     <span className="sm:hidden">Carbs</span>
                     <span className="hidden sm:inline">Carb Cycling</span>
                   </TabsTrigger>
-                  <TabsTrigger value="roadmap">
-                    <CalendarRange />
-                    Roadmap
-                  </TabsTrigger>
                   <TabsTrigger value="macros">
                     <Utensils />
                     Macros
                   </TabsTrigger>
-                  <TabsTrigger value="training" className="[&_svg]:!block">
+                  <TabsTrigger value="training">
                     <Dumbbell />
-                    <span className="sr-only sm:not-sr-only">Training</span>
+                    Training
                   </TabsTrigger>
                   <TabsTrigger value="checkin">
                     <Scale />
                     Check-in
                   </TabsTrigger>
-                  {/* On phones the dumbbell and trophy stand in for their words, so all seven tabs fit. */}
+                  {/* On phones the trophy stands in for the word, so all six tabs fit. */}
                   <TabsTrigger value="leaderboard" className="[&_svg]:!block">
                     <Trophy />
                     <span className="sr-only sm:not-sr-only">Leaderboard</span>
@@ -808,31 +817,41 @@ export function AppShell() {
                 />
               </TabsContent>
 
-              <TabsContent value="carbs">
-                <CarbCyclingCalculator
-                  profile={state.profile}
-                  inputs={state.carbs}
-                  onChange={updateCarbs}
-                  unit={state.unit}
-                  linkedToTimeline={linkedToTimeline}
-                  onClearLink={() => setLinkedToTimeline(false)}
-                  profileSlot={
-                    <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
-                  }
+              <TabsContent value="carbs" className="space-y-5">
+                <SegmentedControl
+                  ariaLabel="Carb cycling section"
+                  value={state.activeTab === "roadmap" ? "roadmap" : "carbs"}
+                  onValueChange={(v) => setTab(v)}
+                  options={[
+                    { value: "carbs" as const, label: "Weekly plan" },
+                    { value: "roadmap" as const, label: "Roadmap" },
+                  ]}
+                  className="max-w-xs"
                 />
-              </TabsContent>
-
-              <TabsContent value="roadmap">
-                <RoadmapCalendar
-                  profile={state.profile}
-                  fatLoss={state.fatLoss}
-                  carbs={state.carbs}
-                  unit={state.unit}
-                  weighIns={weighIns}
-                  adjustments={state.tracking.adjustments}
-                  onCarbsChange={updateCarbs}
-                  onNavigate={setTab}
-                />
+                {state.activeTab === "roadmap" ? (
+                  <RoadmapCalendar
+                    profile={state.profile}
+                    fatLoss={state.fatLoss}
+                    carbs={state.carbs}
+                    unit={state.unit}
+                    weighIns={weighIns}
+                    adjustments={state.tracking.adjustments}
+                    onCarbsChange={updateCarbs}
+                    onNavigate={navigateFor.weighIn}
+                  />
+                ) : (
+                  <CarbCyclingCalculator
+                    profile={state.profile}
+                    inputs={state.carbs}
+                    onChange={updateCarbs}
+                    unit={state.unit}
+                    linkedToTimeline={linkedToTimeline}
+                    onClearLink={() => setLinkedToTimeline(false)}
+                    profileSlot={
+                      <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
+                    }
+                  />
+                )}
               </TabsContent>
 
               <TabsContent value="macros">
@@ -855,7 +874,7 @@ export function AppShell() {
                   fasting={state.tracking.fasting}
                   onFastingChange={updateFasting}
                   notifications={{ availability: notifyAvailability, error: reminderError }}
-                  onNavigate={setTab}
+                  onNavigate={navigateFor.habits}
                 />
               </TabsContent>
 
@@ -878,7 +897,7 @@ export function AppShell() {
               <TabsContent value="leaderboard">
                 <LeaderboardTab
                   availability={notifyAvailability}
-                  onNavigate={setTab}
+                  onNavigate={navigateFor.habits}
                   unit={state.unit}
                   bodyweightLb={weighIns[weighIns.length - 1]?.weightLb ?? state.profile.weight}
                   today={today}
@@ -915,6 +934,8 @@ export function AppShell() {
                   onRemindersChange={updateReminders}
                   reminderStatus={{ availability: notifyAvailability, error: checkinReminderError }}
                   onNavigate={setTab}
+                  section={checkinSection}
+                  onSectionChange={setCheckinSection}
                 />
               </TabsContent>
             </Tabs>

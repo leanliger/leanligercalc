@@ -307,7 +307,7 @@ export function MacrosTab({
                 <p className="text-[11px] text-muted-foreground">
                   {target.source === "roadmap"
                     ? "Targets from your Roadmap for this day."
-                    : "This day is outside your Roadmap, so targets come from the Carb Cycling tab."}
+                    : "This day is outside your Roadmap, so targets come from your Carb Cycling weekly plan."}
                 </p>
                 {linked.length > 0 ? (
                   <div className="space-y-1.5 rounded-md border border-border px-3 py-2">

@@ -148,6 +148,8 @@ Three exact weekly macro totals imply an exact weekly calorie total, so the aver
 
 ## The roadmap
 
+The roadmap is a sub-section of the **Carb Cycling** tab (its *Weekly plan | Roadmap* switch). Internally `roadmap` is still its own `activeTab` value, so links that open it (`?t=roadmap`, Check-in's "Open the roadmap") and saved tabs keep working.
+
 The roadmap combines the two engines, each doing what it is best at:
 
 - The **timeline** sets how much to eat each week. Its targets step down as body weight and maintenance fall, so week 12 is not week 1.
@@ -165,13 +167,15 @@ The daily target and carb deficit on the Carb Cycling tab are deliberately *not*
 | 3 / 2 / 2 | H M H L M H L |
 | 1 / 3 / 3 | H L M M L M L |
 
-Users can click any weekday to change it, on either the Carb Cycling or Roadmap tab. The counts follow the pattern, and changing the counts directly discards a hand-placed pattern so it can't go stale. The pattern travels in shared links as seven letters (`wp=HMLMHLM`).
+Users can click any weekday to change it, in either the Weekly plan or the Roadmap. The counts follow the pattern, and changing the counts directly discards a hand-placed pattern so it can't go stale. The pattern travels in shared links as seven letters (`wp=HMLMHLM`).
 
 **Calendar.** One month at a time, Monday-first. Each day shows its type, calories, and (on wider screens) P/C/F grams; weeks with an allocation problem carry a dot. It's a proper ARIA grid with a single tab stop — arrow keys move by day and week, Home/End jump within the week, and moving past a month edge pages the calendar. Selecting a day shows its full macros, that week's projected weight, the change in intake from the previous week, any coaching note, and copy buttons for the day or the whole week.
 
 ## Check-ins: predicted vs actual
 
 The **Check-in** tab is where members log weigh-ins. The app compares them with the plan and recommends calorie changes; the Roadmap plots the same comparison and shows logged weights on the calendar.
+
+The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, reminders, progress vs plan, calorie changes, weigh-in history, sync / delete all), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The open section lives in the app shell, so links from other tabs land on the right one (Macros and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
 
 ### Where the data lives
 
