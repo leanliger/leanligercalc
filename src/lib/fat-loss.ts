@@ -14,14 +14,10 @@
  * All masses are in pounds; all energy is in kilocalories.
  */
 
-import {
-  estimateTdee as estimateTdeeFromProfile,
-  minimumSafeBodyFat,
-  resolveBodyFat,
-} from "./body-composition";
+import { kcalPerThousandSteps, maintenanceBreakdown, type ActivityInputs } from "./activity";
+import { minimumSafeBodyFat, resolveBodyFat } from "./body-composition";
 import { addWeeks, todayISO, weeksBetween } from "./dates";
 import type {
-  ActivityLevel,
   BiometricProfile,
   FatLossInputs,
   FatLossResult,
@@ -104,13 +100,13 @@ export function fatLossFraction(weeklyRate: number, bodyFatPercent: number): num
 export function tdeeAtWeight(
   profile: BiometricProfile,
   weight: number,
-  activityLevel: ActivityLevel,
+  activity: ActivityInputs,
   tdeeOverride: number | null,
 ): number {
-  const atWeight = estimateTdeeFromProfile({ ...profile, weight }, activityLevel);
+  const atWeight = maintenanceBreakdown({ ...profile, weight }, activity).total;
 
   if (tdeeOverride && tdeeOverride > 0) {
-    const atStart = estimateTdeeFromProfile(profile, activityLevel);
+    const atStart = maintenanceBreakdown(profile, activity).total;
     return atStart > 0 ? tdeeOverride * (atWeight / atStart) : tdeeOverride;
   }
   return atWeight;
@@ -268,7 +264,7 @@ function simulate(
 
   for (let week = 0; week <= MAX_WEEKS; week++) {
     const rawTdee =
-      tdeeAtWeight(profile, weight, inputs.activityLevel, inputs.tdeeOverride) *
+      tdeeAtWeight(profile, weight, inputs, inputs.tdeeOverride) *
       adaptationFactor(week, inputs.includeMetabolicAdaptation);
 
     // Look ahead one week to price *this* week's prescription.
@@ -384,8 +380,7 @@ function buildWarnings(
     warnings.push({
       level: "warning",
       title: `${clampedWeeks} week${clampedWeeks === 1 ? "" : "s"} hit the intake floor`,
-      detail:
-        "The prescribed deficit would push intake below a safe floor. Those weeks are capped — create the extra gap with activity rather than further food cuts.",
+      detail: `The prescribed deficit would push intake below a safe floor. Those weeks are capped — create the extra gap with activity rather than further food cuts: every 1,000 extra steps a day burns about ${Math.round(kcalPerThousandSteps(profile.weight))} kcal.`,
     });
   }
 

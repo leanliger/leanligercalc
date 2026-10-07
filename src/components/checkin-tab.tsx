@@ -27,11 +27,12 @@ import { ProgressChart } from "@/components/progress-chart";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ConsistencyCard } from "@/components/consistency-card";
+import { StepsWeekCard } from "@/components/steps-week-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { PhotosCard } from "@/components/photos-card";
 import type { Measurement } from "@/lib/measurements";
 import { buildRoadmap } from "@/lib/roadmap";
-import { weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
+import { DEFAULT_STEP_TARGET, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import type { WeeklyReview } from "@/lib/reviews";
 import { sumMacros, type FoodLog, type Macros } from "@/lib/food";
 import { addDays } from "@/lib/dates";
@@ -248,6 +249,9 @@ export function CheckinTab({
     />
   );
 
+  // The steps the plan assumes; the step habit ticks itself at this count.
+  const stepTarget = fatLoss.activitySource === "steps" ? fatLoss.dailySteps : DEFAULT_STEP_TARGET;
+
   if (section === "habits") {
     return (
       <div className="space-y-5">
@@ -261,8 +265,20 @@ export function CheckinTab({
             dayPlanFor={dayPlanFor}
             onSave={onSaveHabits}
             onHabitsChange={onHabitsChange}
+            stepTarget={stepTarget}
           />
-          <ConsistencyCard habits={habits} logs={habitLogs} today={today} />
+          <div className="space-y-5">
+            {habits.some((h) => h.link === "steps") ? (
+              <StepsWeekCard
+                logs={habitLogs}
+                today={today}
+                target={stepTarget}
+                planUsesSteps={fatLoss.activitySource === "steps"}
+                weightLb={weighIns[weighIns.length - 1]?.weightLb ?? profile.weight}
+              />
+            ) : null}
+            <ConsistencyCard habits={habits} logs={habitLogs} today={today} />
+          </div>
         </div>
       </div>
     );

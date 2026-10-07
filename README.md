@@ -82,8 +82,12 @@ Body fat percentage is *derived*, not asked for. Requiring it is a hard stop for
 
 ```
 BMR = 10·kg + 6.25·cm − 5·age + s        s = +5 (male) / −161 (female)
-TDEE = BMR × activity factor             1.2 / 1.375 / 1.55 / 1.725 / 1.9
+TDEE = BMR × 1.2                          resting + daily life (~3,000 steps)
+     + (steps − 3,000) ÷ 1,000 × 0.4 · kg   net cost of walking
+     + training days × 3 · kg ÷ 7          ≈ an hour of lifting, averaged per day
 ```
+
+New plans estimate maintenance from **daily steps and training days** (`src/lib/activity.ts`): walking at ~5 km/h costs ~2.5 kcal/kg/h above rest, ~0.5 kcal/kg/km, and a kilometre is ~1,300 steps, so 1,000 steps ≈ 0.4 kcal/kg. At 200 lb, 10,000 steps add ~250 kcal and four training days ~155 kcal/day. The Timeline shows the breakdown, and the intake-floor warning says how much 1,000 extra steps a day buys. Plans saved before this (no `activitySource`) keep the old **activity-level** multiplier — 1.2 / 1.375 / 1.55 / 1.725 / 1.9 — until the member switches, so nobody's targets move on their own; share links carry `as`, `st` and `td`.
 
 This replaced an earlier "kcal per pound of body weight" shortcut, which implicitly assumes an average height and misestimates tall or short people badly. Users who have tracked their intake at stable weight can still enter a measured maintenance figure, which overrides the equation and is scaled as they get lighter.
 
@@ -175,7 +179,7 @@ Users can click any weekday to change it, in either the Weekly plan or the Roadm
 
 The **Check-in** tab is where members log weigh-ins. The app compares them with the plan and recommends calorie changes; the Roadmap plots the same comparison and shows logged weights on the calendar.
 
-The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, progress vs plan, calorie changes, weigh-in history), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The open section lives in the app shell, so links from other tabs land on the right one (Nutrition and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
+The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, progress vs plan, calorie changes, weigh-in history), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The step habit (`link: "steps"`) has a box for the day's step count, stored under the reserved `_steps` entry; once a count is logged the habit follows it, ticking at the plan's daily steps (10,000 when the plan uses an activity level). **Steps this week** compares the weekly average with the plan and, when the plan is step-based, says what the gap is worth in kcal and how many extra steps close it — weekly, never by adding calories back each day. The open section lives in the app shell, so links from other tabs land on the right one (Nutrition and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
 
 ### Where the data lives
 

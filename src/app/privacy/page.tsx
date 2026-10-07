@@ -68,7 +68,7 @@ export default function PrivacyPage() {
             <strong>Information you enter.</strong> Everything else comes from you:
           </p>
           <List>
-            <li>Your profile and plan: height, weight, goal weight, age, sex, activity level, and calculator settings.</li>
+            <li>Your profile and plan: height, weight, goal weight, age, sex, your daily steps and training days (or activity level), and calculator settings.</li>
             <li>Weigh-ins: date, body weight, and optionally calories eaten and a note.</li>
             <li>Body measurements you log: waist, hips, chest, arms and thighs, with the date.</li>
             <li>
@@ -77,7 +77,7 @@ export default function PrivacyPage() {
               below.
             </li>
             <li>Calorie adjustments you accept from check-ins.</li>
-            <li>Daily habits you tick, rest days, and your weekly self-audit notes.</li>
+            <li>Daily habits you tick, any daily step counts you enter, rest days, and your weekly self-audit notes.</li>
             <li>
               Food logs: the foods you add, amounts, calories and macros, meal, and date, plus any foods you save to
               &ldquo;My foods&rdquo; (including barcodes).
@@ -190,7 +190,7 @@ export default function PrivacyPage() {
             <li>
               your progress photos — <strong>only if you switch on sharing</strong> (see &ldquo;Progress photos&rdquo;);
             </li>
-            <li>your habit ticks from the last 3 months, with your streaks and weekly scores;</li>
+            <li>your habit ticks and any step counts you logged from the last 3 months, with your streaks and weekly scores;</li>
             <li>your daily food totals (calories, protein, carbs and fat) from the last 2 weeks — not the individual foods.</li>
           </List>
           <p>

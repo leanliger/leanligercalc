@@ -20,6 +20,7 @@ import {
 } from "./defaults";
 import type {
   ActivityLevel,
+  ActivitySource,
   BiometricProfile,
   CarbCyclingInputs,
   CarbGoal,
@@ -37,6 +38,7 @@ import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
 import { DEFAULT_FASTING, sanitizeFasting, type FastingSettings } from "./fasting";
 import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./reminders";
 import { DEFAULT_TRAINING, sanitizeTraining, type TrainingSettings } from "./training";
+import { STEP_LIMITS, TRAINING_DAY_LIMITS } from "./activity";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
 // shared profile, so old payloads no longer deserialise correctly.
@@ -143,7 +145,17 @@ export function sanitizeFatLoss(raw: Partial<Record<keyof FatLossInputs, unknown
     mode: oneOf<TimelineMode>(raw.mode, ["startDate", "eventDate"], d.mode),
     startDate: date(raw.startDate, todayISO()),
     eventDate: date(raw.eventDate, d.eventDate),
+    // Plans saved before steps existed have an activity level but no source:
+    // they keep that level until the member switches, so their targets don't
+    // move. Anything with neither starts on steps, like a new plan.
+    activitySource: oneOf<ActivitySource>(
+      raw.activitySource,
+      ["steps", "level"],
+      raw.activityLevel !== undefined && raw.activityLevel !== null ? "level" : d.activitySource,
+    ),
     activityLevel: oneOf<ActivityLevel>(raw.activityLevel, ACTIVITY_LEVELS, d.activityLevel),
+    dailySteps: Math.round(num(raw.dailySteps, d.dailySteps, STEP_LIMITS.min, STEP_LIMITS.max)),
+    trainingDays: Math.round(num(raw.trainingDays, d.trainingDays, TRAINING_DAY_LIMITS.min, TRAINING_DAY_LIMITS.max)),
     tdeeOverride: nullableNum(raw.tdeeOverride, d.tdeeOverride, 800, 8000),
     includeMetabolicAdaptation: bool(
       raw.includeMetabolicAdaptation,
@@ -255,7 +267,10 @@ const URL_KEYS = {
   m: "mode",
   sd: "startDate",
   ed: "eventDate",
+  as: "activitySource",
   al: "activityLevel",
+  st: "dailySteps",
+  td: "trainingDays",
   tdo: "tdeeOverride",
   ma: "includeMetabolicAdaptation",
   tdee: "tdee",
@@ -278,7 +293,7 @@ type UrlKey = keyof typeof URL_KEYS;
 
 const PROFILE_KEYS: UrlKey[] = ["w", "h", "a", "s", "bfo"];
 const FAT_LOSS_KEYS: UrlKey[] = [
-  "gt", "tw", "tbf", "r", "m", "sd", "ed", "al", "tdo", "ma",
+  "gt", "tw", "tbf", "r", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
 ];
 const CARB_KEYS: UrlKey[] = [
   "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "cdg", "wp",

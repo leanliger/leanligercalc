@@ -56,6 +56,9 @@ export type ActivityLevel =
   | "active"
   | "veryActive";
 
+/** Where maintenance calories come from: steps and training, or an activity level. */
+export type ActivitySource = "steps" | "level";
+
 /**
  * Timeline settings. Biometrics live on `BiometricProfile` and are passed
  * alongside these, so the same person can be evaluated against several plans.
@@ -73,10 +76,19 @@ export interface FatLossInputs {
   startDate: string;
   /** ISO date (yyyy-mm-dd) of the show/event. Used in `eventDate` mode. */
   eventDate: string;
+  /**
+   * How maintenance is estimated: from daily steps and training days, or from
+   * one activity-level multiplier (plans set up before steps existed).
+   */
+  activitySource: ActivitySource;
   activityLevel: ActivityLevel;
+  /** Typical steps per day. Used when `activitySource === "steps"`. */
+  dailySteps: number;
+  /** Training sessions per week, 0–7. Used when `activitySource === "steps"`. */
+  trainingDays: number;
   /**
    * Explicit maintenance calories at current weight. When null, TDEE is
-   * estimated from body weight and activity level.
+   * estimated from body weight and activity.
    */
   tdeeOverride: number | null;
   /** Model progressive metabolic adaptation across the diet. */

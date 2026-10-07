@@ -34,8 +34,11 @@ import {
   HABIT_NAME_MAX,
   HABIT_UNIT_MAX,
   MAX_HABITS,
+  DEFAULT_STEP_TARGET,
+  MAX_DAILY_STEPS,
   MAX_REST_DAYS_PER_WEEK,
   REST_KEY,
+  STEPS_KEY,
   WEEKLY_TARGET_PERCENT,
   ZONES,
   counts,
@@ -89,6 +92,8 @@ interface HabitsCardProps {
   eatenFor?: (date: string) => Macros | null;
   onSave: (log: HabitLog) => Promise<void>;
   onHabitsChange: (habits: HabitDef[]) => void;
+  /** Daily steps the plan assumes; logging this many ticks the step habit. */
+  stepTarget?: number;
 }
 
 export function HabitsCard({
@@ -99,6 +104,7 @@ export function HabitsCard({
   eatenFor,
   onSave,
   onHabitsChange,
+  stepTarget = DEFAULT_STEP_TARGET,
 }: HabitsCardProps) {
   const [date, setDate] = React.useState(today);
   const [editing, setEditing] = React.useState(false);
@@ -131,10 +137,12 @@ export function HabitsCard({
     [],
   );
 
-  const update = (key: string, value: boolean | number | undefined) => {
+  const updateMany = (patch: Record<string, boolean | number | undefined>) => {
     const next = { ...draft };
-    if (value === undefined || value === false || value === 0) delete next[key];
-    else next[key] = value;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined || value === false || value === 0) delete next[key];
+      else next[key] = value;
+    }
     setDraft(next);
     dirty.current = true;
     setStatus("saving");
@@ -149,6 +157,11 @@ export function HabitsCard({
         .catch(() => setStatus("error"));
     }, SAVE_DEBOUNCE_MS);
   };
+  const update = (key: string, value: boolean | number | undefined) => updateMany({ [key]: value });
+
+  // Once steps are logged for a day, the step habit follows the count.
+  const logSteps = (def: HabitDef, steps: number | undefined) =>
+    updateMany(steps === undefined ? { [STEPS_KEY]: undefined } : { [STEPS_KEY]: steps, [def.id]: steps >= stepTarget });
 
   // Streaks as of the day shown, counting the ticks on screen even before
   // they've saved.
@@ -172,6 +185,12 @@ export function HabitsCard({
 
   const eaten = eatenFor?.(date) ?? null;
   const hint = (h: HabitDef): string | null => {
+    if (h.link === "steps") {
+      const logged = draft[STEPS_KEY];
+      return typeof logged === "number"
+        ? `${logged.toLocaleString()} / ${stepTarget.toLocaleString()}`
+        : `${stepTarget.toLocaleString()} steps`;
+    }
     if (!plan || plan.isGoalDay) return null;
     if (h.link === "protein") {
       return eaten ? `${Math.round(eaten.protein)} / ${plan.protein} g` : `${plan.protein} g today`;
@@ -287,7 +306,24 @@ export function HabitsCard({
                     <span className="ml-auto text-xs">Rest day — not counted</span>
                   </li>
                 ) : h.kind === "check" ? (
-                  <CheckRow key={h.id} def={h} hint={hint(h)} streak={streaks.get(h.id) ?? 0} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
+                  <CheckRow
+                    key={h.id}
+                    def={h}
+                    hint={hint(h)}
+                    streak={streaks.get(h.id) ?? 0}
+                    value={draft[h.id]}
+                    onChange={(v) => update(h.id, v)}
+                    extra={
+                      h.link === "steps" ? (
+                        <StepsInput
+                          key={`${h.id}-${date}`}
+                          value={typeof draft[STEPS_KEY] === "number" ? (draft[STEPS_KEY] as number) : undefined}
+                          target={stepTarget}
+                          onChange={(n) => logSteps(h, n)}
+                        />
+                      ) : null
+                    }
+                  />
                 ) : (
                   <CountRow key={`${h.id}-${date}`} def={h} streak={streaks.get(h.id) ?? 0} value={draft[h.id]} onChange={(v) => update(h.id, v)} />
                 ),
@@ -328,12 +364,15 @@ function CheckRow({
   streak,
   value,
   onChange,
+  extra,
 }: {
   def: HabitDef;
   hint: string | null;
   streak: number;
   value: boolean | number | undefined;
   onChange: (v: boolean) => void;
+  /** Shown under the row, e.g. the step-count box. */
+  extra?: React.ReactNode;
 }) {
   const done = isDone(def, value);
   return (
@@ -362,7 +401,49 @@ function CheckRow({
         {hint ? <span className="tabular shrink-0 text-xs text-muted-foreground">{hint}</span> : null}
         <StreakBadge days={streak} />
       </button>
+      {extra}
     </li>
+  );
+}
+
+/** The step count for the day shown; ticks the step habit at the plan's target. */
+function StepsInput({
+  value,
+  target,
+  onChange,
+}: {
+  value: number | undefined;
+  target: number;
+  onChange: (steps: number | undefined) => void;
+}) {
+  const [text, setText] = React.useState(value ? String(value) : "");
+  const id = React.useId();
+  // Follow a value set from outside, without fighting what's being typed.
+  React.useEffect(() => {
+    const t = text.replace(/[,\s]/g, "");
+    const typed = t === "" ? undefined : Number(t);
+    if (typed !== value) setText(value ? String(value) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the stored value changes
+  }, [value]);
+  return (
+    <div className="flex items-center gap-2 px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
+      <label htmlFor={id}>Steps</label>
+      <Input
+        id={id}
+        value={text}
+        inputMode="numeric"
+        placeholder="from your phone"
+        className="h-8 w-32 px-2 text-sm"
+        onChange={(e) => {
+          setText(e.target.value);
+          const t = e.target.value.replace(/[,\s]/g, "");
+          if (t === "") return onChange(undefined);
+          const n = Number(t);
+          if (Number.isInteger(n) && n >= 0 && n <= MAX_DAILY_STEPS) onChange(n);
+        }}
+      />
+      <span className="tabular">target {target.toLocaleString()}</span>
+    </div>
   );
 }
 
@@ -453,6 +534,7 @@ const LINK_LABEL = {
   protein: "Shows today's protein target",
   calories: "Shows today's calorie target",
   workout: "Excused on rest days",
+  steps: "Log your steps; ticks itself at your step target",
 } as const;
 
 function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange: (habits: HabitDef[]) => void }) {

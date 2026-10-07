@@ -26,7 +26,10 @@ export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
   mode: "startDate",
   startDate: todayISO(),
   eventDate: addWeeks(todayISO(), 20),
+  activitySource: "steps",
   activityLevel: "moderate",
+  dailySteps: 10000,
+  trainingDays: 4,
   tdeeOverride: null,
   includeMetabolicAdaptation: true,
 };

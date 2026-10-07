@@ -49,6 +49,7 @@ import { describeDuration, formatLong, isValidISODate } from "@/lib/dates";
 import { formatCalories, formatWeight } from "@/lib/format";
 import type {
   ActivityLevel,
+  ActivitySource,
   BiometricProfile,
   FatLossInputs,
   GoalType,
@@ -56,6 +57,7 @@ import type {
   WeightUnit,
 } from "@/lib/types";
 import { fromLb, round, toLb } from "@/lib/units";
+import { STEP_LIMITS, TRAINING_DAY_LIMITS, kcalPerThousandSteps, maintenanceBreakdown } from "@/lib/activity";
 
 interface FatLossCalculatorProps {
   profile: BiometricProfile;
@@ -76,6 +78,11 @@ const MODE_OPTIONS: readonly { value: TimelineMode; label: string; hint: string 
 const GOAL_OPTIONS: readonly { value: GoalType; label: string }[] = [
   { value: "weight", label: "Goal weight" },
   { value: "bodyFat", label: "Goal body fat %" },
+];
+
+const ACTIVITY_SOURCE_OPTIONS: readonly { value: ActivitySource; label: string }[] = [
+  { value: "steps", label: "Steps and training" },
+  { value: "level", label: "Activity level" },
 ];
 
 const RATE_PRESET_OPTIONS = [
@@ -100,6 +107,8 @@ export function FatLossCalculator({
   );
 
   const currentBodyFat = resolveBodyFat(profile);
+  // Where maintenance comes from, at today's weight (before any known override).
+  const maintenance = maintenanceBreakdown(profile, inputs);
 
   const goalWeight = React.useMemo(() => {
     if (inputs.goalType === "weight") return inputs.targetWeight;
@@ -277,25 +286,98 @@ export function FatLossCalculator({
 
           {/* ------------------------ Energy model ---------------------- */}
           <div className="space-y-3 border-t border-border pt-4">
-            <Field label="Activity level" htmlFor="activity-level">
-              <Select
-                value={inputs.activityLevel}
-                onValueChange={(value) =>
-                  onChange({ activityLevel: value as ActivityLevel })
-                }
-              >
-                <SelectTrigger id="activity-level">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((level) => (
-                    <SelectItem key={level} value={level}>
-                      {ACTIVITY_LABELS[level]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Field label="Estimate maintenance from">
+              <SegmentedControl
+                ariaLabel="Estimate maintenance from"
+                value={inputs.activitySource}
+                onValueChange={(value) => onChange({ activitySource: value })}
+                options={ACTIVITY_SOURCE_OPTIONS}
+                size="sm"
+              />
             </Field>
+
+            {inputs.activitySource === "steps" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberField
+                    label="Daily steps"
+                    value={inputs.dailySteps}
+                    onValueChange={(value) =>
+                      onChange({ dailySteps: Math.round(Math.min(Math.max(value, STEP_LIMITS.min), STEP_LIMITS.max)) })
+                    }
+                    min={STEP_LIMITS.min}
+                    max={STEP_LIMITS.max}
+                    step={500}
+                    decimals={0}
+                    help="Your usual daily average from your phone or watch. Log your real steps on Check-in to see if you're matching it."
+                  />
+                  <NumberField
+                    label="Training days"
+                    value={inputs.trainingDays}
+                    onValueChange={(value) =>
+                      onChange({
+                        trainingDays: Math.round(
+                          Math.min(Math.max(value, TRAINING_DAY_LIMITS.min), TRAINING_DAY_LIMITS.max),
+                        ),
+                      })
+                    }
+                    suffix="/wk"
+                    min={TRAINING_DAY_LIMITS.min}
+                    max={TRAINING_DAY_LIMITS.max}
+                    step={1}
+                    decimals={0}
+                    help="Weight training or cardio sessions of about an hour."
+                  />
+                </div>
+                <dl className="tabular space-y-1 rounded-lg border border-border bg-muted/30 p-3 text-xs">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Resting + daily life</dt>
+                    <dd>{Math.round(maintenance.base).toLocaleString()}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">{inputs.dailySteps.toLocaleString()} steps</dt>
+                    <dd className="text-success">+{Math.round(maintenance.steps).toLocaleString()}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">
+                      {inputs.trainingDays} training day{inputs.trainingDays === 1 ? "" : "s"} (daily average)
+                    </dt>
+                    <dd className="text-success">+{Math.round(maintenance.training).toLocaleString()}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2 border-t border-border pt-1 text-sm font-semibold">
+                    <dt>Maintenance</dt>
+                    <dd>{Math.round(maintenance.total).toLocaleString()} kcal</dd>
+                  </div>
+                  <p className="pt-1 text-[11px] text-muted-foreground">
+                    Every 1,000 extra daily steps burns about {Math.round(kcalPerThousandSteps(profile.weight))} kcal.
+                  </p>
+                </dl>
+              </>
+            ) : (
+              <Field label="Activity level" htmlFor="activity-level">
+                <Select
+                  value={inputs.activityLevel}
+                  onValueChange={(value) =>
+                    onChange({ activityLevel: value as ActivityLevel })
+                  }
+                >
+                  <SelectTrigger id="activity-level">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {ACTIVITY_LABELS[level]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  One guess for steps and training together. Switch to <strong>Steps and training</strong> for an
+                  estimate built from your actual day — your targets will update when you do.
+                </p>
+              </Field>
+            )}
 
             <NumberField
               label="Known maintenance calories"
@@ -311,7 +393,9 @@ export function FatLossCalculator({
               hint={
                 inputs.tdeeOverride
                   ? "Overrides the estimate, and still falls as you get lighter."
-                  : `Estimated ${formatCalories(firstWeek?.tdee ?? 0)} from Mifflin-St Jeor + activity.`
+                  : `Estimated ${formatCalories(firstWeek?.tdee ?? 0)} from ${
+                      inputs.activitySource === "steps" ? "your steps and training" : "Mifflin-St Jeor + activity level"
+                    }.`
               }
               help="If you have tracked your intake at stable weight, enter it here. A measured maintenance figure beats any formula."
             />

@@ -28,9 +28,11 @@ export type HabitKind = "check" | "count";
 
 /**
  * Ties a habit to app data: protein and calories show the day's targets from
- * the roadmap; workout is the habit a rest day excuses.
+ * the roadmap; workout is the habit a rest day excuses; steps takes the day's
+ * step count and ticks itself at the plan's step target.
  */
-export type HabitLink = "protein" | "calories" | "workout";
+export type HabitLink = "protein" | "calories" | "workout" | "steps";
+const HABIT_LINKS: readonly HabitLink[] = ["protein", "calories", "workout", "steps"];
 
 export interface HabitDef {
   id: string;
@@ -53,6 +55,11 @@ export interface HabitLog {
 
 /** Reserved entry key marking a day as a rest day. */
 export const REST_KEY = "_rest";
+/** Reserved entry key holding the day's step count, when the member logs it. */
+export const STEPS_KEY = "_steps";
+export const MAX_DAILY_STEPS = 100_000;
+/** Step target when the plan doesn't set one (it uses an activity level). */
+export const DEFAULT_STEP_TARGET = 10_000;
 export const MAX_REST_DAYS_PER_WEEK = 3;
 export const MAX_HABITS = 15;
 export const HABIT_NAME_MAX = 48;
@@ -67,7 +74,7 @@ export const DEFAULT_HABITS: HabitDef[] = [
   { id: "protein", name: "Hit daily protein target (±10 g)", kind: "check", target: null, unit: null, link: "protein" },
   { id: "calories", name: "Hit calorie target", kind: "check", target: null, unit: null, link: "calories" },
   { id: "prelog", name: "Pre-logged meals before eating", kind: "check", target: null, unit: null, link: null },
-  { id: "steps", name: "Hit daily step target (10,000)", kind: "check", target: null, unit: null, link: null },
+  { id: "steps", name: "Hit daily step target", kind: "check", target: null, unit: null, link: "steps" },
   { id: "hydration", name: "Hit hydration goal (100+ oz)", kind: "check", target: null, unit: null, link: null },
   { id: "sleep", name: "Slept 7+ hours", kind: "check", target: null, unit: null, link: null },
   { id: "workout", name: "Completed workout", kind: "check", target: null, unit: null, link: "workout" },
@@ -106,7 +113,8 @@ export function sanitizeHabitDefs(raw: unknown): HabitDef[] {
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
     const h = item as Record<string, unknown>;
-    const id = typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY ? h.id : null;
+    const id =
+      typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY && h.id !== STEPS_KEY ? h.id : null;
     const name = typeof h.name === "string" ? h.name.trim().slice(0, HABIT_NAME_MAX) : "";
     const kind: HabitKind = h.kind === "count" ? "count" : "check";
     if (!id || !name || seen.has(id)) continue;
@@ -120,8 +128,9 @@ export function sanitizeHabitDefs(raw: unknown): HabitDef[] {
         ? h.unit.trim().slice(0, HABIT_UNIT_MAX)
         : null;
     // Each link may belong to one habit only.
-    let link: HabitLink | null =
-      h.link === "protein" || h.link === "calories" || h.link === "workout" ? h.link : null;
+    let link: HabitLink | null = (HABIT_LINKS as readonly unknown[]).includes(h.link) ? (h.link as HabitLink) : null;
+    // The default step habit, saved before step logging existed.
+    if (!link && id === "steps" && kind === "check") link = "steps";
     if (link && usedLinks.has(link)) link = null;
     if (link) usedLinks.add(link);
     out.push({ id, name, kind, target: kind === "count" ? (target ?? 1) : null, unit, link });
@@ -154,6 +163,11 @@ export function validateHabitEntries(
     if (key === REST_KEY) {
       if (typeof value !== "boolean") return { ok: false, error: "Rest day must be true or false." };
       if (value) clean[key] = true;
+    } else if (key === STEPS_KEY) {
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_DAILY_STEPS) {
+        return { ok: false, error: "Steps must be a whole number up to 100,000." };
+      }
+      if (value > 0) clean[key] = value;
     } else if (typeof value === "boolean") {
       if (value) clean[key] = true; // false is the same as not logged
     } else if (typeof value === "number" && Number.isFinite(value)) {
