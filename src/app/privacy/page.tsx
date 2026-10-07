@@ -207,7 +207,7 @@ export default function PrivacyPage() {
               Macros tab, and weigh-in, habit and recap reminders from the Reminders card on the Check-in tab.
             </li>
             <li>
-              <strong>Leave the leaderboard</strong> at any time from the Community leaderboard card on the Check-in tab.
+              <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
             </li>
             <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.

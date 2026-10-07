@@ -30,7 +30,6 @@ import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ConsistencyCard } from "@/components/consistency-card";
 import { RemindersCard } from "@/components/reminders-card";
-import { LeaderboardCard } from "@/components/leaderboard-card";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ReminderPrefs } from "@/lib/reminders";
 import { buildRoadmap } from "@/lib/roadmap";
@@ -446,8 +445,6 @@ export function CheckinTab({
         />
 
         <ConsistencyCard habits={habits} logs={habitLogs} today={today} />
-
-        <LeaderboardCard availability={reminderStatus.availability} />
 
         {adjustments.length > 0 ? (
           <Card>

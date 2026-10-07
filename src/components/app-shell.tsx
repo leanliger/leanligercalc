@@ -10,6 +10,7 @@ import {
   Salad,
   Scale,
   TrendingDown,
+  Trophy,
   Utensils,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,6 +26,7 @@ import { ProfileCard } from "@/components/profile-card";
 import { RoadmapCalendar } from "@/components/roadmap-calendar";
 import { CheckinTab } from "@/components/checkin-tab";
 import { MacrosTab } from "@/components/macros-tab";
+import { LeaderboardTab } from "@/components/leaderboard-tab";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
 import {
@@ -624,7 +626,7 @@ export function AppShell() {
           ) : (
             <Tabs value={state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
               <div className="flex flex-wrap items-center gap-3">
-                <TabsList className="relative scrollbar-thin max-w-full overflow-x-auto [&>button]:px-2 sm:[&>button]:px-4 [&_svg]:hidden sm:[&_svg]:block">
+                <TabsList className="relative scrollbar-thin max-w-full gap-0.5 overflow-x-auto sm:gap-1 [&>button]:px-1.5 [&>button]:text-[13px] sm:[&>button]:px-4 sm:[&>button]:text-sm [&_svg]:hidden sm:[&_svg]:block">
                   <TabsTrigger value="timeline">
                     <TrendingDown />
                     <span className="sm:hidden">Timeline</span>
@@ -646,6 +648,11 @@ export function AppShell() {
                   <TabsTrigger value="checkin">
                     <Scale />
                     Check-in
+                  </TabsTrigger>
+                  {/* On phones the trophy stands in for the word, so all six tabs fit. */}
+                  <TabsTrigger value="leaderboard" className="[&_svg]:!block">
+                    <Trophy />
+                    <span className="sr-only sm:not-sr-only">Leaderboard</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -725,6 +732,10 @@ export function AppShell() {
                   notifications={{ availability: notifyAvailability, error: reminderError }}
                   onNavigate={setTab}
                 />
+              </TabsContent>
+
+              <TabsContent value="leaderboard">
+                <LeaderboardTab availability={notifyAvailability} onNavigate={setTab} />
               </TabsContent>
 
               <TabsContent value="checkin">

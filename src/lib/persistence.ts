@@ -41,8 +41,8 @@ import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./
 // shared profile, so old payloads no longer deserialise correctly.
 const STORAGE_KEY = "prep-calculator:v2";
 
-export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "checkin";
-const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "checkin"];
+export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "checkin" | "leaderboard";
+const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "checkin", "leaderboard"];
 
 /** Personal progress state. Never put in shareable URLs. */
 export interface TrackingState {
