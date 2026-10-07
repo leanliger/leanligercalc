@@ -14,7 +14,7 @@ export const metadata: Metadata = {
  * changes what is stored or who it's shared with, update this page in the
  * same change — and bump EFFECTIVE_DATE.
  */
-const EFFECTIVE_DATE = "October 4, 2026";
+const EFFECTIVE_DATE = "October 7, 2026";
 const BUSINESS = "Lean Liger Fitness & Coaching";
 const CONTACT_EMAIL = "lean.liger.fitness@gmail.com";
 
@@ -60,8 +60,9 @@ export default function PrivacyPage() {
         <Section title="1. What we collect">
           <p>
             <strong>Your Whop identity.</strong> When you open the app inside Whop, Whop tells us your Whop user ID so we
-            can keep your data separate from everyone else&apos;s. We do not receive your name, email address, password or
-            payment details from Whop.
+            can keep your data separate from everyone else&apos;s. When your coach opens the coach dashboard, Whop also
+            provides your display name, username and profile photo so your coach can recognise you; we show them there
+            and don&apos;t store them. We never receive your email address, password or payment details from Whop.
           </p>
           <p>
             <strong>Information you enter.</strong> Everything else comes from you:
@@ -105,6 +106,7 @@ export default function PrivacyPage() {
             <li>To compare your weigh-ins with your plan and suggest calorie adjustments.</li>
             <li>To show your habit scorecard, food log, and fasting timer.</li>
             <li>To send the notifications and reminders you switch on.</li>
+            <li>To let your coach review your progress and support you (see &ldquo;Your coach&rdquo; below).</li>
             <li>To keep your data in sync across the devices where you open the app in Whop.</li>
           </List>
           <p>
@@ -130,8 +132,23 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="4. Who we share it with">
-          <p>We share information only with the services needed to run the app:</p>
+        <Section title="4. Your coach, and who else sees it">
+          <p>
+            <strong>Your coach.</strong> {BUSINESS} runs this app as part of your coaching program. The owner and admins
+            of the Whop you joined can see a <strong>coach dashboard</strong> showing, for each member:
+          </p>
+          <List>
+            <li>your Whop display name, username and profile photo;</li>
+            <li>your plan (profile, goal and settings) and how your weight is tracking against it;</li>
+            <li>your weigh-ins from the last 4 months, including any calories and notes you added;</li>
+            <li>your habit ticks from the last 3 months, with your streaks and weekly scores;</li>
+            <li>your daily food totals (calories, protein, carbs and fat) from the last 2 weeks — not the individual foods.</li>
+          </List>
+          <p>
+            Your coach can only view this, not change it. Only admins of the Whop you&apos;re a member of can open the
+            dashboard; other members never see your data. Your weekly self-audit notes and saved foods are not shown.
+          </p>
+          <p>We also share information with the services needed to run the app:</p>
           <List>
             <li>
               <strong>Cloudflare</strong> hosts the app and its database. It processes your requests and the data you save
@@ -195,8 +212,9 @@ export default function PrivacyPage() {
         <Section title="7. Security">
           <p>
             Data is encrypted in transit (HTTPS). Your identity is verified using a signed token from Whop, and the app only
-            ever reads or changes the data that belongs to the verified user. Access to our hosting and database accounts is
-            restricted to us. No system is perfectly secure, but we work to protect your information and will tell you if a
+            ever changes the data that belongs to the verified user. The coach dashboard checks with Whop, every time it
+            loads, that the viewer is an admin of your Whop, and shows only that Whop&apos;s current members. Access to our
+            hosting and database accounts is restricted to us. No system is perfectly secure, but we work to protect your information and will tell you if a
             breach affects it.
           </p>
         </Section>

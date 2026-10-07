@@ -640,8 +640,9 @@ function StorageCard({
         <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Your weight, food and habit logs are health data. They&apos;re stored only to run the app, and you can delete
-            all of it here at any time.{" "}
+            Your weight, food and habit logs are health data. They&apos;re stored only to run the app and for your coach
+            to review — your coach can see your plan, weigh-ins, habits and daily food totals, but not change them. You
+            can delete all of it here at any time.{" "}
             <a href="/privacy/" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-foreground">
               Privacy policy
             </a>

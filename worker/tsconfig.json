@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["./**/*.ts", "../src/lib/tracking.ts", "../src/lib/dates.ts", "../src/lib/habits.ts", "../src/lib/reviews.ts", "../src/lib/food.ts", "../src/lib/fasting.ts"]
+  "include": ["./**/*.ts", "../src/lib/tracking.ts", "../src/lib/dates.ts", "../src/lib/habits.ts", "../src/lib/reviews.ts", "../src/lib/food.ts", "../src/lib/fasting.ts", "../src/lib/coach-api.ts"]
 }

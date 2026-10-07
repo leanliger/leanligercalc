@@ -212,6 +212,7 @@ Accepted changes are stored with the plan and shift the roadmap's calories from 
 | `GET /api/my-foods` · `PUT` / `DELETE /api/my-foods/:id` | Foods I typed in myself |
 | `PUT` / `DELETE /api/fasting-reminders` | Turn my fasting notifications on (or update them) / off |
 | `PUT` / `DELETE /api/reminders` | Set my weigh-in / habits / recap reminder times / turn them all off |
+| `GET /api/coach/overview?company=biz_…` | Coach dashboard data — admins of that whop only |
 | `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
 | `GET /api/food/search?q=` | **Public.** Search products by name |
 | `DELETE /api/me` | Delete everything stored about me |
@@ -307,6 +308,18 @@ Open Food Facts is crowd-sourced: most products are right, some are wrong (per-s
 - Limits: up to 40 sends per minute (the free plan allows 50 outgoing requests per run; the rest go the next minute). The table is read once a minute, which stays inside D1's free read allowance for a few thousand members.
 
 **Storage.** Food logs (`food_logs`, one row per day) and saved foods (`my_foods`) follow the same cloud/local rules as weigh-ins; on-device logs keep the last 365 days. Meals can be pre-logged up to 7 days ahead. "Delete all my data" removes all of it. Tables are added by migration `0004`.
+
+## Coach dashboard
+
+Opening the app from the **Whop creator dashboard** (Whop serves it at `/dashboard/[companyId]`) shows a read-only coach view instead of the member app (`src/components/app-root.tsx` picks the view from the URL):
+
+- **At a glance:** members, how many logged in the last 3 days, how many need attention, and the average scorecard this week.
+- **Member list**, sorted so the people who need you come first, with filters for *Behind plan* (from the same adaptive analysis the member sees), *Red Zone* (scorecard under 60% this week), *No logs 3+ days* and *No plan*, plus search.
+- **Member detail:** weight vs plan (chart, actual vs planned rate per week, goal), the Streaks & consistency card, daily food totals for the last week, and recent weigh-ins. `?member=user_…` opens a member directly.
+
+**Who can see what** (`worker/coach.ts`, `GET /api/coach/overview?company=biz_…`): the viewer must have a verified Whop token *and* be an `admin` of that company — checked with Whop's access API on every load. The members shown are that company's current members according to Whop's member list (which also supplies names and avatars, not stored); nobody else's data is ever returned. History is limited to 4 months of weigh-ins, 3 months of habits and 2 weeks of daily food totals (no individual foods, no self-audit notes, no saved foods). Members are told in the Check-in tab and the privacy policy.
+
+**Whop setup:** in the app's settings in Whop's developer dashboard, set the **Dashboard path** to `/dashboard/[companyId]` and add the **`member:basic:read`** permission (approve the update in your whop). Then open the app from your whop's dashboard.
 
 ## Validation and warnings
 

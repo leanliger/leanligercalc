@@ -24,6 +24,7 @@
  *   DELETE /api/fasting-reminders  turn them off
  *   PUT    /api/reminders          set my weigh-in / habits / recap reminders
  *   DELETE /api/reminders          turn them all off
+ *   GET    /api/coach/overview?company=biz_…  coach dashboard (admins of that whop only)
  *   DELETE /api/me                 delete everything stored about me
  *
  * The user id only ever comes from a verified Whop token (see auth.ts) and is
@@ -70,9 +71,10 @@ import {
 } from "./reminders";
 import { validateReminderRequest } from "../src/lib/fasting";
 import { validateRemindersRequest } from "../src/lib/reminders";
+import { coachOverview, type CoachEnv } from "./coach";
 import { secretValue } from "./secrets";
 
-export interface Env extends AuthEnv, FoodEnv, ReminderEnv {
+export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv {
   DB: D1Database;
   ASSETS: Fetcher;
 }
@@ -499,6 +501,14 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!result.ok) return error(422, result.error);
     await saveReminders(env, userId, result.value);
     return json({ ok: true });
+  }
+
+  /* ---------------------------- coach dashboard ---------------------------- */
+
+  if (path === "/api/coach/overview") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await coachOverview(env, userId, url.searchParams.get("company") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
   /* -------------------------------- plan -------------------------------- */
