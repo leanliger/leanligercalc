@@ -69,7 +69,7 @@ interface RunCounts {
 
 /* ------------------------------ Whop sending ------------------------------ */
 
-async function sendWhop(
+export async function sendWhop(
   env: ReminderEnv,
   experienceId: string,
   userId: string,

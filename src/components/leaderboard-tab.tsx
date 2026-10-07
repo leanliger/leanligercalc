@@ -4,17 +4,49 @@ import * as React from "react";
 import { CalendarDays, Flame, ListChecks, ShieldCheck, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented";
 import { LeaderboardCard } from "@/components/leaderboard-card";
+import { LiftBoard } from "@/components/lift-board";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { DAILY_STREAK_PERCENT } from "@/lib/streaks";
+import type { WeightUnit } from "@/lib/types";
 
 interface LeaderboardTabProps {
   availability: NotificationStatus["availability"];
   onNavigate: (tab: "checkin") => void;
+  unit: WeightUnit;
+  /** Latest known bodyweight, to pre-fill lift submissions. */
+  bodyweightLb: number | null;
+  today: string;
 }
 
-/** The Leaderboard tab: the board itself, and how the challenge works. */
-export function LeaderboardTab({ availability, onNavigate }: LeaderboardTabProps) {
+type Board = "streaks" | "lifts";
+
+/** The Leaderboard tab: habit streaks, or verified lifts. */
+export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today }: LeaderboardTabProps) {
+  const [board, setBoard] = React.useState<Board>("streaks");
+  return (
+    <div className="space-y-5">
+      <SegmentedControl
+        ariaLabel="Leaderboard"
+        value={board}
+        onValueChange={setBoard}
+        options={[
+          { value: "streaks", label: "Habit streaks" },
+          { value: "lifts", label: "Lifts" },
+        ]}
+        className="max-w-xs"
+      />
+      {board === "lifts" ? (
+        <LiftBoard availability={availability} unit={unit} bodyweightLb={bodyweightLb} today={today} />
+      ) : (
+        <StreakBoard availability={availability} onNavigate={onNavigate} />
+      )}
+    </div>
+  );
+}
+
+function StreakBoard({ availability, onNavigate }: Pick<LeaderboardTabProps, "availability" | "onNavigate">) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <LeaderboardCard availability={availability} />

@@ -90,6 +90,10 @@ export default function PrivacyPage() {
               yourself (name, muscle, equipment, form cues and an optional demo video link).
             </li>
             <li>
+              <strong>Lift leaderboard submissions — only if you submit one:</strong> the lift, the weight, your bodyweight,
+              the date, the video link you paste and any note, plus your Whop display name, username and profile photo.
+            </li>
+            <li>
               Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit and
               weekly recap reminders. If you switch any notifications on, also your time zone and which Whop community you
               opened the app from (so they reach you there at the right time).
@@ -201,6 +205,15 @@ export default function PrivacyPage() {
             zone is stored so your streak follows your own day. You can leave the leaderboard at any time, which removes
             you from it immediately.
           </p>
+          <p>
+            <strong>Lift leaderboard.</strong> If you submit a squat, bench press or deadlift, the admins of your Whop
+            community see everything you submitted (including your bodyweight) so they can check the video. Until they
+            approve it, no one else sees it. Once approved, members of the same community see your Whop display name and
+            profile photo, the lift, the weight, your weight-to-bodyweight ratio, the date and your video link. Your
+            bodyweight isn&apos;t shown, but it can be worked out from the weight and the ratio. The video itself stays
+            wherever you uploaded it (for example YouTube); we only store the link. You can withdraw a submission at any
+            time, and admins can remove one.
+          </p>
           <p>We also share information with the services needed to run the app:</p>
           <List>
             <li>
@@ -211,7 +224,8 @@ export default function PrivacyPage() {
               <strong>Whop</strong> provides sign-in and delivers notifications. When you switch notifications on, we send
               Whop your user ID and the text of each notification so it can deliver it to you — for example your meal times,
               how many habits are left today and your streak, or your weekly recap (scorecard, weight change and average
-              protein).
+              protein). If you submit a lift, Whop also delivers the result of the review (the lift, weight, ratio and
+              your rank, or the admin&apos;s reason).
             </li>
             <li>
               <strong>Open Food Facts</strong> and <strong>USDA FoodData Central</strong> provide nutrition data. When you
@@ -246,7 +260,7 @@ export default function PrivacyPage() {
               <strong>Delete everything:</strong> open the <strong>Check-in</strong> tab and use{" "}
               <strong>&ldquo;Delete all my data&rdquo;</strong>. This permanently removes your weigh-ins, habits, weekly
               notes, measurements, progress photos, food logs, saved foods, workouts, plan and training programs, notification
-              settings and leaderboard entry.
+              settings, leaderboard entry and lift submissions.
             </li>
             <li>
               <strong>Delete or change individual items</strong> directly in the app: weigh-ins, foods, habits and meal
@@ -258,6 +272,9 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
+            </li>
+            <li>
+              <strong>Withdraw a lift submission</strong> (waiting, approved or not) at any time from Leaderboard → Lifts.
             </li>
             <li>
               <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from the Progress photos

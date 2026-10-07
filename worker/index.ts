@@ -32,6 +32,10 @@
  *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
  *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
  *   PUT    /api/leaderboard        join it        DELETE /api/leaderboard?experience=…  leave it
+ *   GET    /api/lift-board?experience=exp_…  lift leaderboard, my submissions, review queue (admins)
+ *   POST   /api/lift-board/submissions        submit a lift with a video link
+ *   DELETE /api/lift-board/submissions/:id    withdraw one of mine
+ *   PUT    /api/lift-board/submissions/:id/review  admins: approve or reject
  *   GET    /api/workouts           all of my workouts, oldest first
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
@@ -86,6 +90,8 @@ import { deleteAllPhotos, deletePhoto, listPhotos, setSharing, streamPhoto, uplo
 import { MAX_MEASUREMENTS, validateMeasurement, type Measurement } from "../src/lib/measurements";
 import { MAX_WORKOUTS, WORKOUT_ID_PATTERN, validateWorkout, type Workout } from "../src/lib/training";
 import { getLeaderboard, joinLeaderboard, leaveLeaderboard, type LeaderboardEnv } from "./leaderboard";
+import { getLiftBoard, reviewLift, submitLift, withdrawLift } from "./lift-board";
+import { SUBMISSION_ID_PATTERN } from "../src/lib/lift-board";
 import { secretValue } from "./secrets";
 
 export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv {
@@ -688,6 +694,38 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return error(405, "Method not allowed.");
   }
 
+  /* ---------------------------- lift leaderboard ---------------------------- */
+
+  if (path === "/api/lift-board") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await getLiftBoard(env, userId, url.searchParams.get("experience") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  if (path === "/api/lift-board/submissions") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = await submitLift(env, userId, body.value);
+    return result.ok ? json(result.body, 201) : error(result.status, result.error);
+  }
+
+  const liftMatch = /^\/api\/lift-board\/submissions\/([^/]+)(\/review)?$/.exec(path);
+  if (liftMatch) {
+    const id = liftMatch[1]!;
+    if (!SUBMISSION_ID_PATTERN.test(id)) return error(404, "Not found.");
+    if (liftMatch[2]) {
+      if (method !== "PUT") return error(405, "Method not allowed.");
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await reviewLift(env, userId, id, body.value);
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    await withdrawLift(env, userId, id);
+    return noContent();
+  }
+
   /* -------------------------------- plan -------------------------------- */
 
   if (path === "/api/plan") {
@@ -747,6 +785,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM fasting_reminders WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM reminders WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM leaderboard WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM lift_submissions WHERE user_id = ?").bind(userId),
     ]);
     return noContent();
   }

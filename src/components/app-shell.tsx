@@ -876,7 +876,13 @@ export function AppShell() {
               </TabsContent>
 
               <TabsContent value="leaderboard">
-                <LeaderboardTab availability={notifyAvailability} onNavigate={setTab} />
+                <LeaderboardTab
+                  availability={notifyAvailability}
+                  onNavigate={setTab}
+                  unit={state.unit}
+                  bodyweightLb={weighIns[weighIns.length - 1]?.weightLb ?? state.profile.weight}
+                  today={today}
+                />
               </TabsContent>
 
               <TabsContent value="checkin">

@@ -218,6 +218,8 @@ Accepted changes are stored with the plan and shift the roadmap's calories from 
 | `GET /api/coach/photo?company&member&id` | A member’s photo — admins only, and only while that member shares |
 | `GET` / `PUT` / `DELETE /api/leaderboard` | View (members of that community), join, or leave the streak leaderboard |
 | `GET /api/workouts` · `PUT` / `DELETE /api/workouts/:id` | My workouts (saved while in progress, too) |
+| `GET /api/lift-board?experience=exp_…` | Lift leaderboard, my submissions, and (admins) the review queue |
+| `POST /api/lift-board/submissions` · `DELETE …/:id` · `PUT …/:id/review` | Submit a lift / withdraw mine / approve or reject (admins of that community) |
 | `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
 | `GET /api/food/search?q=` | **Public.** Search products by name |
 | `DELETE /api/me` | Delete everything stored about me |
@@ -262,7 +264,7 @@ builds the static export, applies migrations to a local database, and runs the r
 
 ### Privacy
 
-Body weight and food logs are health data. Members can delete everything from the Check-in tab at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods, measurements, photos, workouts and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Check-in delete card. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
+Body weight and food logs are health data. Members can delete everything from the Check-in tab at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods, measurements, photos, workouts, lift submissions and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Check-in delete card. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
 
 ## Measurements and progress photos
 
@@ -284,6 +286,15 @@ The **Training** tab (`training-tab.tsx`) is a workout log with an exercise libr
 - **Progress** (`exercise-progress.tsx`): tap any exercise for best est. 1RM (Epley: weight × (1 + reps ÷ 30)), heaviest weight, sessions and last time; a chart of est. 1RM / best weight / volume (best set / total reps for bodyweight) with personal records marked; and the full history.
 
 Weights are stored in pounds and shown in the member's unit. Programs, own exercises and rest settings live in the plan document (`tracking.training`, re-sanitised on load — entries pointing at a deleted exercise are dropped; `PLAN_MAX_BYTES` is 256 kB to fit them at their limits). Workouts have their own table (`workouts`, one JSON row per workout validated by `validateWorkout()`, up to 2,000 per member) from migration `0009`, or the `prep-calculator:workouts:v1` local storage key outside Whop. The coach dashboard doesn't show training yet, and strips it from the plans it loads.
+
+## Lift leaderboard
+
+Leaderboard → **Lifts** (`lift-board.tsx`, `src/lib/lift-board.ts`, `worker/lift-board.ts`): verified one-rep squat, bench press and deadlift, ranked by **weight ÷ bodyweight** (ties: the heavier lift, then the earlier submission). Each member's best approved lift per exercise counts.
+
+- **Submitting:** lift, weight, bodyweight (pre-filled from the latest weigh-in), date (last 12 months), a **video link** (https — YouTube unlisted, Instagram, Google Drive…; the app stores only the link) and an optional note. One pending submission per lift at a time, 30 per lift kept. The form shows the ratio and says what other members will see.
+- **Review:** admins of the community (checked with Whop on every call) get a *Lifts to review* queue in the same tab — watch, then **Approve**, or **Reject** with a reason (one-tap presets or free text). Admins can also remove an approved entry from the board. The member gets a Whop notification either way (with their rank, or the reason). Review happens inside the community's app view, not the company coach dashboard, because submissions belong to a community (`exp_…`).
+- **Visibility:** pending and rejected submissions are seen only by the member and admins. Approved ones show the member's Whop name and photo, weight, ratio, date and a Watch button to everyone in that community. Bodyweight is never sent to other members (though it can be worked out from weight ÷ ratio — the form says so). User ids are never sent; admins also get submission ids so they can remove entries.
+- **Storage:** `lift_submissions` (migration `0010`). Withdrawing deletes the row; "Delete all my data" removes them all. Needs `WHOP_API_KEY` (access checks, profile, notifications), like the streak leaderboard.
 
 ## Daily habits and the weekly scorecard
 
