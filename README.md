@@ -212,8 +212,12 @@ Accepted changes are stored with the plan and shift the roadmap's calories from 
 | `GET /api/my-foods` · `PUT` / `DELETE /api/my-foods/:id` | Foods I typed in myself |
 | `PUT` / `DELETE /api/fasting-reminders` | Turn my fasting notifications on (or update them) / off |
 | `PUT` / `DELETE /api/reminders` | Set my weigh-in / habits / recap reminder times / turn them all off |
+| `GET` / `PUT` / `DELETE /api/measurements[/:date]` | My body measurements |
+| `GET` / `POST /api/photos`, `GET` / `DELETE /api/photos/:id`, `PUT /api/photo-settings` | My progress photos (optional) and whether my coach may see them |
 | `GET /api/coach/overview?company=biz_…` | Coach dashboard data — admins of that whop only |
+| `GET /api/coach/photo?company&member&id` | A member’s photo — admins only, and only while that member shares |
 | `GET` / `PUT` / `DELETE /api/leaderboard` | View (members of that community), join, or leave the streak leaderboard |
+| `GET /api/workouts` · `PUT` / `DELETE /api/workouts/:id` | My workouts (saved while in progress, too) |
 | `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
 | `GET /api/food/search?q=` | **Public.** Search products by name |
 | `DELETE /api/me` | Delete everything stored about me |
@@ -258,7 +262,28 @@ builds the static export, applies migrations to a local database, and runs the r
 
 ### Privacy
 
-Body weight and food logs are health data. Members can delete everything from the Check-in tab at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Check-in delete card. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
+Body weight and food logs are health data. Members can delete everything from the Check-in tab at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods, measurements, photos, workouts and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Check-in delete card. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
+
+## Measurements and progress photos
+
+On the Check-in tab, under the weight chart:
+
+- **Measurements** (`src/lib/measurements.ts`, `measurements-card.tsx`): a weekly log of waist, hips, chest, arms and thighs (any subset), stored in inches and shown in cm for kg users. Tiles show each site's latest value and change since the first entry; the chart plots the chosen site against the **weight trend** on twin axes, so a stalling scale with a shrinking waist is obvious. "How to measure" gives consistent landmarks. Works in local mode too (`measurements` table / local storage key), and appears read-only in the coach dashboard.
+- **Progress photos** (`src/lib/photos.ts`, `worker/photos.ts`, `photos-card.tsx`) — **optional and private**: front / side / back per date, a first-vs-latest comparison, and delete any time. Each photo is resized and re-encoded as JPEG on the device (max 1440 px), which strips EXIF/location data, then stored in the private R2 bucket bound as `PHOTOS` under `u/<userId>/<id>.jpg`. There are no public URLs: images stream through the Worker after an identity check, with `Cache-Control: private, no-store`. The server only accepts real JPEG bytes up to 2 MB, 400 per member. **Coach access is off by default**: only while the member switches on *Share my photos with my coach* (`photo_settings`) can an admin of their whop view them (`GET /api/coach/photo`, re-checked on every request). Photos never appear on the leaderboard. Cloud mode only — never stored in the browser. "Delete all my data" removes the objects as well as the rows. Tables from migration `0008`.
+
+**Turning photos on** needs Cloudflare R2, which Cloudflare only enables after a payment method is on file (the free tier covers 10 GB). Once it's enabled: `npx wrangler r2 bucket create leanligercalc-photos`, add `"r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "leanligercalc-photos" }]` to `wrangler.jsonc`, and deploy. Until then the photos card says "Coming soon".
+
+## Training
+
+The **Training** tab (`training-tab.tsx`) is a workout log with an exercise library, programs, a rest timer and progress charts.
+
+- **Exercise library** (`src/lib/exercises.ts`): 78 common lifts grouped by muscle and equipment, each with two form cues and a "Watch a demo" link (a YouTube search, or the exercise's own `video` link — fill in the `VIDEOS` map to attach your own). Ids are permanent: workouts and programs refer to them. Members can add their own exercises (name, muscle, equipment, cues, optional https video link). Bodyweight exercises log *added* weight and are tracked in reps.
+- **Programs** (`src/lib/training.ts`): three templates — Full body (A/B), Upper / Lower (4 days), Push / Pull / Legs — or build your own (up to 8 programs, 7 days, 12 exercises a day). Each entry has sets, a rep range and an optional rest (main lifts 3:00; otherwise the member's default, 2:30 unless changed). "Next up" is the day after the last finished workout from the active program.
+- **Logging** (`workout-logger.tsx`): starting a day pre-fills every set with what was lifted last time; the member adjusts weight/reps and ticks ✓. Ticking a set copies its numbers into an empty next set and starts the rest timer. A trophy marks a set that beats the previous best (estimated 1RM, or reps for bodyweight), and a nudge appears when every set hit the top of the rep range last time. The workout saves as you go (debounced, flushed when the page is hidden) and resumes after a reload; one left open for 12 h stops counting as in progress. **Finish** keeps only completed sets and ticks *Completed workout* on the Check-in scorecard (clearing a rest-day mark for that day). Finished workouts can be edited or deleted from *Recent workouts*.
+- **Rest timer** (`rest-timer.tsx`): counts down to a timestamp, so it's right after the phone pauses the page; kept in local storage across reloads. Quick picks 2:00 / 2:30 / 3:00 (the pick sticks for that exercise), ±15 s, Skip. At zero it chimes (Web Audio, unlocked by the tap that started it) and vibrates where supported (not iPhone); it only sounds if the page is open at that moment. The screen is kept awake during a workout where the browser allows it.
+- **Progress** (`exercise-progress.tsx`): tap any exercise for best est. 1RM (Epley: weight × (1 + reps ÷ 30)), heaviest weight, sessions and last time; a chart of est. 1RM / best weight / volume (best set / total reps for bodyweight) with personal records marked; and the full history.
+
+Weights are stored in pounds and shown in the member's unit. Programs, own exercises and rest settings live in the plan document (`tracking.training`, re-sanitised on load — entries pointing at a deleted exercise are dropped; `PLAN_MAX_BYTES` is 256 kB to fit them at their limits). Workouts have their own table (`workouts`, one JSON row per workout validated by `validateWorkout()`, up to 2,000 per member) from migration `0009`, or the `prep-calculator:workouts:v1` local storage key outside Whop. The coach dashboard doesn't show training yet, and strips it from the plans it loads.
 
 ## Daily habits and the weekly scorecard
 

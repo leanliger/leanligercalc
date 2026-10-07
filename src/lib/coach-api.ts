@@ -5,13 +5,15 @@
  */
 
 import type { HabitEntries } from "./habits";
+import type { Measurement } from "./measurements";
+import type { PhotoMeta } from "./photos";
 import type { WeighIn } from "./tracking";
 
 export const COMPANY_ID_PATTERN = /^biz_[A-Za-z0-9]{1,40}$/;
 /** Members who haven't logged anything for this many days are flagged. */
 export const INACTIVE_DAYS = 3;
 /** How much history the overview carries per member. */
-export const OVERVIEW_DAYS = { weighIns: 120, habits: 91, food: 14 } as const;
+export const OVERVIEW_DAYS = { weighIns: 120, habits: 91, food: 14, measurements: 365 } as const;
 
 /** The company id in a Whop dashboard URL like /dashboard/biz_abc123/… */
 export function companyIdFromPath(path: string): string | null {
@@ -42,6 +44,9 @@ export interface CoachMemberData {
   weighIns: WeighIn[];
   habitLogs: { date: string; entries: HabitEntries }[];
   foodDays: FoodDay[];
+  measurements: Measurement[];
+  /** Their progress photos — null unless they've chosen to share them with you. */
+  photos: PhotoMeta[] | null;
 }
 
 export interface CoachOverview {

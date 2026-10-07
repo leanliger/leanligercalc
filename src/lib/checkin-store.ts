@@ -18,6 +18,8 @@ import { isEmptyReview, validateReview, type WeeklyReview } from "./reviews";
 import { myFoodId, validateFoodLog, validateMyFood, type FoodLog, type FoodProduct } from "./food";
 import { addDays, todayISO } from "./dates";
 import type { RemindersRequest } from "./reminders";
+import { validateMeasurement, type Measurement } from "./measurements";
+import { MAX_WORKOUTS, validateWorkout, type Workout } from "./training";
 
 export type StorageMode = "cloud" | "local";
 
@@ -50,12 +52,22 @@ const LOCAL_HABITS_KEY = "prep-calculator:habits:v1";
 const LOCAL_REVIEWS_KEY = "prep-calculator:reviews:v1";
 const LOCAL_FOOD_KEY = "prep-calculator:food-logs:v1";
 const LOCAL_MY_FOODS_KEY = "prep-calculator:my-foods:v1";
+const LOCAL_MEASUREMENTS_KEY = "prep-calculator:measurements:v1";
+const LOCAL_WORKOUTS_KEY = "prep-calculator:workouts:v1";
 /**
  * On-device food logs older than this are dropped, so browser storage (about
  * 5 MB) never fills up. Cloud storage keeps everything.
  */
 export const LOCAL_FOOD_DAYS = 365;
-const ALL_LOCAL_KEYS = [LOCAL_KEY, LOCAL_HABITS_KEY, LOCAL_REVIEWS_KEY, LOCAL_FOOD_KEY, LOCAL_MY_FOODS_KEY];
+const ALL_LOCAL_KEYS = [
+  LOCAL_KEY,
+  LOCAL_HABITS_KEY,
+  LOCAL_REVIEWS_KEY,
+  LOCAL_FOOD_KEY,
+  LOCAL_MY_FOODS_KEY,
+  LOCAL_MEASUREMENTS_KEY,
+  LOCAL_WORKOUTS_KEY,
+];
 
 function readLocalReviews(): WeeklyReview[] {
   try {
@@ -243,6 +255,62 @@ function writeLocalMyFoods(list: FoodProduct[]): void {
   }
 }
 
+function readLocalMeasurements(): Measurement[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_MEASUREMENTS_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((item) => {
+        const date = (item as { date?: unknown })?.date;
+        if (typeof date !== "string") return null;
+        const result = validateMeasurement(item, date);
+        return result.ok ? result.value : null;
+      })
+      .filter((m): m is Measurement => m !== null)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalMeasurements(list: Measurement[]): void {
+  try {
+    window.localStorage.setItem(LOCAL_MEASUREMENTS_KEY, JSON.stringify(list));
+  } catch {
+    throw new Error("This browser blocked saving. Try opening the app outside private browsing.");
+  }
+}
+
+const byWorkoutTime = (a: Workout, b: Workout) => (a.date === b.date ? a.startedAt - b.startedAt : a.date < b.date ? -1 : 1);
+
+function readLocalWorkouts(): Workout[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_WORKOUTS_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((item) => {
+        const id = (item as { id?: unknown })?.id;
+        if (typeof id !== "string") return null;
+        const result = validateWorkout(item, id);
+        return result.ok ? result.value : null;
+      })
+      .filter((w): w is Workout => w !== null)
+      .sort(byWorkoutTime);
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalWorkouts(list: Workout[]): void {
+  try {
+    window.localStorage.setItem(LOCAL_WORKOUTS_KEY, JSON.stringify(list.slice(-MAX_WORKOUTS)));
+  } catch {
+    throw new Error("This browser blocked saving. Try opening the app outside private browsing.");
+  }
+}
+
 function clearLocal(): void {
   try {
     for (const key of ALL_LOCAL_KEYS) window.localStorage.removeItem(key);
@@ -285,6 +353,14 @@ export interface CheckinStore {
   listMyFoods(): Promise<FoodProduct[]>;
   saveMyFood(food: FoodProduct): Promise<FoodProduct>;
   removeMyFood(id: string): Promise<void>;
+  listMeasurements(): Promise<Measurement[]>;
+  saveMeasurement(m: Measurement): Promise<Measurement>;
+  removeMeasurement(date: string): Promise<void>;
+  /** Every workout, oldest first. */
+  listWorkouts(): Promise<Workout[]>;
+  /** Create or replace one workout (also while it's in progress). */
+  saveWorkout(w: Workout): Promise<Workout>;
+  removeWorkout(id: string): Promise<void>;
   /** Turn on, or update, fasting notifications (cloud only). */
   saveFastingReminders(req: ReminderRequest): Promise<void>;
   deleteFastingReminders(): Promise<void>;
@@ -370,6 +446,30 @@ export function createStore(mode: StorageMode): CheckinStore {
       },
       async removeMyFood(id) {
         await expectOk(await api(`/api/my-foods/${id}`, { method: "DELETE" }));
+      },
+      async listMeasurements() {
+        const res = await expectOk(await api("/api/measurements"));
+        return ((await res.json()) as { measurements: Measurement[] }).measurements;
+      },
+      async saveMeasurement(m) {
+        const { date, ...sites } = m;
+        const res = await expectOk(await api(`/api/measurements/${date}`, { method: "PUT", body: JSON.stringify(sites) }));
+        return ((await res.json()) as { measurement: Measurement }).measurement;
+      },
+      async removeMeasurement(date) {
+        await expectOk(await api(`/api/measurements/${date}`, { method: "DELETE" }));
+      },
+      async listWorkouts() {
+        const res = await expectOk(await api("/api/workouts"));
+        return ((await res.json()) as { workouts: Workout[] }).workouts;
+      },
+      async saveWorkout(w) {
+        const { id, ...body } = w;
+        const res = await expectOk(await api(`/api/workouts/${id}`, { method: "PUT", body: JSON.stringify(body) }));
+        return ((await res.json()) as { workout: Workout }).workout;
+      },
+      async removeWorkout(id) {
+        await expectOk(await api(`/api/workouts/${id}`, { method: "DELETE" }));
       },
       async saveFastingReminders(req) {
         await expectOk(await api("/api/fasting-reminders", { method: "PUT", body: JSON.stringify(req) }));
@@ -460,6 +560,30 @@ export function createStore(mode: StorageMode): CheckinStore {
     },
     async removeMyFood(id) {
       writeLocalMyFoods(readLocalMyFoods().filter((f) => f.key !== `mine:${id}`));
+    },
+    async listMeasurements() {
+      return readLocalMeasurements();
+    },
+    async saveMeasurement(m) {
+      const result = validateMeasurement(m, m.date);
+      if (!result.ok) throw new Error(result.error);
+      writeLocalMeasurements([...readLocalMeasurements().filter((x) => x.date !== m.date), result.value].sort((a, b) => (a.date < b.date ? -1 : 1)));
+      return result.value;
+    },
+    async removeMeasurement(date) {
+      writeLocalMeasurements(readLocalMeasurements().filter((x) => x.date !== date));
+    },
+    async listWorkouts() {
+      return readLocalWorkouts();
+    },
+    async saveWorkout(w) {
+      const result = validateWorkout(w, w.id);
+      if (!result.ok) throw new Error(result.error);
+      writeLocalWorkouts([...readLocalWorkouts().filter((x) => x.id !== w.id), result.value].sort(byWorkoutTime));
+      return result.value;
+    },
+    async removeWorkout(id) {
+      writeLocalWorkouts(readLocalWorkouts().filter((x) => x.id !== id));
     },
     // Notifications are sent by the server, so they need a Whop identity.
     async saveFastingReminders() {

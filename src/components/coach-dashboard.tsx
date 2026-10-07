@@ -4,6 +4,8 @@ import * as React from "react";
 import {
   Activity,
   AlertTriangle,
+  Camera,
+  Lock,
   ArrowLeft,
   ChevronRight,
   Flame,
@@ -22,6 +24,8 @@ import { Stat } from "@/components/stat";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ProgressChart } from "@/components/progress-chart";
 import { ConsistencyCard } from "@/components/consistency-card";
+import { MeasurementsCard } from "@/components/measurements-card";
+import { PhotoGallery } from "@/components/photos-card";
 import {
   FLAG_LABELS,
   INACTIVE_DAYS,
@@ -302,7 +306,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               {/* ----------------------------- detail ----------------------------- */}
               <div className={cn(!current && "hidden lg:block")}>
                 {current ? (
-                  <MemberDetail m={current} unit={unit} today={today} onBack={() => setSelected(null)} />
+                  <MemberDetail m={current} unit={unit} today={today} companyId={companyId} onBack={() => setSelected(null)} />
                 ) : (
                   <EmptyNote>Select a member to see their progress, habits and food.</EmptyNote>
                 )}
@@ -399,7 +403,19 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
 
 /* ================================= detail ================================= */
 
-function MemberDetail({ m, unit, today, onBack }: { m: MemberSummary; unit: WeightUnit; today: string; onBack: () => void }) {
+function MemberDetail({
+  m,
+  unit,
+  today,
+  companyId,
+  onBack,
+}: {
+  m: MemberSummary;
+  unit: WeightUnit;
+  today: string;
+  companyId: string;
+  onBack: () => void;
+}) {
   const p = m.progress;
   const status = STATUS_LABEL[p?.status ?? (m.hasPlan ? "no-data" : "no-plan")] ?? STATUS_LABEL["no-data"]!;
   const weighIns = [...m.data.weighIns].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -476,6 +492,36 @@ function MemberDetail({ m, unit, today, onBack }: { m: MemberSummary; unit: Weig
                 <p className="text-sm text-muted-foreground">No weigh-ins in the last {OVERVIEW_DAYS.weighIns} days.</p>
               )}
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ---------------------------- measurements ---------------------------- */}
+      <MeasurementsCard measurements={m.data.measurements} weighIns={m.data.weighIns} unit={unit} today={today} readOnly />
+
+      {/* ------------------------------- photos ------------------------------- */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Camera className="h-4 w-4 text-primary" />
+            Progress photos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {m.data.photos === null ? (
+            <p className="flex gap-2 text-sm text-muted-foreground">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              Not shared. Photos are private unless the member turns on &ldquo;Share my photos with my coach&rdquo;.
+            </p>
+          ) : m.data.photos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sharing is on, but there are no photos yet.</p>
+          ) : (
+            <PhotoGallery
+              photos={m.data.photos}
+              srcFor={(p) =>
+                `/api/coach/photo?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(m.data.userId)}&id=${encodeURIComponent(p.id)}`
+              }
+            />
           )}
         </CardContent>
       </Card>

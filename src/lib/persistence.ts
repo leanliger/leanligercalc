@@ -36,13 +36,14 @@ import { sanitizeAdjustments, type CalorieAdjustment } from "./tracking";
 import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
 import { DEFAULT_FASTING, sanitizeFasting, type FastingSettings } from "./fasting";
 import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./reminders";
+import { DEFAULT_TRAINING, sanitizeTraining, type TrainingSettings } from "./training";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
 // shared profile, so old payloads no longer deserialise correctly.
 const STORAGE_KEY = "prep-calculator:v2";
 
-export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "checkin" | "leaderboard";
-const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "checkin", "leaderboard"];
+export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
+const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
 
 /** Personal progress state. Never put in shareable URLs. */
 export interface TrackingState {
@@ -53,6 +54,8 @@ export interface TrackingState {
   fasting: FastingSettings;
   /** Weigh-in, habits and Sunday recap reminders (Check-in tab). */
   reminders: ReminderPrefs;
+  /** Programs, the member's own exercises and rest settings (Training tab). */
+  training: TrainingSettings;
 }
 
 export interface AppState {
@@ -70,7 +73,7 @@ export const DEFAULT_APP_STATE: AppState = {
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
-  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS },
+  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING },
 };
 
 /* --------------------------- sanitisation --------------------------- */
@@ -198,6 +201,7 @@ export function sanitizeAppState(raw: unknown): AppState {
       habits: sanitizeHabitDefs(obj(parsed.tracking).habits),
       fasting: sanitizeFasting(obj(parsed.tracking).fasting),
       reminders: sanitizeReminderPrefs(obj(parsed.tracking).reminders),
+      training: sanitizeTraining(obj(parsed.tracking).training),
     },
   };
 }
@@ -338,7 +342,7 @@ export function decodeStateFromQuery(search: string): AppState | null {
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),
-    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS },
+    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING },
   };
 }
 

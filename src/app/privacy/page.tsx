@@ -70,11 +70,24 @@ export default function PrivacyPage() {
           <List>
             <li>Your profile and plan: height, weight, goal weight, age, sex, activity level, and calculator settings.</li>
             <li>Weigh-ins: date, body weight, and optionally calories eaten and a note.</li>
+            <li>Body measurements you log: waist, hips, chest, arms and thighs, with the date.</li>
+            <li>
+              <strong>Progress photos — only if you choose to add them.</strong> Photos are entirely optional. If you add
+              one, we store the image with its date and pose (front, side or back). See &ldquo;Progress photos&rdquo;
+              below.
+            </li>
             <li>Calorie adjustments you accept from check-ins.</li>
             <li>Daily habits you tick, rest days, and your weekly self-audit notes.</li>
             <li>
               Food logs: the foods you add, amounts, calories and macros, meal, and date, plus any foods you save to
               &ldquo;My foods&rdquo; (including barcodes).
+            </li>
+            <li>
+              Workouts you log: the exercises, sets, weights and reps, when you started and finished, and any workout note.
+            </li>
+            <li>
+              Your training setup: the programs you pick or build, your default rest time, and any exercises you add
+              yourself (name, muscle, equipment, form cues and an optional demo video link).
             </li>
             <li>
               Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit and
@@ -100,11 +113,39 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="2. How we use it">
+        <Section title="2. Progress photos (optional)">
+          <List>
+            <li>
+              <strong>Optional.</strong> Nothing in the app requires a photo. You decide whether to add any, and can delete
+              each one at any time.
+            </li>
+            <li>
+              <strong>Private by default.</strong> Only you can see your photos. Your coach can see them only while you have
+              &ldquo;Share my photos with my coach&rdquo; switched on (it starts off), and you can switch it off at any time,
+              which stops access immediately. Photos are never shown to other members, never appear on the leaderboard,
+              and are never sent to any other service.
+            </li>
+            <li>
+              <strong>Stripped before upload.</strong> Your phone shrinks each photo and saves a fresh copy before it&apos;s
+              uploaded, which removes hidden details such as location, camera and time metadata.
+            </li>
+            <li>
+              <strong>Stored privately.</strong> Photos are kept in Cloudflare&apos;s private storage, linked to your Whop
+              user ID, with no public links: each image is only sent after the app has confirmed it&apos;s you (or your
+              coach, if you share).
+            </li>
+            <li>
+              <strong>Photos are only available inside Whop</strong>, and are never stored in your browser.
+            </li>
+          </List>
+        </Section>
+
+        <Section title="3. How we use it">
           <List>
             <li>To calculate your timeline, carb cycling plan, roadmap and daily macro targets.</li>
             <li>To compare your weigh-ins with your plan and suggest calorie adjustments.</li>
             <li>To show your habit scorecard, food log, and fasting timer.</li>
+            <li>To log your workouts, run the rest timer, and chart your lifts and personal records.</li>
             <li>To send the notifications and reminders you switch on.</li>
             <li>To let your coach review your progress and support you (see &ldquo;Your coach&rdquo; below).</li>
             <li>To keep your data in sync across the devices where you open the app in Whop.</li>
@@ -115,7 +156,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="3. Where your data is stored">
+        <Section title="4. Where your data is stored">
           <p>
             <strong>Inside Whop:</strong> your data is stored in a database run by our hosting provider, Cloudflare, in
             North America, linked to your Whop user ID. It follows you to any device where you open the app in Whop.
@@ -132,7 +173,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="4. Your coach, and who else sees it">
+        <Section title="5. Your coach, and who else sees it">
           <p>
             <strong>Your coach.</strong> {BUSINESS} runs this app as part of your coaching program. The owner and admins
             of the Whop you joined can see a <strong>coach dashboard</strong> showing, for each member:
@@ -141,18 +182,22 @@ export default function PrivacyPage() {
             <li>your Whop display name, username and profile photo;</li>
             <li>your plan (profile, goal and settings) and how your weight is tracking against it;</li>
             <li>your weigh-ins from the last 4 months, including any calories and notes you added;</li>
+            <li>your body measurements from the last 12 months;</li>
+            <li>
+              your progress photos — <strong>only if you switch on sharing</strong> (see &ldquo;Progress photos&rdquo;);
+            </li>
             <li>your habit ticks from the last 3 months, with your streaks and weekly scores;</li>
             <li>your daily food totals (calories, protein, carbs and fat) from the last 2 weeks — not the individual foods.</li>
           </List>
           <p>
             Your coach can only view this, not change it. Only admins of the Whop you&apos;re a member of can open the
-            dashboard. Your weekly self-audit notes and saved foods are not shown.
+            dashboard. Your weekly self-audit notes, saved foods, workouts and training programs are not shown.
           </p>
           <p>
             <strong>Other members</strong> never see your data — unless you choose to join the{" "}
             <strong>community leaderboard</strong>. If you join, other members of the same Whop community see your Whop
             display name and profile photo, your current and best habit streak, this week&apos;s scorecard percentage
-            and how many 80%+ days you&apos;ve had this month. Never your weight, measurements, food or notes. Your time
+            and how many 80%+ days you&apos;ve had this month. Never your weight, measurements, photos, food, workouts or notes. Your time
             zone is stored so your streak follows your own day. You can leave the leaderboard at any time, which removes
             you from it immediately.
           </p>
@@ -176,6 +221,10 @@ export default function PrivacyPage() {
               details. If our server can&apos;t reach Open Food Facts, your browser may ask it directly, in which case Open
               Food Facts receives your IP address.
             </li>
+            <li>
+              <strong>YouTube</strong> (or the site of a video link you added) opens in a new tab only when you tap
+              &ldquo;Watch a demo&rdquo; on an exercise. Nothing is sent to it before you tap.
+            </li>
           </List>
           <p>
             Each of these services handles data under its own privacy policy. We may also disclose information if required
@@ -183,7 +232,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="5. How long we keep it">
+        <Section title="6. How long we keep it">
           <p>
             Your data is kept for as long as you use the app, until you delete it. Hosting request logs are kept for a few
             days. Deleted data can remain in our hosting provider&apos;s short-term database backups for up to 30 days before
@@ -191,12 +240,13 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="6. Your choices and rights">
+        <Section title="7. Your choices and rights">
           <List>
             <li>
               <strong>Delete everything:</strong> open the <strong>Check-in</strong> tab and use{" "}
               <strong>&ldquo;Delete all my data&rdquo;</strong>. This permanently removes your weigh-ins, habits, weekly
-              notes, food logs, saved foods, plan, notification settings and leaderboard entry.
+              notes, measurements, progress photos, food logs, saved foods, workouts, plan and training programs, notification
+              settings and leaderboard entry.
             </li>
             <li>
               <strong>Delete or change individual items</strong> directly in the app: weigh-ins, foods, habits and meal
@@ -210,6 +260,10 @@ export default function PrivacyPage() {
               <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
             </li>
             <li>
+              <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from the Progress photos
+              card on the Check-in tab.
+            </li>
+            <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.
             </li>
           </List>
@@ -220,7 +274,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="7. Security">
+        <Section title="8. Security">
           <p>
             Data is encrypted in transit (HTTPS). Your identity is verified using a signed token from Whop, and the app only
             ever changes the data that belongs to the verified user. The coach dashboard checks with Whop, every time it
@@ -230,7 +284,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="8. Children">
+        <Section title="9. Children">
           <p>
             The app is intended for adults aged 18 and over. It is not directed at children, and we do not knowingly
             collect information from anyone under 18. If you believe a child has used it, contact us and we will delete
@@ -238,14 +292,14 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="9. Changes to this policy">
+        <Section title="10. Changes to this policy">
           <p>
             If we change how we handle your information, we will update this page and the effective date above. Significant
             changes will be announced in our Whop community.
           </p>
         </Section>
 
-        <Section title="10. Contact">
+        <Section title="11. Contact">
           <p>
             Questions or requests about your data: email{" "}
             <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-primary underline underline-offset-2">

@@ -36,8 +36,11 @@ export interface CalorieAdjustment {
 export const WEIGHT_LIMITS_LB = { min: 50, max: 1000 } as const;
 export const CALORIE_LIMITS = { min: 0, max: 10000 } as const;
 export const NOTE_MAX_LENGTH = 280;
-/** Ceiling on a stored plan document, in bytes of JSON. */
-export const PLAN_MAX_BYTES = 32 * 1024;
+/**
+ * Ceiling on a stored plan document, in bytes of JSON. Training programs and a
+ * member's own exercises live in it too; at their limits they take ~170 kB.
+ */
+export const PLAN_MAX_BYTES = 256 * 1024;
 /** Ceiling on how many weigh-ins one user can store (~5 years of dailies). */
 export const MAX_WEIGH_INS = 2000;
 

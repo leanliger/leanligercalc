@@ -19,8 +19,10 @@ import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay }
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
 import { accessLevel, hasWhopKey, whopGet, whopReason, type WhopEnv } from "./whop";
+import { isSharingWithCoach, streamPhoto, type PhotoEnv } from "./photos";
+import type { Pose } from "../src/lib/photos";
 
-export interface CoachEnv extends WhopEnv {
+export interface CoachEnv extends WhopEnv, PhotoEnv {
   DB: D1Database;
 }
 
@@ -100,16 +102,17 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     weighIns: addDays(today, -OVERVIEW_DAYS.weighIns),
     habits: addDays(today, -OVERVIEW_DAYS.habits),
     food: addDays(today, -OVERVIEW_DAYS.food),
+    measurements: addDays(today, -OVERVIEW_DAYS.measurements),
   };
   const members = new Map<string, CoachMemberData>();
   for (const p of profiles.values()) {
-    members.set(p.userId, { ...p, plan: null, weighIns: [], habitLogs: [], foodDays: [] });
+    members.set(p.userId, { ...p, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null });
   }
   const ids = [...profiles.keys()];
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
-    const [plans, weighIns, habits, food] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -120,13 +123,36 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       env.DB.prepare(
         `SELECT user_id, date, entries FROM food_logs WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
       ).bind(...chunk, since.food),
+      env.DB.prepare(
+        `SELECT user_id, date, waist, hips, chest, arms, thighs FROM measurements WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
+      ).bind(...chunk, since.measurements),
+      env.DB.prepare(`SELECT user_id FROM photo_settings WHERE share_with_coach = 1 AND user_id IN (${marks})`).bind(...chunk),
+      env.DB.prepare(
+        `SELECT user_id, id, date, pose FROM progress_photos WHERE user_id IN (${marks}) ORDER BY date DESC, created_at DESC`,
+      ).bind(...chunk),
     ]);
+    for (const r of (measurements?.results ?? []) as { user_id: string; date: string; waist: number | null; hips: number | null; chest: number | null; arms: number | null; thighs: number | null }[]) {
+      members.get(r.user_id)?.measurements.push({ date: r.date, waist: r.waist, hips: r.hips, chest: r.chest, arms: r.arms, thighs: r.thighs });
+    }
+    // Photos only for members who chose to share them — and only while R2 is set up.
+    const sharers = new Set(((sharing?.results ?? []) as { user_id: string }[]).map((r) => r.user_id));
+    for (const id of sharers) {
+      const m = members.get(id);
+      if (m && env.PHOTOS) m.photos = [];
+    }
+    for (const r of (photos?.results ?? []) as { user_id: string; id: string; date: string; pose: Pose }[]) {
+      if (sharers.has(r.user_id)) members.get(r.user_id)?.photos?.push({ id: r.id, date: r.date, pose: r.pose });
+    }
 
     for (const r of (plans?.results ?? []) as { user_id: string; state: string }[]) {
       const m = members.get(r.user_id);
       if (!m) continue;
       try {
-        m.plan = JSON.parse(r.state);
+        const plan = JSON.parse(r.state) as { tracking?: Record<string, unknown> } | null;
+        // Training (programs, own exercises) isn't part of the coach view, and
+        // can be the largest part of a plan: leave it out.
+        if (plan?.tracking && typeof plan.tracking === "object") delete plan.tracking.training;
+        m.plan = plan;
       } catch {
         m.plan = null;
       }
@@ -169,4 +195,31 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     ok: true,
     body: { companyId, generatedAt: now.toISOString(), members: [...members.values()] },
   };
+}
+
+/**
+ * One member's photo for the coach: GET /api/coach/photo?company&member&id.
+ * The viewer must be an admin of the company, the member must belong to it,
+ * and the member must have sharing switched on — all checked on every request.
+ */
+export async function coachPhoto(
+  env: CoachEnv,
+  viewerId: string,
+  companyId: string,
+  memberId: string,
+  photoId: string,
+): Promise<Response | CoachResult> {
+  if (!COMPANY_ID_PATTERN.test(companyId) || !/^user_[A-Za-z0-9_]{1,40}$/.test(memberId)) {
+    return { ok: false, status: 422, error: "Bad request." };
+  }
+  if (!hasWhopKey(env)) return { ok: false, status: 503, error: "The app's Whop API key isn't set up yet." };
+  if ((await accessLevel(env, viewerId, companyId)) !== "admin") {
+    return { ok: false, status: 403, error: "Only the owner and admins of this whop can view member photos." };
+  }
+  const memberLevel = await accessLevel(env, memberId, companyId);
+  if (memberLevel !== "customer" && memberLevel !== "admin") return { ok: false, status: 404, error: "Not found." };
+  if (!(await isSharingWithCoach(env, memberId))) {
+    return { ok: false, status: 403, error: "This member hasn't shared their photos with you." };
+  }
+  return (await streamPhoto(env, memberId, photoId)) ?? { ok: false, status: 404, error: "Not found." };
 }

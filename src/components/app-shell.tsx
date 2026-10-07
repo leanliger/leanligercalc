@@ -5,6 +5,7 @@ import {
   Activity,
   CalendarRange,
   CloudOff,
+  Dumbbell,
   Link2,
   RotateCcw,
   Salad,
@@ -27,6 +28,7 @@ import { RoadmapCalendar } from "@/components/roadmap-calendar";
 import { CheckinTab } from "@/components/checkin-tab";
 import { MacrosTab } from "@/components/macros-tab";
 import { LeaderboardTab } from "@/components/leaderboard-tab";
+import { TrainingTab } from "@/components/training-tab";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
 import {
@@ -53,7 +55,9 @@ import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
 import type { HabitDef, HabitLog } from "@/lib/habits";
 import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/fasting";
 import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
+import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
+import type { TrainingSettings, Workout } from "@/lib/training";
 import type {
   BiometricProfile,
   CarbCyclingInputs,
@@ -95,6 +99,11 @@ function withFoodDay(list: FoodLog[], date: string, entries: FoodEntry[]): FoodL
   return sortByDate(entries.length > 0 ? [...rest, { date, entries }] : rest);
 }
 
+const byWorkoutTime = (a: Workout, b: Workout) => (a.date === b.date ? a.startedAt - b.startedAt : a.date < b.date ? -1 : 1);
+
+/** How long workout edits wait before saving, so typing a weight is one write. */
+const WORKOUT_SAVE_DEBOUNCE_MS = 600;
+
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -124,6 +133,8 @@ async function bootstrap(): Promise<{
   /** First day covered by `foodLogs`; older days load on demand. */
   foodFrom: string;
   myFoods: FoodProduct[];
+  measurements: Measurement[];
+  workouts: Workout[];
   /** The plan exactly as loaded from the cloud, if there was one. */
   cloudState: AppState | null;
 }> {
@@ -178,13 +189,29 @@ async function bootstrap(): Promise<{
       for (const x of foodsToUpload) await cloud.saveMyFood(x);
       if (foodsToUpload.length > 0) myFoods = await cloud.listMyFoods();
       const foodLogs = await cloud.listFoodLogs(food.from, food.to);
+      // And measurements.
+      let measurements = await cloud.listMeasurements();
+      const measurementsOnDevice = await local.listMeasurements();
+      const knownMeasureDays = new Set(measurements.map((m) => m.date));
+      const measuresToUpload = measurementsOnDevice.filter((m) => !knownMeasureDays.has(m.date));
+      for (const m of measuresToUpload) await cloud.saveMeasurement(m);
+      if (measuresToUpload.length > 0) measurements = await cloud.listMeasurements();
+      // And workouts.
+      let workouts = await cloud.listWorkouts();
+      const workoutsOnDevice = await local.listWorkouts();
+      const knownWorkouts = new Set(workouts.map((w) => w.id));
+      const workoutsToUpload = workoutsOnDevice.filter((w) => !knownWorkouts.has(w.id));
+      for (const w of workoutsToUpload) await cloud.saveWorkout(w);
+      if (workoutsToUpload.length > 0) workouts = await cloud.listWorkouts();
 
       if (
         onDevice.length > 0 ||
         habitsOnDevice.length > 0 ||
         reviewsOnDevice.length > 0 ||
         foodOnDevice.length > 0 ||
-        myFoodsOnDevice.length > 0
+        myFoodsOnDevice.length > 0 ||
+        measurementsOnDevice.length > 0 ||
+        workoutsOnDevice.length > 0
       ) {
         await local.deleteAll();
       }
@@ -199,6 +226,8 @@ async function bootstrap(): Promise<{
         foodLogs,
         foodFrom: food.from,
         myFoods,
+        measurements,
+        workouts: [...workouts].sort(byWorkoutTime),
         cloudState: saved,
       };
     } catch {
@@ -218,6 +247,8 @@ async function bootstrap(): Promise<{
     foodLogs: await store.listFoodLogs(food.from, food.to),
     foodFrom: food.from,
     myFoods: await store.listMyFoods(),
+    measurements: await store.listMeasurements(),
+    workouts: await store.listWorkouts(),
     cloudState: null,
   };
 }
@@ -235,12 +266,20 @@ export function AppShell() {
   const [reviews, setReviews] = React.useState<WeeklyReview[]>([]);
   const [foodLogs, setFoodLogs] = React.useState<FoodLog[]>([]);
   const [myFoods, setMyFoods] = React.useState<FoodProduct[]>([]);
+  const [measurements, setMeasurements] = React.useState<Measurement[]>([]);
+  const [workouts, setWorkouts] = React.useState<Workout[]>([]);
+  const [workoutSaveError, setWorkoutSaveError] = React.useState<string | null>(null);
   const [syncError, setSyncError] = React.useState(false);
   const storeRef = React.useRef<CheckinStore | null>(null);
   // First food-log day loaded so far, and the chain that keeps food saves in
   // order (two quick adds must reach the database in the order they happened).
   const foodFrom = React.useRef("");
   const foodQueue = React.useRef<Promise<unknown>>(Promise.resolve());
+  // Workout edits: the latest version of each changed workout, saved together
+  // after a short pause (or straight away when the page is hidden), in order.
+  const pendingWorkouts = React.useRef(new Map<string, Workout>());
+  const workoutTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workoutQueue = React.useRef<Promise<unknown>>(Promise.resolve());
   // What the server holds for fasting notifications ("off", or the request
   // last sent), so they're only re-sent when something actually changed.
   const reminderSynced = React.useRef<string | null>(null);
@@ -270,6 +309,8 @@ export function AppShell() {
         foodLogs: [] as FoodLog[],
         foodFrom: foodWindow(todayISO()).from,
         myFoods: [] as FoodProduct[],
+        measurements: [] as Measurement[],
+        workouts: [] as Workout[],
         cloudState: null,
       }))
       .then((result) => {
@@ -282,6 +323,8 @@ export function AppShell() {
       setReviews(result.reviews);
       setFoodLogs(result.foodLogs);
       setMyFoods(result.myFoods);
+      setMeasurements(result.measurements);
+      setWorkouts(result.workouts);
       foodFrom.current = result.foodFrom;
       // Notifications on: re-send once per visit (picks up a new time zone).
       reminderSynced.current = result.state.tracking.fasting.notify ? null : "off";
@@ -415,6 +458,16 @@ export function AppShell() {
     setWeighIns((prev) => sortByDate([...prev.filter((x) => x.date !== saved.date), saved]));
   }, []);
 
+  const saveMeasurement = React.useCallback(async (m: Measurement) => {
+    const saved = await storeRef.current!.saveMeasurement(m);
+    setMeasurements((prev) => sortByDate([...prev.filter((x) => x.date !== saved.date), saved]));
+  }, []);
+
+  const deleteMeasurement = React.useCallback(async (date: string) => {
+    await storeRef.current!.removeMeasurement(date);
+    setMeasurements((prev) => prev.filter((x) => x.date !== date));
+  }, []);
+
   const deleteWeighIn = React.useCallback(async (date: string) => {
     await storeRef.current!.remove(date);
     setWeighIns((prev) => prev.filter((x) => x.date !== date));
@@ -518,6 +571,69 @@ export function AppShell() {
     setMyFoods((prev) => prev.filter((x) => x.key !== `mine:${id}`));
   }, []);
 
+  /* ------------------------------ training ------------------------------ */
+
+  const flushWorkouts = React.useCallback((): Promise<void> => {
+    if (workoutTimer.current) clearTimeout(workoutTimer.current);
+    workoutTimer.current = null;
+    const batch = [...pendingWorkouts.current.values()];
+    pendingWorkouts.current.clear();
+    if (batch.length === 0 || !storeRef.current) return workoutQueue.current.then(() => undefined, () => undefined);
+    const store = storeRef.current;
+    const run = workoutQueue.current
+      .catch(() => {})
+      .then(async () => {
+        for (const w of batch) await store.saveWorkout(w);
+      });
+    workoutQueue.current = run;
+    return run.then(
+      () => setWorkoutSaveError(null),
+      (e: unknown) => {
+        // Keep them pending so the next change (or leaving the page) tries again.
+        for (const w of batch) if (!pendingWorkouts.current.has(w.id)) pendingWorkouts.current.set(w.id, w);
+        setWorkoutSaveError(e instanceof Error ? e.message : "Couldn't save your workout. Try again.");
+        throw e instanceof Error ? e : new Error("Couldn't save your workout.");
+      },
+    );
+  }, []);
+
+  /** Show a workout change straight away; save it shortly after (or now). */
+  const saveWorkout = React.useCallback(
+    (w: Workout, now = false): Promise<void> => {
+      setWorkouts((prev) => [...prev.filter((x) => x.id !== w.id), w].sort(byWorkoutTime));
+      pendingWorkouts.current.set(w.id, w);
+      if (now) return flushWorkouts();
+      if (workoutTimer.current) clearTimeout(workoutTimer.current);
+      workoutTimer.current = setTimeout(() => {
+        flushWorkouts().catch(() => {});
+      }, WORKOUT_SAVE_DEBOUNCE_MS);
+      return Promise.resolve();
+    },
+    [flushWorkouts],
+  );
+
+  const removeWorkout = React.useCallback(async (id: string) => {
+    pendingWorkouts.current.delete(id);
+    await workoutQueue.current.catch(() => {});
+    await storeRef.current!.removeWorkout(id);
+    setWorkouts((prev) => prev.filter((x) => x.id !== id));
+  }, []);
+
+  // Leaving the page (or switching apps on a phone) saves anything unsaved.
+  React.useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flushWorkouts().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [flushWorkouts]);
+
+  // Takes an updater, so two changes in one tap (add an exercise, then put it
+  // in a program) build on each other instead of the second undoing the first.
+  const updateTraining = React.useCallback((update: (prev: TrainingSettings) => TrainingSettings) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, training: update(prev.tracking.training) } }));
+  }, []);
+
   const updateReminders = React.useCallback((reminders: ReminderPrefs) => {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, reminders } }));
   }, []);
@@ -531,6 +647,9 @@ export function AppShell() {
   }, []);
 
   const deleteAllData = React.useCallback(async () => {
+    pendingWorkouts.current.clear();
+    if (workoutTimer.current) clearTimeout(workoutTimer.current);
+    await workoutQueue.current.catch(() => {});
     await storeRef.current!.deleteAll();
     clearStorage();
     const reset: AppState = { ...DEFAULT_APP_STATE, unit: state.unit, activeTab: "checkin" };
@@ -544,6 +663,8 @@ export function AppShell() {
     setReviews([]);
     setFoodLogs([]);
     setMyFoods([]);
+    setMeasurements([]);
+    setWorkouts([]);
     setState(reset);
   }, [state.unit]);
 
@@ -645,11 +766,15 @@ export function AppShell() {
                     <Utensils />
                     Macros
                   </TabsTrigger>
+                  <TabsTrigger value="training" className="[&_svg]:!block">
+                    <Dumbbell />
+                    <span className="sr-only sm:not-sr-only">Training</span>
+                  </TabsTrigger>
                   <TabsTrigger value="checkin">
                     <Scale />
                     Check-in
                   </TabsTrigger>
-                  {/* On phones the trophy stands in for the word, so all six tabs fit. */}
+                  {/* On phones the dumbbell and trophy stand in for their words, so all seven tabs fit. */}
                   <TabsTrigger value="leaderboard" className="[&_svg]:!block">
                     <Trophy />
                     <span className="sr-only sm:not-sr-only">Leaderboard</span>
@@ -734,6 +859,22 @@ export function AppShell() {
                 />
               </TabsContent>
 
+              <TabsContent value="training">
+                <TrainingTab
+                  unit={state.unit}
+                  today={today}
+                  settings={state.tracking.training}
+                  onSettingsChange={updateTraining}
+                  workouts={workouts}
+                  onSaveWorkout={saveWorkout}
+                  onDeleteWorkout={removeWorkout}
+                  saveError={workoutSaveError}
+                  habits={state.tracking.habits}
+                  habitLogs={habitLogs}
+                  onSaveHabits={saveHabitDay}
+                />
+              </TabsContent>
+
               <TabsContent value="leaderboard">
                 <LeaderboardTab availability={notifyAvailability} onNavigate={setTab} />
               </TabsContent>
@@ -760,7 +901,10 @@ export function AppShell() {
                   onRemoveAdjustment={removeAdjustment}
                   onDeleteAll={deleteAllData}
                   foodLogs={foodLogs}
-                  foodCount={foodLogs.length + myFoods.length}
+                  foodCount={foodLogs.length + myFoods.length + measurements.length + workouts.length}
+                  measurements={measurements}
+                  onSaveMeasurement={saveMeasurement}
+                  onDeleteMeasurement={deleteMeasurement}
                   reminders={state.tracking.reminders}
                   onRemindersChange={updateReminders}
                   reminderStatus={{ availability: notifyAvailability, error: checkinReminderError }}

@@ -25,8 +25,16 @@
  *   PUT    /api/reminders          set my weigh-in / habits / recap reminders
  *   DELETE /api/reminders          turn them all off
  *   GET    /api/coach/overview?company=biz_…  coach dashboard (admins of that whop only)
+ *   GET    /api/measurements       my body measurements
+ *   PUT    /api/measurements/:date save one day's measurements   DELETE … remove it
+ *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
+ *                                   progress photos (optional; see photos.ts)
+ *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
  *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
  *   PUT    /api/leaderboard        join it        DELETE /api/leaderboard?experience=…  leave it
+ *   GET    /api/workouts           all of my workouts, oldest first
+ *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
+ *   DELETE /api/workouts/:id       remove one workout
  *   DELETE /api/me                 delete everything stored about me
  *
  * The user id only ever comes from a verified Whop token (see auth.ts) and is
@@ -73,7 +81,10 @@ import {
 } from "./reminders";
 import { validateReminderRequest } from "../src/lib/fasting";
 import { validateRemindersRequest } from "../src/lib/reminders";
-import { coachOverview, type CoachEnv } from "./coach";
+import { coachOverview, coachPhoto, type CoachEnv } from "./coach";
+import { deleteAllPhotos, deletePhoto, listPhotos, setSharing, streamPhoto, uploadPhoto } from "./photos";
+import { MAX_MEASUREMENTS, validateMeasurement, type Measurement } from "../src/lib/measurements";
+import { MAX_WORKOUTS, WORKOUT_ID_PATTERN, validateWorkout, type Workout } from "../src/lib/training";
 import { getLeaderboard, joinLeaderboard, leaveLeaderboard, type LeaderboardEnv } from "./leaderboard";
 import { secretValue } from "./secrets";
 
@@ -514,6 +525,148 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
+  /* ----------------------------- measurements ----------------------------- */
+
+  if (path === "/api/measurements") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT date, waist, hips, chest, arms, thighs FROM measurements WHERE user_id = ? ORDER BY date ASC LIMIT ?",
+    )
+      .bind(userId, MAX_MEASUREMENTS)
+      .all<Measurement>();
+    return json({ measurements: results });
+  }
+
+  const measureMatch = /^\/api\/measurements\/(\d{4}-\d{2}-\d{2})$/.exec(path);
+  if (measureMatch) {
+    const date = measureMatch[1]!;
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM measurements WHERE user_id = ? AND date = ?").bind(userId, date).run();
+      return noContent();
+    }
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateMeasurement(body.value, date);
+    if (!result.ok) return error(422, result.error);
+    const m = result.value;
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN date = ? THEN 1 ELSE 0 END) AS existing FROM measurements WHERE user_id = ?",
+    )
+      .bind(date, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_MEASUREMENTS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_MEASUREMENTS} measurement days reached.`);
+    }
+    await env.DB.prepare(
+      `INSERT INTO measurements (user_id, date, waist, hips, chest, arms, thighs) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, date) DO UPDATE SET
+         waist = excluded.waist, hips = excluded.hips, chest = excluded.chest,
+         arms = excluded.arms, thighs = excluded.thighs,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, m.date, m.waist, m.hips, m.chest, m.arms, m.thighs)
+      .run();
+    return json({ measurement: m });
+  }
+
+  /* -------------------------------- photos -------------------------------- */
+
+  if (path === "/api/photos") {
+    const result =
+      method === "GET" ? await listPhotos(env, userId) : method === "POST" ? await uploadPhoto(env, userId, request, url) : null;
+    if (!result) return error(405, "Method not allowed.");
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  const photoMatch = /^\/api\/photos\/([A-Za-z0-9_-]{8,64})$/.exec(path);
+  if (photoMatch) {
+    const id = photoMatch[1]!;
+    if (method === "GET") return (await streamPhoto(env, userId, id)) ?? error(404, "Not found.");
+    if (method === "DELETE") {
+      await deletePhoto(env, userId, id);
+      return noContent();
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  if (path === "/api/photo-settings") {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = await setSharing(env, userId, body.value);
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  if (path === "/api/coach/photo") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await coachPhoto(
+      env,
+      userId,
+      url.searchParams.get("company") ?? "",
+      url.searchParams.get("member") ?? "",
+      url.searchParams.get("id") ?? "",
+    );
+    if (result instanceof Response) return result;
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  /* ------------------------------- workouts ------------------------------- */
+
+  if (path === "/api/workouts") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const { results } = await env.DB.prepare(
+      "SELECT id, data FROM workouts WHERE user_id = ? ORDER BY date ASC LIMIT ?",
+    )
+      .bind(userId, MAX_WORKOUTS)
+      .all<{ id: string; data: string }>();
+    const workouts: Workout[] = [];
+    for (const row of results) {
+      try {
+        workouts.push({ ...(JSON.parse(row.data) as Workout), id: row.id });
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    return json({ workouts });
+  }
+
+  const workoutMatch = /^\/api\/workouts\/([A-Za-z0-9_-]{1,64})$/.exec(path);
+  if (workoutMatch) {
+    const id = workoutMatch[1]!;
+    if (!WORKOUT_ID_PATTERN.test(id)) return error(404, "Not found.");
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM workouts WHERE user_id = ? AND id = ?").bind(userId, id).run();
+      return noContent();
+    }
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = validateWorkout(body.value, id);
+    if (!result.ok) return error(422, result.error);
+    const w = result.value;
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n, SUM(CASE WHEN id = ? THEN 1 ELSE 0 END) AS existing FROM workouts WHERE user_id = ?",
+    )
+      .bind(id, userId)
+      .first<{ n: number; existing: number | null }>();
+    if (count && count.n >= MAX_WORKOUTS && !count.existing) {
+      return error(409, `Storage limit of ${MAX_WORKOUTS} workouts reached.`);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO workouts (user_id, id, date, data) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, id) DO UPDATE SET
+         date       = excluded.date,
+         data       = excluded.data,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    )
+      .bind(userId, w.id, w.date, JSON.stringify(w))
+      .run();
+    return json({ workout: w });
+  }
+
   /* ------------------------------ leaderboard ------------------------------ */
 
   if (path === "/api/leaderboard") {
@@ -581,7 +734,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   if (path === "/api/me") {
     if (method !== "DELETE") return error(405, "Method not allowed.");
+    await deleteAllPhotos(env, userId);
     await env.DB.batch([
+      env.DB.prepare("DELETE FROM measurements WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),

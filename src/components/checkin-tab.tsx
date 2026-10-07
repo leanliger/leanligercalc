@@ -30,6 +30,9 @@ import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ConsistencyCard } from "@/components/consistency-card";
 import { RemindersCard } from "@/components/reminders-card";
+import { MeasurementsCard } from "@/components/measurements-card";
+import { PhotosCard } from "@/components/photos-card";
+import type { Measurement } from "@/lib/measurements";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ReminderPrefs } from "@/lib/reminders";
 import { buildRoadmap } from "@/lib/roadmap";
@@ -81,6 +84,9 @@ interface CheckinTabProps {
   reminders: ReminderPrefs;
   onRemindersChange: (prefs: ReminderPrefs) => void;
   reminderStatus: NotificationStatus;
+  measurements: Measurement[];
+  onSaveMeasurement: (m: Measurement) => Promise<void>;
+  onDeleteMeasurement: (date: string) => Promise<void>;
   onNavigate: (tab: "timeline" | "roadmap") => void;
 }
 
@@ -126,6 +132,9 @@ export function CheckinTab({
   reminders,
   onRemindersChange,
   reminderStatus,
+  measurements,
+  onSaveMeasurement,
+  onDeleteMeasurement,
   onNavigate,
 }: CheckinTabProps) {
   const timeline = React.useMemo(() => calculateFatLossTimeline(profile, fatLoss), [profile, fatLoss]);
@@ -435,6 +444,17 @@ export function CheckinTab({
           </CardContent>
         </Card>
 
+        <MeasurementsCard
+          measurements={measurements}
+          weighIns={weighIns}
+          unit={unit}
+          today={today}
+          onSave={onSaveMeasurement}
+          onDelete={onDeleteMeasurement}
+        />
+
+        <PhotosCard cloud={session.mode === "cloud"} today={today} />
+
         <WeeklyScorecard
           habits={habits}
           logs={habitLogs}
@@ -641,7 +661,8 @@ function StorageCard({
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             Your weight, food and habit logs are health data. They&apos;re stored only to run the app and for your coach
-            to review — your coach can see your plan, weigh-ins, habits and daily food totals, but not change them. You
+            to review — your coach can see your plan, weigh-ins, measurements, habits and daily food totals (and your progress
+            photos only if you choose to share them), but not change them. You
             can delete all of it here at any time.{" "}
             <a href="/privacy/" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-foreground">
               Privacy policy
