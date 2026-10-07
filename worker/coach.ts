@@ -104,7 +104,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
         error:
           res.status === 401 || res.status === 403
             ? "Whop didn't allow reading your member list. In Whop's developer dashboard, give the app the member:basic:read permission, then approve the update in your whop."
-            : "Couldn't load your members from Whop. Try again in a moment.",
+            : `Couldn't load your members from Whop (Whop said: ${res.status}${whopReason(res.body) ? ` — ${whopReason(res.body)}` : ""}). Try again in a moment.`,
       };
     }
     const body = res.body as { data?: WhopMember[]; page_info?: { has_next_page?: boolean; end_cursor?: string | null } };
