@@ -409,7 +409,7 @@ export function AppShell() {
   }, []);
 
   // Which Check-in sub-section is open. Links into Check-in from other tabs
-  // open the section they're about (habits from Macros and the leaderboard,
+  // open the section they're about (habits from Nutrition and the leaderboard,
   // weigh-ins from the roadmap).
   const [checkinSection, setCheckinSection] = React.useState<CheckinSection>("weigh-in");
   const navigateFor = React.useMemo(() => {
@@ -777,7 +777,8 @@ export function AppShell() {
                   </TabsTrigger>
                   <TabsTrigger value="macros">
                     <Utensils />
-                    Macros
+                    <span className="sm:hidden">Food</span>
+                    <span className="hidden sm:inline">Nutrition</span>
                   </TabsTrigger>
                   <TabsTrigger value="training">
                     <Dumbbell />

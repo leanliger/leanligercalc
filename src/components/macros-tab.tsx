@@ -17,6 +17,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SegmentedControl } from "@/components/ui/segmented";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,8 @@ export function MacrosTab({
   notifications,
   onNavigate,
 }: MacrosTabProps) {
+  // The tab's two sub-sections: what you eat, and when (the fasting timer).
+  const [section, setSection] = React.useState<"food" | "fasting">("food");
   const [date, setDate] = React.useState(today);
   const [meal, setMeal] = React.useState<MealId>(() => defaultMeal(new Date().getHours()));
   const [mode, setMode] = React.useState<AddMode>({ kind: "menu" });
@@ -258,212 +261,237 @@ export function MacrosTab({
   const hits = target && date <= today && entries.length > 0 ? targetHits(totals, target) : null;
   const linked = habits.filter((h) => h.kind === "check" && (h.link === "protein" || h.link === "calories"));
 
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
+  const nav = (
+    <SegmentedControl
+      ariaLabel="Nutrition section"
+      value={section}
+      onValueChange={setSection}
+      options={[
+        { value: "food" as const, label: "Food log" },
+        { value: "fasting" as const, label: "Fasting" },
+      ]}
+      className="max-w-xs"
+    />
+  );
+
+  if (section === "fasting") {
+    return (
       <div className="space-y-5">
-        {/* --------------------------- day + targets --------------------------- */}
-        <Card>
-          <CardHeader className="space-y-3 pb-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeDate(addDays(date, -1))} aria-label="Previous day">
-                  <ChevronLeft />
-                </Button>
-                <span className="min-w-[6.5rem] text-center text-sm font-semibold" aria-live="polite">
-                  {isToday ? "Today" : formatShort(date)}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => changeDate(addDays(date, 1))}
-                  disabled={date >= maxDate}
-                  aria-label="Next day"
-                >
-                  <ChevronRight />
-                </Button>
-                {!isToday ? (
-                  <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => changeDate(today)}>
-                    Today
+        {nav}
+        <div className="lg:max-w-xl">
+          <FastingCard settings={fasting} onChange={onFastingChange} notifications={notifications} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {nav}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
+        <div className="space-y-5">
+          {/* --------------------------- day + targets --------------------------- */}
+          <Card>
+            <CardHeader className="space-y-3 pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeDate(addDays(date, -1))} aria-label="Previous day">
+                    <ChevronLeft />
                   </Button>
+                  <span className="min-w-[6.5rem] text-center text-sm font-semibold" aria-live="polite">
+                    {isToday ? "Today" : formatShort(date)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => changeDate(addDays(date, 1))}
+                    disabled={date >= maxDate}
+                    aria-label="Next day"
+                  >
+                    <ChevronRight />
+                  </Button>
+                  {!isToday ? (
+                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => changeDate(today)}>
+                      Today
+                    </Button>
+                  ) : null}
+                </div>
+                {target ? (
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
+                    {DAY_LABELS[target.type]}
+                  </span>
                 ) : null}
               </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {target ? (
-                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
-                  {DAY_LABELS[target.type]}
-                </span>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {target ? (
-              <>
-                <CalorieSummary eaten={totals.kcal} target={target.calories} />
-                <div className="space-y-3">
-                  <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
-                  <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
-                  <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  {target.source === "roadmap"
-                    ? "Targets from your Roadmap for this day."
-                    : "This day is outside your Roadmap, so targets come from your Carb Cycling weekly plan."}
-                </p>
-                {linked.length > 0 ? (
-                  <div className="space-y-1.5 rounded-md border border-border px-3 py-2">
-                    <p className="flex items-center gap-1.5 text-xs font-medium">
-                      <ListChecks className="h-3.5 w-3.5 text-primary" />
-                      Habit scorecard
-                    </p>
-                    {hits ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        <Badge variant={hits.protein ? "success" : "secondary"}>
-                          {hits.protein ? <Check /> : null}
-                          Protein {hits.protein ? "hit" : "not yet"}
-                        </Badge>
-                        <Badge variant={hits.calories ? "success" : "secondary"}>
-                          {hits.calories ? <Check /> : null}
-                          Calories {hits.calories ? "hit" : "not yet"}
-                        </Badge>
-                      </div>
-                    ) : null}
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Protein within ±{PROTEIN_TOLERANCE_G} g and calories within ±{CALORIE_TOLERANCE_KCAL} kcal tick
-                      those boxes on your{" "}
-                      <button type="button" className="underline underline-offset-2" onClick={() => onNavigate("checkin")}>
-                        Check-in
-                      </button>{" "}
-                      scorecard automatically. Once you log food for a day, those two boxes follow this log.
-                    </p>
+                <>
+                  <CalorieSummary eaten={totals.kcal} target={target.calories} />
+                  <div className="space-y-3">
+                    <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
+                    <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
+                    <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
                   </div>
-                ) : null}
+                  <p className="text-[11px] text-muted-foreground">
+                    {target.source === "roadmap"
+                      ? "Targets from your Roadmap for this day."
+                      : "This day is outside your Roadmap, so targets come from your Carb Cycling weekly plan."}
+                  </p>
+                  {linked.length > 0 ? (
+                    <div className="space-y-1.5 rounded-md border border-border px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-xs font-medium">
+                        <ListChecks className="h-3.5 w-3.5 text-primary" />
+                        Habit scorecard
+                      </p>
+                      {hits ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant={hits.protein ? "success" : "secondary"}>
+                            {hits.protein ? <Check /> : null}
+                            Protein {hits.protein ? "hit" : "not yet"}
+                          </Badge>
+                          <Badge variant={hits.calories ? "success" : "secondary"}>
+                            {hits.calories ? <Check /> : null}
+                            Calories {hits.calories ? "hit" : "not yet"}
+                          </Badge>
+                        </div>
+                      ) : null}
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        Protein within ±{PROTEIN_TOLERANCE_G} g and calories within ±{CALORIE_TOLERANCE_KCAL} kcal tick
+                        those boxes on your{" "}
+                        <button type="button" className="underline underline-offset-2" onClick={() => onNavigate("checkin")}>
+                          Check-in
+                        </button>{" "}
+                        scorecard automatically. Once you log food for a day, those two boxes follow this log.
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <CalorieSummary eaten={totals.kcal} target={null} />
+                  <p className="flex gap-2 text-sm text-muted-foreground">
+                    <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    Set up your plan to see daily targets here.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => onNavigate("timeline")}>
+                    Go to Fat Loss Timeline
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <AddFoodCard
+            ref={addRef}
+            mode={mode}
+            setMode={setMode}
+            meal={meal}
+            setMeal={setMeal}
+            dayLabel={dayLabel}
+            myFoods={myFoods}
+            recents={recents}
+            leftAfter={leftAfter}
+            onAdd={addEntry}
+            onSaveMyFood={onSaveMyFood}
+          />
+        </div>
+
+        <div className="space-y-5">
+          {/* ------------------------------ day log ------------------------------ */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Utensils className="h-4 w-4 text-primary" />
+                {isToday ? "Today’s food" : `Food for ${formatShort(date)}`}
+              </CardTitle>
+              <CardDescription>
+                {entries.length > 0 ? <MacroLine m={totals} /> : "Nothing logged yet."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {undo && undo.date === date ? (
+                <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
+                  <span className="min-w-0 truncate">Removed {undo.name}.</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2"
+                    onClick={() => {
+                      const restore = undo;
+                      setUndo(null);
+                      void commit(restore.date, restore.entries).catch(() => {});
+                    }}
+                  >
+                    <Undo2 />
+                    Undo
+                  </Button>
+                </p>
+              ) : null}
+
+              {saveError ? (
+                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {saveError}
+                </p>
+              ) : null}
+
+              {entries.length === 0 ? (
+                <div className="space-y-3 rounded-lg border border-dashed border-border p-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Scan, search or quick-add a food to start {isToday ? "today’s" : "this day’s"} log.
+                    {date > today ? " Logging ahead counts as pre-logging your meals." : ""}
+                  </p>
+                  {yesterday.length > 0 ? (
+                    <Button variant="outline" size="sm" onClick={copyYesterday}>
+                      <Copy />
+                      Copy the day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                MEALS.map((m) => {
+                  const items = entries.filter((e) => e.meal === m.id);
+                  if (items.length === 0) return null;
+                  return (
+                    <section key={m.id} aria-label={m.label} className="space-y-1.5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-border pb-1">
+                        <h3 className="text-sm font-semibold">{m.label}</h3>
+                        <MacroLine m={sumMacros(items)} />
+                      </div>
+                      <ul className="divide-y divide-border/60">
+                        {items.map((e) => (
+                          <EntryRow
+                            key={e.id}
+                            entry={e}
+                            onRemove={() => removeEntry(e.id)}
+                            onAmount={(q) => changeAmount(e.id, q)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          <MyFoodsCard foods={myFoods} onPick={openProduct} onRemove={onRemoveMyFood} />
+
+          <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
+            {session.mode === "cloud" ? (
+              <>
+                <Cloud className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                Your food log and saved foods are synced to your Whop account.
               </>
             ) : (
-              <div className="space-y-3">
-                <CalorieSummary eaten={totals.kcal} target={null} />
-                <p className="flex gap-2 text-sm text-muted-foreground">
-                  <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  Set up your plan to see daily targets here.
-                </p>
-                <Button variant="outline" size="sm" onClick={() => onNavigate("timeline")}>
-                  Go to Fat Loss Timeline
-                </Button>
-              </div>
+              <>
+                <HardDrive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                Your food log is saved on this device only — clearing site data or switching devices loses it. Delete it any
+                time from Settings (the gear at the top left).
+              </>
             )}
-          </CardContent>
-        </Card>
-
-        <FastingCard settings={fasting} onChange={onFastingChange} notifications={notifications} />
-
-        <AddFoodCard
-          ref={addRef}
-          mode={mode}
-          setMode={setMode}
-          meal={meal}
-          setMeal={setMeal}
-          dayLabel={dayLabel}
-          myFoods={myFoods}
-          recents={recents}
-          leftAfter={leftAfter}
-          onAdd={addEntry}
-          onSaveMyFood={onSaveMyFood}
-        />
-      </div>
-
-      <div className="space-y-5">
-        {/* ------------------------------ day log ------------------------------ */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Utensils className="h-4 w-4 text-primary" />
-              {isToday ? "Today’s food" : `Food for ${formatShort(date)}`}
-            </CardTitle>
-            <CardDescription>
-              {entries.length > 0 ? <MacroLine m={totals} /> : "Nothing logged yet."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {undo && undo.date === date ? (
-              <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                <span className="min-w-0 truncate">Removed {undo.name}.</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 px-2"
-                  onClick={() => {
-                    const restore = undo;
-                    setUndo(null);
-                    void commit(restore.date, restore.entries).catch(() => {});
-                  }}
-                >
-                  <Undo2 />
-                  Undo
-                </Button>
-              </p>
-            ) : null}
-
-            {saveError ? (
-              <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {saveError}
-              </p>
-            ) : null}
-
-            {entries.length === 0 ? (
-              <div className="space-y-3 rounded-lg border border-dashed border-border p-4 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Scan, search or quick-add a food to start {isToday ? "today’s" : "this day’s"} log.
-                  {date > today ? " Logging ahead counts as pre-logging your meals." : ""}
-                </p>
-                {yesterday.length > 0 ? (
-                  <Button variant="outline" size="sm" onClick={copyYesterday}>
-                    <Copy />
-                    Copy the day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              MEALS.map((m) => {
-                const items = entries.filter((e) => e.meal === m.id);
-                if (items.length === 0) return null;
-                return (
-                  <section key={m.id} aria-label={m.label} className="space-y-1.5">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-border pb-1">
-                      <h3 className="text-sm font-semibold">{m.label}</h3>
-                      <MacroLine m={sumMacros(items)} />
-                    </div>
-                    <ul className="divide-y divide-border/60">
-                      {items.map((e) => (
-                        <EntryRow
-                          key={e.id}
-                          entry={e}
-                          onRemove={() => removeEntry(e.id)}
-                          onAmount={(q) => changeAmount(e.id, q)}
-                        />
-                      ))}
-                    </ul>
-                  </section>
-                );
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        <MyFoodsCard foods={myFoods} onPick={openProduct} onRemove={onRemoveMyFood} />
-
-        <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
-          {session.mode === "cloud" ? (
-            <>
-              <Cloud className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-              Your food log and saved foods are synced to your Whop account.
-            </>
-          ) : (
-            <>
-              <HardDrive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-              Your food log is saved on this device only — clearing site data or switching devices loses it. Delete it any
-              time from the Check-in tab.
-            </>
-          )}
-        </p>
+          </p>
+        </div>
       </div>
     </div>
   );

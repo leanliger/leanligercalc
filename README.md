@@ -5,7 +5,7 @@ Five integrated tools for contest prep and body recomposition planning:
 1. **Fat Loss Timeline** — reverse-engineers prep duration (or a required start date) from a safe weekly fat loss rate, with a week-by-week milestone table and projection chart.
 2. **Carb Cycling** — builds a weekly high / medium / low carb rotation whose 7-day calorie, protein, carb, and fat totals average out *exactly* to your target.
 3. **Roadmap** — expands the two into a day-by-day calendar from start date to goal date: calories and macros for every single day.
-4. **Macros** — a food log against each day's targets (scan a barcode, search by name, or type numbers from the label), plus an intermittent fasting timer.
+4. **Nutrition** ("Food" on phones) — a **Food log** against each day's targets (scan a barcode, search by name, or type numbers from the label) and, in its **Fasting** section, an intermittent fasting timer.
 5. **Check-in** — log weigh-ins, see predicted vs actual, and get calorie adjustments worked out from your real rate of loss.
 
 The timeline's derived calorie target can be handed straight over to the carb cycling tool with one click.
@@ -175,7 +175,7 @@ Users can click any weekday to change it, in either the Weekly plan or the Roadm
 
 The **Check-in** tab is where members log weigh-ins. The app compares them with the plan and recommends calorie changes; the Roadmap plots the same comparison and shows logged weights on the calendar.
 
-The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, progress vs plan, calorie changes, weigh-in history), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The open section lives in the app shell, so links from other tabs land on the right one (Macros and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
+The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, progress vs plan, calorie changes, weigh-in history), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The open section lives in the app shell, so links from other tabs land on the right one (Nutrition and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
 
 ### Where the data lives
 
@@ -317,9 +317,9 @@ The Check-in tab includes the **Daily Self-Accountability Scorecard**:
 
 Habit definitions sync with the plan; daily logs (`habit_logs`) and reviews (`weekly_reviews`) have their own tables, added by migrations `0002` and `0003`. "Delete all my data" removes all of it.
 
-## Macros: food log and barcode scanning
+## Nutrition: food log and barcode scanning
 
-The **Macros** tab tracks what a member eats against that day's targets — the Roadmap's numbers for the day, or the Carb Cycling tab's week for days outside the Roadmap.
+The **Nutrition** tab (labelled "Food" on phones; internally still the `macros` tab, so saved tabs and links keep working) has two sections: **Food log** and **Fasting** (the timer below). The food log tracks what a member eats against that day's targets — the Roadmap's numbers for the day, or the Carb Cycling tab's week for days outside the Roadmap.
 
 **Adding food**
 

@@ -50,7 +50,7 @@ export interface TrackingState {
   adjustments: CalorieAdjustment[];
   /** Which habits this member tracks. Daily logs are stored separately. */
   habits: HabitDef[];
-  /** Intermittent fasting meal times (Macros tab). */
+  /** Intermittent fasting meal times (Nutrition tab → Fasting). */
   fasting: FastingSettings;
   /** Weigh-in, habits and Sunday recap reminders (Check-in tab). */
   reminders: ReminderPrefs;

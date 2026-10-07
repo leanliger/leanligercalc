@@ -268,7 +268,7 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
-              Macros tab, and weigh-in, habit and recap reminders from Settings (the gear at the top left).
+              Nutrition tab (Fasting), and weigh-in, habit and recap reminders from Settings (the gear at the top left).
             </li>
             <li>
               <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
