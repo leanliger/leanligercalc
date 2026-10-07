@@ -146,7 +146,15 @@ export default function PrivacyPage() {
           </List>
           <p>
             Your coach can only view this, not change it. Only admins of the Whop you&apos;re a member of can open the
-            dashboard; other members never see your data. Your weekly self-audit notes and saved foods are not shown.
+            dashboard. Your weekly self-audit notes and saved foods are not shown.
+          </p>
+          <p>
+            <strong>Other members</strong> never see your data — unless you choose to join the{" "}
+            <strong>community leaderboard</strong>. If you join, other members of the same Whop community see your Whop
+            display name and profile photo, your current and best habit streak, this week&apos;s scorecard percentage
+            and how many 80%+ days you&apos;ve had this month. Never your weight, measurements, food or notes. Your time
+            zone is stored so your streak follows your own day. You can leave the leaderboard at any time, which removes
+            you from it immediately.
           </p>
           <p>We also share information with the services needed to run the app:</p>
           <List>
@@ -188,7 +196,7 @@ export default function PrivacyPage() {
             <li>
               <strong>Delete everything:</strong> open the <strong>Check-in</strong> tab and use{" "}
               <strong>&ldquo;Delete all my data&rdquo;</strong>. This permanently removes your weigh-ins, habits, weekly
-              notes, food logs, saved foods, plan, and notification settings.
+              notes, food logs, saved foods, plan, notification settings and leaderboard entry.
             </li>
             <li>
               <strong>Delete or change individual items</strong> directly in the app: weigh-ins, foods, habits and meal
@@ -197,6 +205,9 @@ export default function PrivacyPage() {
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
               Macros tab, and weigh-in, habit and recap reminders from the Reminders card on the Check-in tab.
+            </li>
+            <li>
+              <strong>Leave the leaderboard</strong> at any time from the Community leaderboard card on the Check-in tab.
             </li>
             <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.

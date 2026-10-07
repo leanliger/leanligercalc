@@ -213,6 +213,7 @@ Accepted changes are stored with the plan and shift the roadmap's calories from 
 | `PUT` / `DELETE /api/fasting-reminders` | Turn my fasting notifications on (or update them) / off |
 | `PUT` / `DELETE /api/reminders` | Set my weigh-in / habits / recap reminder times / turn them all off |
 | `GET /api/coach/overview?company=biz_…` | Coach dashboard data — admins of that whop only |
+| `GET` / `PUT` / `DELETE /api/leaderboard` | View (members of that community), join, or leave the streak leaderboard |
 | `GET /api/food/barcode/:code` | **Public.** Product for a barcode |
 | `GET /api/food/search?q=` | **Public.** Search products by name |
 | `DELETE /api/me` | Delete everything stored about me |
@@ -271,6 +272,8 @@ The Check-in tab includes the **Daily Self-Accountability Scorecard**:
 - **Streaks & consistency** (`src/lib/streaks.ts`, `consistency-card.tsx`), all derived from the daily logs — nothing extra is stored. Each habit shows a flame streak on the daily checklist and its share of the last 30 days; the card adds an overall streak of days at **80%+ of that day’s habits** (not “all seven”, so one miss doesn’t erase weeks of work), consecutive **Green Zone weeks**, best-ever streaks, and an 8-week trend. Same rules as the scorecard: a rest day neither extends nor breaks the workout streak, today never counts against you until it’s over, and days before the first log don’t count.
 
 - **Reminders** (Check-in tab, `src/lib/reminders.ts`, `reminders-card.tsx`): optional Whop notifications at times each member picks — a **morning weigh-in** (skipped if today's weight is already logged), an **evening habits** nudge ("3 habits left today · keep your 12-day streak going", skipped once everything's done), and a **Sunday recap** (scorecard %, weight change vs last week's average, average protein from the food log). They share the fasting scheduler (`worker/reminders.ts`), its once-per-day and catch-up rules, and its 40-sends-per-minute budget; preferences sync with the plan and are copied to the `reminders` table (migration `0006`).
+
+- **Community leaderboard** (opt-in; `src/lib/leaderboard.ts`, `worker/leaderboard.ts`, `leaderboard-card.tsx`): members who join are ranked within their Whop community on **Streak** (current 80%+ days in a row), **This week** (scorecard %) and **This month** (80%+ days so far — a built-in monthly challenge). Anyone in the community can view it; joining or viewing is checked against Whop access to that experience. Stats are computed on the server from each participant's habit logs in their own time zone, so only name, Whop photo and those four numbers ever leave the server — other members' ids, logs, weight and food never do. Leaving deletes the entry (`leaderboard` table, migration `0007`), as does "Delete all my data".
 
 Habit definitions sync with the plan; daily logs (`habit_logs`) and reviews (`weekly_reviews`) have their own tables, added by migrations `0002` and `0003`. "Delete all my data" removes all of it.
 

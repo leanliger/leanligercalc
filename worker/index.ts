@@ -25,6 +25,8 @@
  *   PUT    /api/reminders          set my weigh-in / habits / recap reminders
  *   DELETE /api/reminders          turn them all off
  *   GET    /api/coach/overview?company=biz_…  coach dashboard (admins of that whop only)
+ *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
+ *   PUT    /api/leaderboard        join it        DELETE /api/leaderboard?experience=…  leave it
  *   DELETE /api/me                 delete everything stored about me
  *
  * The user id only ever comes from a verified Whop token (see auth.ts) and is
@@ -72,9 +74,10 @@ import {
 import { validateReminderRequest } from "../src/lib/fasting";
 import { validateRemindersRequest } from "../src/lib/reminders";
 import { coachOverview, type CoachEnv } from "./coach";
+import { getLeaderboard, joinLeaderboard, leaveLeaderboard, type LeaderboardEnv } from "./leaderboard";
 import { secretValue } from "./secrets";
 
-export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv {
+export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv {
   DB: D1Database;
   ASSETS: Fetcher;
 }
@@ -511,6 +514,27 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
+  /* ------------------------------ leaderboard ------------------------------ */
+
+  if (path === "/api/leaderboard") {
+    const experienceId = url.searchParams.get("experience") ?? "";
+    if (method === "GET") {
+      const result = await getLeaderboard(env, userId, experienceId, url.searchParams.get("tz"));
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await joinLeaderboard(env, userId, body.value);
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "DELETE") {
+      await leaveLeaderboard(env, userId, experienceId);
+      return noContent();
+    }
+    return error(405, "Method not allowed.");
+  }
+
   /* -------------------------------- plan -------------------------------- */
 
   if (path === "/api/plan") {
@@ -566,6 +590,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM my_foods WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM fasting_reminders WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM reminders WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM leaderboard WHERE user_id = ?").bind(userId),
     ]);
     return noContent();
   }
