@@ -44,8 +44,8 @@ import { STEP_LIMITS, TRAINING_DAY_LIMITS } from "./activity";
 // shared profile, so old payloads no longer deserialise correctly.
 const STORAGE_KEY = "prep-calculator:v2";
 
-export type AppTab = "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
-const APP_TABS: readonly AppTab[] = ["timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
+export type AppTab = "today" | "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
+const APP_TABS: readonly AppTab[] = ["today", "timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
 
 /** Personal progress state. Never put in shareable URLs. */
 export interface TrackingState {
@@ -71,7 +71,7 @@ export interface AppState {
 
 export const DEFAULT_APP_STATE: AppState = {
   unit: DEFAULT_UNIT,
-  activeTab: "timeline",
+  activeTab: "today",
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
@@ -204,7 +204,7 @@ export function sanitizeAppState(raw: unknown): AppState {
   const obj = (v: unknown) => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {});
   return {
     unit: oneOf<WeightUnit>(parsed.unit, ["lb", "kg"], DEFAULT_UNIT),
-    activeTab: oneOf<AppTab>(parsed.activeTab, APP_TABS, "timeline"),
+    activeTab: oneOf<AppTab>(parsed.activeTab, APP_TABS, "today"),
     profile: sanitizeProfile(obj(parsed.profile)),
     fatLoss: sanitizeFatLoss(obj(parsed.fatLoss)),
     carbs: sanitizeCarbs(obj(parsed.carbs)),
@@ -353,7 +353,7 @@ export function decodeStateFromQuery(search: string): AppState | null {
 
   return {
     unit: oneOf<WeightUnit>(params.get("u"), ["lb", "kg"], DEFAULT_UNIT),
-    activeTab: oneOf<AppTab>(params.get("t"), APP_TABS, "timeline"),
+    activeTab: oneOf<AppTab>(params.get("t"), APP_TABS, "today"),
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),

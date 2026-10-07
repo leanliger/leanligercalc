@@ -5,6 +5,7 @@ import {
   Activity,
   CloudOff,
   Dumbbell,
+  House,
   Link2,
   RotateCcw,
   Salad,
@@ -25,7 +26,8 @@ import { CarbCyclingCalculator } from "@/components/carb-cycling-calculator";
 import { ProfileCard, ProfileSummary } from "@/components/profile-card";
 import { RoadmapCalendar } from "@/components/roadmap-calendar";
 import { CheckinTab, type CheckinSection } from "@/components/checkin-tab";
-import { MacrosTab } from "@/components/macros-tab";
+import { MacrosTab, type NutritionSection } from "@/components/macros-tab";
+import { TodayTab, type TodayDestination } from "@/components/today-tab";
 import { LeaderboardTab } from "@/components/leaderboard-tab";
 import { TrainingTab } from "@/components/training-tab";
 import type { NotificationStatus } from "@/components/fasting-card";
@@ -56,7 +58,7 @@ import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/f
 import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
-import type { TrainingSettings, Workout } from "@/lib/training";
+import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import type {
   BiometricProfile,
   CarbCyclingInputs,
@@ -133,7 +135,8 @@ async function bootstrap(): Promise<{
 }> {
   const fromUrl = decodeStateFromQuery(window.location.search);
   const stored = loadFromStorage();
-  let state: AppState = fromUrl ?? stored ?? DEFAULT_APP_STATE;
+  // A fresh open starts on Today; a reload (the tab is in the URL) stays put.
+  let state: AppState = fromUrl ?? (stored ? { ...stored, activeTab: "today" } : DEFAULT_APP_STATE);
   if (fromUrl) state = { ...state, tracking: stored?.tracking ?? state.tracking };
 
   let session = await detectSession();
@@ -145,7 +148,8 @@ async function bootstrap(): Promise<{
     try {
       const plan = await cloud.loadPlan();
       const saved = plan ? sanitizeAppState(plan) : null;
-      if (saved) state = fromUrl ? { ...state, tracking: saved.tracking } : saved;
+      // Older plans saved the tab too; a fresh open still starts on Today.
+      if (saved) state = fromUrl ? { ...state, tracking: saved.tracking } : { ...saved, activeTab: "today" };
 
       let weighIns = await cloud.list();
       const onDevice = await local.list();
@@ -420,6 +424,22 @@ export function AppShell() {
     return { weighIn: to("weigh-in"), habits: to("habits") };
   }, [setTab]);
 
+  // Nutrition's sub-section, so Today can open the fasting timer directly.
+  const [nutritionSection, setNutritionSection] = React.useState<NutritionSection>("food");
+
+  const openFromToday = React.useCallback(
+    (dest: TodayDestination) => {
+      if (dest === "weigh-in") navigateFor.weighIn("checkin");
+      else if (dest === "habits") navigateFor.habits("checkin");
+      else if (dest === "food" || dest === "fasting") {
+        setNutritionSection(dest);
+        setTab("macros");
+      } else setTab(dest);
+      window.scrollTo({ top: 0 });
+    },
+    [navigateFor, setTab],
+  );
+
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
     setState((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
   }, []);
@@ -452,7 +472,7 @@ export function AppShell() {
   // inputs, so they survive; only "delete all my data" removes them.
   const handleReset = React.useCallback(() => {
     clearStorage();
-    setState((prev) => ({ ...DEFAULT_APP_STATE, tracking: prev.tracking }));
+    setState((prev) => ({ ...DEFAULT_APP_STATE, activeTab: prev.activeTab, tracking: prev.tracking }));
     setLinkedToTimeline(false);
   }, []);
 
@@ -617,6 +637,24 @@ export function AppShell() {
     [flushWorkouts],
   );
 
+  /** Start a program day from Today, then show it on the Training tab. */
+  const startWorkout = React.useCallback(
+    (program: Program, day: ProgramDay) => {
+      const w = createWorkout({
+        id: newId(),
+        date: today,
+        program,
+        day,
+        custom: state.tracking.training.customExercises,
+        workouts,
+      });
+      saveWorkout(w, true).catch(() => {});
+      setTab("training");
+      window.scrollTo({ top: 0 });
+    },
+    [today, state.tracking.training.customExercises, workouts, saveWorkout, setTab],
+  );
+
   const removeWorkout = React.useCallback(async (id: string) => {
     pendingWorkouts.current.delete(id);
     await workoutQueue.current.catch(() => {});
@@ -765,6 +803,11 @@ export function AppShell() {
             <Tabs value={state.activeTab === "roadmap" ? "carbs" : state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
               <div className="flex flex-wrap items-center gap-3">
                 <TabsList className="relative scrollbar-thin max-w-full gap-0.5 overflow-x-auto sm:gap-1 [&>button]:px-1.5 [&>button]:text-[13px] sm:[&>button]:px-4 sm:[&>button]:text-sm [&_svg]:hidden sm:[&_svg]:block">
+                  {/* Icon-only on phones (like Training and the leaderboard) so every tab fits. */}
+                  <TabsTrigger value="today" className="[&_svg]:!block">
+                    <House />
+                    <span className="sr-only sm:not-sr-only">Today</span>
+                  </TabsTrigger>
                   <TabsTrigger value="timeline">
                     <TrendingDown />
                     <span className="sm:hidden">Timeline</span>
@@ -780,15 +823,14 @@ export function AppShell() {
                     <span className="sm:hidden">Food</span>
                     <span className="hidden sm:inline">Nutrition</span>
                   </TabsTrigger>
-                  <TabsTrigger value="training">
+                  <TabsTrigger value="training" className="[&_svg]:!block">
                     <Dumbbell />
-                    Training
+                    <span className="sr-only sm:not-sr-only">Training</span>
                   </TabsTrigger>
                   <TabsTrigger value="checkin">
                     <Scale />
                     Check-in
                   </TabsTrigger>
-                  {/* On phones the trophy stands in for the word, so all six tabs fit. */}
                   <TabsTrigger value="leaderboard" className="[&_svg]:!block">
                     <Trophy />
                     <span className="sr-only sm:not-sr-only">Leaderboard</span>
@@ -808,6 +850,29 @@ export function AppShell() {
                   </Badge>
                 ) : null}
               </div>
+
+              <TabsContent value="today">
+                <TodayTab
+                  today={today}
+                  unit={state.unit}
+                  profile={state.profile}
+                  fatLoss={state.fatLoss}
+                  carbs={state.carbs}
+                  adjustments={state.tracking.adjustments}
+                  habits={state.tracking.habits}
+                  habitLogs={habitLogs}
+                  onSaveHabits={saveHabitDay}
+                  weighIns={weighIns}
+                  onSaveWeighIn={saveWeighIn}
+                  foodLogs={foodLogs}
+                  workouts={workouts}
+                  training={state.tracking.training}
+                  onStartWorkout={startWorkout}
+                  fasting={state.tracking.fasting}
+                  measurements={measurements}
+                  onOpen={openFromToday}
+                />
+              </TabsContent>
 
               <TabsContent value="timeline">
                 <FatLossCalculator
@@ -879,6 +944,8 @@ export function AppShell() {
                   onFastingChange={updateFasting}
                   notifications={{ availability: notifyAvailability, error: reminderError }}
                   onNavigate={navigateFor.habits}
+                  section={nutritionSection}
+                  onSectionChange={setNutritionSection}
                 />
               </TabsContent>
 

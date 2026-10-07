@@ -609,6 +609,30 @@ export function workoutExerciseFor(
   };
 }
 
+/** A new, in-progress workout: a program day's exercises pre-filled from last time, or empty. */
+export function createWorkout(args: {
+  id: string;
+  date: string;
+  program: Program | null;
+  day: ProgramDay | null;
+  custom: readonly Exercise[];
+  workouts: readonly Workout[];
+  now?: number;
+}): Workout {
+  const { id, date, program, day, custom, workouts } = args;
+  return {
+    id,
+    date,
+    name: day?.name ?? "Workout",
+    programId: program?.id ?? null,
+    dayId: day?.id ?? null,
+    startedAt: args.now ?? Date.now(),
+    finishedAt: null,
+    exercises: day ? day.exercises.map((pe) => workoutExerciseFor(pe, findExercise(pe.exerciseId, custom), workouts)) : [],
+    note: "",
+  };
+}
+
 /** The program day to do next: the one after the last finished workout from this program. */
 export function nextProgramDay(program: Program, workouts: readonly Workout[]): ProgramDay | null {
   if (program.days.length === 0) return null;

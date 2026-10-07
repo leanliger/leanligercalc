@@ -1,7 +1,8 @@
 # Prep Calculator
 
-Five integrated tools for contest prep and body recomposition planning:
+Five integrated tools for contest prep and body recomposition planning, plus a **Today** home screen that pulls them together:
 
+0. **Today** (the house icon; the app opens here) — everything due today on one page. See [Today and badges](#today-and-badges).
 1. **Fat Loss Timeline** — reverse-engineers prep duration (or a required start date) from a safe weekly fat loss rate, with a week-by-week milestone table and projection chart.
 2. **Carb Cycling** — builds a weekly high / medium / low carb rotation whose 7-day calorie, protein, carb, and fat totals average out *exactly* to your target.
 3. **Roadmap** — expands the two into a day-by-day calendar from start date to goal date: calories and macros for every single day.
@@ -282,6 +283,21 @@ On the Check-in tab, under the weight chart:
 - **Progress photos** (`src/lib/photos.ts`, `worker/photos.ts`, `photos-card.tsx`) — **optional and private**: front / side / back per date, a first-vs-latest comparison, and delete any time. Each photo is resized and re-encoded as JPEG on the device (max 1440 px), which strips EXIF/location data, then stored in the private R2 bucket bound as `PHOTOS` under `u/<userId>/<id>.jpg`. There are no public URLs: images stream through the Worker after an identity check, with `Cache-Control: private, no-store`. The server only accepts real JPEG bytes up to 2 MB, 400 per member. **Coach access is off by default**: only while the member switches on *Share my photos with my coach* (`photo_settings`) can an admin of their whop view them (`GET /api/coach/photo`, re-checked on every request). Photos never appear on the leaderboard. Cloud mode only — never stored in the browser. "Delete all my data" removes the objects as well as the rows. Tables from migration `0008`.
 
 **Turning photos on** needs Cloudflare R2, which Cloudflare only enables after a payment method is on file (the free tier covers 10 GB). Once it's enabled: `npx wrangler r2 bucket create leanligercalc-photos`, add `"r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "leanligercalc-photos" }]` to `wrangler.jsonc`, and deploy. Until then the photos card says "Coming soon".
+
+## Today and badges
+
+The **Today** tab (`today-tab.tsx`) is the screen a member opens each morning. A fresh open always starts here; a reload (the tab is in the URL) stays where it was. It reads and writes the same data as the other tabs — nothing new is stored on the server.
+
+- **Header:** the date and "X of N done today" across weigh-in, habits (all of them), food (anything logged), workout (finished, or a rest day) and steps (at target; only when a habit is linked to steps).
+- **Weigh-in:** log today's weight right there, or see it with the trend.
+- **Workout:** resume the one in progress; what was finished today; "Rest day"; otherwise the active program's next day with its first exercises and **Start** (`createWorkout`, the same as the Training tab, pre-filled from last time) — or a link to pick a program.
+- **Food:** calories and protein eaten vs today's targets (`src/lib/day-targets.ts`, shared with Nutrition: the roadmap's day, else the weekly carb plan).
+- **Habits:** today's checklist — tick boxes, and −/+ for number goals; a rest day greys out the workout habit.
+- **Steps:** today's count against the plan's step target (10,000 when maintenance comes from an activity level); ticks the steps habit at the target.
+- **Fasting:** fasting / eating window / time to eat, with the next meal time.
+- Each card links to its full tab and sub-section. Accounts with nothing logged see a welcome card pointing to the timeline.
+
+**Badges** (`src/lib/badges.ts`, `badges-card.tsx`) — 23 milestones worked out from data members already log, so nothing extra is stored and they stay correct if entries are edited or deleted: 1 / 10 / 50 / 100 workouts; first / 10 / 25 PRs (same records as the trophy in the logger); 7 / 30 / 100-day habit streaks (80%+ days) and four Green Zone weeks; 1 / 30 / 100 weigh-ins; 5 / 10 / 20 lb (2 / 5 / 10 kg) down on the weight trend; first measurements; first food logged, 7 days in a row, 30 days; first 10K-step day and 30 of them. The card shows the latest earned (with the date where it's knowable), the two closest to done, and the full set. A **New badge!** banner appears on Today when one is earned; which ones a member has already seen is kept per device in local storage (on the first visit everything already earned counts as seen, so existing members don't get a flood).
 
 ## Training
 

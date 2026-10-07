@@ -66,7 +66,7 @@ import { cn } from "@/lib/utils";
 const SAVE_DEBOUNCE_MS = 500;
 
 /** Sensible +/− step for a count habit, from the size of its target. */
-function stepFor(def: HabitDef): number {
+export function stepFor(def: HabitDef): number {
   const t = def.target ?? 1;
   if (t >= 1000) return 500;
   if (t >= 50) return 5;

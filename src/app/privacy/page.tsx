@@ -148,7 +148,7 @@ export default function PrivacyPage() {
           <List>
             <li>To calculate your timeline, carb cycling plan, roadmap and daily macro targets.</li>
             <li>To compare your weigh-ins with your plan and suggest calorie adjustments.</li>
-            <li>To show your habit scorecard, food log, and fasting timer.</li>
+            <li>To show your Today summary, habit scorecard, badges, food log, and fasting timer.</li>
             <li>To log your workouts, run the rest timer, and chart your lifts and personal records.</li>
             <li>To send the notifications and reminders you switch on.</li>
             <li>To let your coach review your progress and support you (see &ldquo;Your coach&rdquo; below).</li>

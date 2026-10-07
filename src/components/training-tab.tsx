@@ -48,7 +48,7 @@ import {
   nextProgramDay,
   programFromTemplate,
   summarizeWorkout,
-  workoutExerciseFor,
+  createWorkout,
   type Program,
   type ProgramDay,
   type ProgramTemplate,
@@ -185,17 +185,7 @@ export function TrainingTab({
 
   const start = (program: Program | null, day: ProgramDay | null) => {
     setFinishedId(null);
-    const w: Workout = {
-      id: uuid(),
-      date: today,
-      name: day?.name ?? "Workout",
-      programId: program?.id ?? null,
-      dayId: day?.id ?? null,
-      startedAt: Date.now(),
-      finishedAt: null,
-      exercises: day ? day.exercises.map((pe) => workoutExerciseFor(pe, findExercise(pe.exerciseId, custom), workouts)) : [],
-      note: "",
-    };
+    const w = createWorkout({ id: uuid(), date: today, program, day, custom, workouts });
     onSaveWorkout(w, true).catch(() => {});
     setView({ kind: "home" });
     window.scrollTo({ top: 0 });

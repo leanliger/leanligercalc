@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented";
+import { dayTargetFinder } from "@/lib/day-targets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,10 +27,7 @@ import { AddFoodCard, MacroLine, type AddMode } from "@/components/add-food-card
 import { FastingCard, type NotificationStatus } from "@/components/fasting-card";
 import type { FastingSettings } from "@/lib/fasting";
 import type { SessionInfo } from "@/lib/checkin-store";
-import { buildRoadmap } from "@/lib/roadmap";
-import { calculateFatLossTimeline } from "@/lib/fat-loss";
-import { calculateCarbCycling, DAY_LABELS } from "@/lib/carb-cycling";
-import { resolveWeekdayPattern, weekdayIndex } from "@/lib/weekday-pattern";
+import { DAY_LABELS } from "@/lib/carb-cycling";
 import { addDays, formatShort } from "@/lib/dates";
 import {
   CALORIE_TOLERANCE_KCAL,
@@ -56,16 +54,6 @@ import type { HabitDef, HabitLog } from "@/lib/habits";
 import type { CalorieAdjustment } from "@/lib/tracking";
 import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-/** The day's targets, and where they came from. */
-interface DayTarget {
-  type: DayType;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  source: "roadmap" | "carbs";
-}
 
 const DAY_PILL: Record<DayType, string> = {
   high: "bg-roadmap-high text-roadmap-high-foreground",
@@ -102,7 +90,12 @@ interface MacrosTabProps {
   onFastingChange: (fasting: FastingSettings) => void;
   notifications: NotificationStatus;
   onNavigate: (tab: "timeline" | "checkin") => void;
+  /** Which sub-section is open: what you eat, or when (the fasting timer). */
+  section: NutritionSection;
+  onSectionChange: (section: NutritionSection) => void;
 }
+
+export type NutritionSection = "food" | "fasting";
 
 export function MacrosTab({
   profile,
@@ -124,9 +117,9 @@ export function MacrosTab({
   onFastingChange,
   notifications,
   onNavigate,
+  section,
+  onSectionChange: setSection,
 }: MacrosTabProps) {
-  // The tab's two sub-sections: what you eat, and when (the fasting timer).
-  const [section, setSection] = React.useState<"food" | "fasting">("food");
   const [date, setDate] = React.useState(today);
   const [meal, setMeal] = React.useState<MealId>(() => defaultMeal(new Date().getHours()));
   const [mode, setMode] = React.useState<AddMode>({ kind: "menu" });
@@ -136,26 +129,10 @@ export function MacrosTab({
 
   /* -------------------------------- targets -------------------------------- */
 
-  const timeline = React.useMemo(() => calculateFatLossTimeline(profile, fatLoss), [profile, fatLoss]);
-  const roadmapDays = React.useMemo(() => {
-    const r = buildRoadmap(profile, carbs, timeline, adjustments);
-    return new Map(r.days.map((d) => [d.date, d]));
-  }, [profile, carbs, timeline, adjustments]);
-  const carbPlan = React.useMemo(() => calculateCarbCycling(profile, carbs), [profile, carbs]);
-  const pattern = React.useMemo(() => resolveWeekdayPattern(carbs), [carbs]);
-
-  // The roadmap is the plan; outside its dates, fall back to the Carb Cycling
-  // tab's week so there's always something to aim at.
-  const targetFor = React.useCallback(
-    (d: string): DayTarget | null => {
-      const day = roadmapDays.get(d);
-      if (day) return { ...day, source: "roadmap" };
-      if (!carbPlan.feasible) return null;
-      const type = pattern[weekdayIndex(d)] ?? "medium";
-      const plan = carbPlan.days.find((p) => p.type === type && p.calories > 0);
-      return plan ? { type, calories: plan.calories, protein: plan.protein, carbs: plan.carbs, fat: plan.fat, source: "carbs" } : null;
-    },
-    [roadmapDays, carbPlan, pattern],
+  // The roadmap is the plan; outside its dates, the Carb Cycling weekly plan.
+  const targetFor = React.useMemo(
+    () => dayTargetFinder(profile, fatLoss, carbs, adjustments),
+    [profile, fatLoss, carbs, adjustments],
   );
 
   const logFor = React.useCallback((d: string) => foodLogs.find((l) => l.date === d)?.entries ?? [], [foodLogs]);
