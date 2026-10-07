@@ -19,9 +19,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl } from "@/components/ui/segmented";
 import { Stat } from "@/components/stat";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { SettingsMenu } from "@/components/settings-menu";
 import { ProgressChart } from "@/components/progress-chart";
 import { ConsistencyCard } from "@/components/consistency-card";
 import { MeasurementsCard } from "@/components/measurements-card";
@@ -162,6 +161,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="container flex h-16 items-center gap-3">
+          <SettingsMenu unit={unit} onUnitChange={setUnit} />
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Activity className="h-5 w-5" />
           </span>
@@ -170,21 +170,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             <p className="hidden truncate text-xs text-muted-foreground sm:block">Prep Calculator · your members at a glance</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <SegmentedControl
-              ariaLabel="Weight unit"
-              value={unit}
-              onValueChange={setUnit}
-              options={[
-                { value: "lb" as const, label: "lb" },
-                { value: "kg" as const, label: "kg" },
-              ]}
-              size="sm"
-              className="w-[5.5rem]"
-            />
             <Button variant="ghost" size="icon" onClick={() => void load()} disabled={loading} aria-label="Refresh">
               <RefreshCw className={cn(loading && "animate-spin")} />
             </Button>
-            <ThemeToggle />
           </div>
         </div>
       </header>

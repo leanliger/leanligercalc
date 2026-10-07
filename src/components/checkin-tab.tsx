@@ -4,11 +4,8 @@ import * as React from "react";
 import {
   CalendarClock,
   Check,
-  Cloud,
-  HardDrive,
   Pencil,
   Scale,
-  ShieldCheck,
   Trash2,
   TrendingDown,
   Undo2,
@@ -30,12 +27,9 @@ import { ProgressChart } from "@/components/progress-chart";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ConsistencyCard } from "@/components/consistency-card";
-import { RemindersCard } from "@/components/reminders-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { PhotosCard } from "@/components/photos-card";
 import type { Measurement } from "@/lib/measurements";
-import type { NotificationStatus } from "@/components/fasting-card";
-import type { ReminderPrefs } from "@/lib/reminders";
 import { buildRoadmap } from "@/lib/roadmap";
 import { weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import type { WeeklyReview } from "@/lib/reviews";
@@ -77,14 +71,8 @@ interface CheckinTabProps {
   onDelete: (date: string) => Promise<void>;
   onApplyAdjustment: (rec: Recommendation, analysis: ProgressAnalysis) => void;
   onRemoveAdjustment: (id: string) => void;
-  onDeleteAll: () => Promise<void>;
   /** Food logs, so the protein and calorie habits can show what's been eaten. */
   foodLogs: FoodLog[];
-  /** Food-log days and saved foods, for the delete-all count. */
-  foodCount: number;
-  reminders: ReminderPrefs;
-  onRemindersChange: (prefs: ReminderPrefs) => void;
-  reminderStatus: NotificationStatus;
   measurements: Measurement[];
   onSaveMeasurement: (m: Measurement) => Promise<void>;
   onDeleteMeasurement: (date: string) => Promise<void>;
@@ -140,12 +128,7 @@ export function CheckinTab({
   onDelete,
   onApplyAdjustment,
   onRemoveAdjustment,
-  onDeleteAll,
   foodLogs,
-  foodCount,
-  reminders,
-  onRemindersChange,
-  reminderStatus,
   measurements,
   onSaveMeasurement,
   onDeleteMeasurement,
@@ -445,8 +428,6 @@ export function CheckinTab({
               </form>
             </CardContent>
           </Card>
-
-          <RemindersCard prefs={reminders} onChange={onRemindersChange} status={reminderStatus} />
         </div>
 
         {/* ------------------------------ right ------------------------------- */}
@@ -633,11 +614,6 @@ export function CheckinTab({
             ) : null}
           </Card>
 
-          <StorageCard
-            session={session}
-            count={weighIns.length + habitLogs.length + reviews.length + foodCount}
-            onDeleteAll={onDeleteAll}
-          />
         </div>
       </div>
     </div>
@@ -682,62 +658,5 @@ function RecommendationBox({ rec, onApply }: { rec: Recommendation; onApply: () 
         </p>
       )}
     </div>
-  );
-}
-
-function StorageCard({
-  session,
-  count,
-  onDeleteAll,
-}: {
-  session: SessionInfo;
-  count: number;
-  onDeleteAll: () => Promise<void>;
-}) {
-  const cloud = session.mode === "cloud";
-  const reasons: Record<string, string> = {
-    "not-configured": "Account sync isn't switched on for this app yet.",
-    "not-signed-in": "Open this app from inside Whop to sync check-ins to your account.",
-    "no-server": "This version of the app has no sync server.",
-    offline: "Couldn't reach the sync server.",
-  };
-  return (
-    <Card>
-      <CardHeader className="space-y-2 pb-3">
-        <div className="flex items-center gap-2">
-          {cloud ? <Cloud className="h-4 w-4 text-success" /> : <HardDrive className="h-4 w-4 text-warning" />}
-          <CardTitle className="text-sm">
-            {cloud ? "Synced to your Whop account" : "Saved on this device only"}
-          </CardTitle>
-        </div>
-        <CardDescription className="text-xs leading-relaxed">
-          {cloud
-            ? "Your weigh-ins, habits and plan follow you to any device where you open this app in Whop."
-            : `${reasons[session.reason ?? "not-signed-in"]} For now, check-ins stay in this browser — clearing site data or switching devices loses them.`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            Your weight, food and habit logs are health data. They&apos;re stored only to run the app and for your coach
-            to review — your coach can see your plan, weigh-ins, measurements, habits and daily food totals (and your progress
-            photos only if you choose to share them), but not change them. You
-            can delete all of it here at any time.{" "}
-            <a href="/privacy/" target="_blank" rel="noopener" className="underline underline-offset-2 hover:text-foreground">
-              Privacy policy
-            </a>
-          </span>
-        </p>
-        <ConfirmButton
-          variant="outline"
-          className="w-full"
-          icon={<Trash2 />}
-          label={`Delete all my data${count ? ` (${count} entries)` : ""}`}
-          confirmLabel="Yes, delete everything"
-          onConfirm={onDeleteAll}
-        />
-      </CardContent>
-    </Card>
   );
 }

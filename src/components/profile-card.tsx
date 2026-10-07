@@ -86,6 +86,40 @@ function HeightImperial({
   );
 }
 
+/**
+ * A read-only line of the same details, for places that use them but where
+ * they're edited elsewhere (the Carb Cycling tab uses the Timeline's).
+ */
+export function ProfileSummary({
+  profile,
+  unit,
+  onEdit,
+}: {
+  profile: BiometricProfile;
+  unit: WeightUnit;
+  onEdit: () => void;
+}) {
+  const { feet, inches } = inchesToFeetInches(profile.heightInches);
+  const height = unit === "kg" ? `${Math.round(inchesToCm(profile.heightInches))} cm` : `${feet}′${inches}″`;
+  const bodyFat = `${round(resolveBodyFat(profile), 1)}% body fat${isEstimatedBodyFat(profile) ? " (est.)" : ""}`;
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <User className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">About you</p>
+          <p className="tabular text-xs text-muted-foreground">
+            {round(fromLb(profile.weight, unit), 1)} {unit} · {height} · {profile.age} · {SEX_LABELS[profile.sex]} · {bodyFat}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={onEdit}>
+          Edit
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ProfileCard({ profile, onChange, unit, className }: ProfileCardProps) {
   const bodyFat = resolveBodyFat(profile);
   const estimated = isEstimatedBodyFat(profile);
@@ -100,7 +134,7 @@ export function ProfileCard({ profile, onChange, unit, className }: ProfileCardP
           About you
         </CardTitle>
         <CardDescription>
-          Used by both calculators. Everything recalculates as you type.
+          Used by the Timeline and Carb Cycling. Everything recalculates as you type.
         </CardDescription>
       </CardHeader>
 

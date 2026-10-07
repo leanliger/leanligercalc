@@ -25,7 +25,7 @@ export const viewport: Viewport = {
  * Dark is the default rather than following the OS: the brand is gold on
  * charcoal, and a visitor whose system is set to light would otherwise land on
  * a version of the product that isn't really it. An explicit choice from the
- * theme toggle still wins.
+ * Appearance setting (settings-menu.tsx) still wins.
  */
 const THEME_SCRIPT = `
 (function () {

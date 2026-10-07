@@ -18,11 +18,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SegmentedControl } from "@/components/ui/segmented";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { SettingsMenu } from "@/components/settings-menu";
 import { CopyButton } from "@/components/copy-button";
 import { FatLossCalculator } from "@/components/fat-loss-calculator";
 import { CarbCyclingCalculator } from "@/components/carb-cycling-calculator";
-import { ProfileCard } from "@/components/profile-card";
+import { ProfileCard, ProfileSummary } from "@/components/profile-card";
 import { RoadmapCalendar } from "@/components/roadmap-calendar";
 import { CheckinTab, type CheckinSection } from "@/components/checkin-tab";
 import { MacrosTab } from "@/components/macros-tab";
@@ -61,13 +61,7 @@ import type {
   BiometricProfile,
   CarbCyclingInputs,
   FatLossInputs,
-  WeightUnit,
 } from "@/lib/types";
-
-const UNIT_OPTIONS = [
-  { value: "lb" as const, label: "lb" },
-  { value: "kg" as const, label: "kg" },
-];
 
 const PLAN_SAVE_DEBOUNCE_MS = 800;
 
@@ -696,6 +690,27 @@ export function AppShell() {
         <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <div className="container flex h-16 items-center gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
+              <SettingsMenu
+                unit={state.unit}
+                onUnitChange={(unit) => setState((prev) => ({ ...prev, unit }))}
+                reminders={{
+                  prefs: state.tracking.reminders,
+                  onChange: updateReminders,
+                  status: { availability: notifyAvailability, error: checkinReminderError },
+                }}
+                data={{
+                  session,
+                  count:
+                    weighIns.length +
+                    habitLogs.length +
+                    reviews.length +
+                    foodLogs.length +
+                    myFoods.length +
+                    measurements.length +
+                    workouts.length,
+                  onDeleteAll: deleteAllData,
+                }}
+              />
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <Activity className="h-5 w-5" />
               </span>
@@ -710,16 +725,6 @@ export function AppShell() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <SegmentedControl
-                ariaLabel="Weight unit"
-                value={state.unit}
-                onValueChange={(unit: WeightUnit) =>
-                  setState((prev) => ({ ...prev, unit }))
-                }
-                options={UNIT_OPTIONS}
-                size="sm"
-                className="w-[5.5rem]"
-              />
               <CopyButton
                 getText={() => buildShareUrl(state)}
                 label="Share"
@@ -736,7 +741,6 @@ export function AppShell() {
               >
                 <RotateCcw />
               </Button>
-              <ThemeToggle />
             </div>
           </div>
         </header>
@@ -847,9 +851,8 @@ export function AppShell() {
                     unit={state.unit}
                     linkedToTimeline={linkedToTimeline}
                     onClearLink={() => setLinkedToTimeline(false)}
-                    profileSlot={
-                      <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
-                    }
+                    // "About you" is shared with the Timeline and edited there.
+                    profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
                   />
                 )}
               </TabsContent>
@@ -924,15 +927,10 @@ export function AppShell() {
                   onDelete={deleteWeighIn}
                   onApplyAdjustment={applyAdjustment}
                   onRemoveAdjustment={removeAdjustment}
-                  onDeleteAll={deleteAllData}
                   foodLogs={foodLogs}
-                  foodCount={foodLogs.length + myFoods.length + measurements.length + workouts.length}
                   measurements={measurements}
                   onSaveMeasurement={saveMeasurement}
                   onDeleteMeasurement={deleteMeasurement}
-                  reminders={state.tracking.reminders}
-                  onRemindersChange={updateReminders}
-                  reminderStatus={{ availability: notifyAvailability, error: checkinReminderError }}
                   onNavigate={setTab}
                   section={checkinSection}
                   onSectionChange={setCheckinSection}

@@ -257,8 +257,8 @@ export default function PrivacyPage() {
         <Section title="7. Your choices and rights">
           <List>
             <li>
-              <strong>Delete everything:</strong> open the <strong>Check-in</strong> tab and use{" "}
-              <strong>&ldquo;Delete all my data&rdquo;</strong>. This permanently removes your weigh-ins, habits, weekly
+              <strong>Delete everything:</strong> open <strong>Settings</strong> (the gear at the top left) and use{" "}
+              <strong>&ldquo;Delete all my data&rdquo;</strong>, then confirm. This permanently removes your weigh-ins, habits, weekly
               notes, measurements, progress photos, food logs, saved foods, workouts, plan and training programs, notification
               settings, leaderboard entry and lift submissions.
             </li>
@@ -268,7 +268,7 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
-              Macros tab, and weigh-in, habit and recap reminders from the Reminders card on the Check-in tab.
+              Macros tab, and weigh-in, habit and recap reminders from Settings (the gear at the top left).
             </li>
             <li>
               <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
@@ -277,8 +277,8 @@ export default function PrivacyPage() {
               <strong>Withdraw a lift submission</strong> (waiting, approved or not) at any time from Leaderboard → Lifts.
             </li>
             <li>
-              <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from the Progress photos
-              card on the Check-in tab.
+              <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from Check-in → Progress
+              photos.
             </li>
             <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.

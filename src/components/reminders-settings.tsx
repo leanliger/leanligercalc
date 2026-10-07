@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Bell, BellOff, BellRing } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { NotificationStatus } from "@/components/fasting-card";
@@ -42,13 +41,14 @@ function clockOf(time: string): string {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-interface RemindersCardProps {
+export interface RemindersSettingsProps {
   prefs: ReminderPrefs;
   onChange: (prefs: ReminderPrefs) => void;
   status: NotificationStatus;
 }
 
-export function RemindersCard({ prefs, onChange, status }: RemindersCardProps) {
+/** The weigh-in / habits / recap reminders, as a section of the Settings panel. */
+export function RemindersSettings({ prefs, onChange, status }: RemindersSettingsProps) {
   const available = status.availability === "ok";
   const anyOn = available && REMINDER_TYPES.some((t) => prefs[t].on);
 
@@ -56,37 +56,33 @@ export function RemindersCard({ prefs, onChange, status }: RemindersCardProps) {
     onChange({ ...prefs, [type]: { ...prefs[type], ...patch } });
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          {anyOn ? <BellRing className="h-4 w-4 text-primary" /> : <Bell className="h-4 w-4 text-primary" />}
-          Reminders
-        </CardTitle>
-        <CardDescription>
-          {available
-            ? "Whop notifications at the times you choose. Fasting reminders are on the Macros tab."
-            : UNAVAILABLE[status.availability as Exclude<NotificationStatus["availability"], "ok">]}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {REMINDER_TYPES.map((type) => (
-          <ReminderRow
-            key={type}
-            type={type}
-            on={available && prefs[type].on}
-            time={prefs[type].time}
-            disabled={!available}
-            onToggle={(on) => set(type, { on })}
-            onTime={(time) => set(type, { time })}
-          />
-        ))}
-        {available && status.error ? (
-          <p role="alert" className="text-xs text-destructive">
-            {status.error}
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="space-y-2">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        {anyOn ? <BellRing className="h-3.5 w-3.5 text-primary" aria-hidden /> : <Bell className="h-3.5 w-3.5" aria-hidden />}
+        Reminders
+      </p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {available
+          ? "Whop notifications at the times you choose. Fasting reminders are on the Macros tab."
+          : UNAVAILABLE[status.availability as Exclude<NotificationStatus["availability"], "ok">]}
+      </p>
+      {REMINDER_TYPES.map((type) => (
+        <ReminderRow
+          key={type}
+          type={type}
+          on={available && prefs[type].on}
+          time={prefs[type].time}
+          disabled={!available}
+          onToggle={(on) => set(type, { on })}
+          onTime={(time) => set(type, { time })}
+        />
+      ))}
+      {available && status.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {status.error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
