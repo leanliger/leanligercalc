@@ -111,6 +111,17 @@ export function FatLossCalculator({
     (preset) => Math.abs(preset.rate - inputs.weeklyRate) < 1e-6,
   );
 
+  // What each approach costs in food: the daily deficit in week 1 (it shrinks
+  // as weight comes down). Null when there's no workable plan to measure.
+  const presetDeficits = React.useMemo(() => {
+    const out = {} as Record<(typeof RATE_PRESET_OPTIONS)[number]["value"], number | null>;
+    for (const preset of RATE_PRESET_OPTIONS) {
+      const r = calculateFatLossTimeline(profile, { ...inputs, weeklyRate: preset.rate });
+      out[preset.value] = r.feasible ? (r.projection[0]?.dailyDeficit ?? null) : null;
+    }
+    return out;
+  }, [profile, inputs]);
+
   const summary = React.useMemo(
     () =>
       formatTimelineSummary(profile, inputs, result, unit, (lb) => fromLb(lb, unit)),
@@ -212,6 +223,12 @@ export function FatLossCalculator({
                 {(inputs.weeklyRate * 100).toFixed(2)}%
               </span>
             </div>
+            {result.feasible && firstWeek ? (
+              <p className="tabular -mt-2 text-right text-xs text-muted-foreground">
+                {firstWeek.dailyDeficit.toLocaleString()} kcal/day deficit to start
+                {" "}· {(firstWeek.dailyDeficit * 7).toLocaleString()} kcal/week
+              </p>
+            ) : null}
 
             <Slider
               value={[inputs.weeklyRate * 1000]}
@@ -242,13 +259,19 @@ export function FatLossCalculator({
                   <span className="text-[10px] font-normal opacity-80">
                     {(preset.rate * 100).toFixed(2)}%
                   </span>
+                  {presetDeficits[preset.value] !== null ? (
+                    <span className="tabular text-[10px] font-normal opacity-80">
+                      −{presetDeficits[preset.value]!.toLocaleString()} kcal/day
+                    </span>
+                  ) : null}
                 </Button>
               ))}
             </div>
 
             <p className="text-xs text-muted-foreground">
               Loss is taken as a percentage of <em>current</em> weight each week, so the
-              pounds per week shrink as you do.
+              pounds per week — and the calorie deficit — shrink as you do. Deficits shown are
+              for week 1.
             </p>
           </div>
 
