@@ -38,6 +38,8 @@ export interface SessionInfo {
   reason?: LocalReason;
   /** Cloud mode only: the server can send Whop notifications (API key set). */
   notifications?: boolean;
+  /** Cloud mode only: the signed-in Whop user, so on-device backups stay with their owner. */
+  userId?: string;
 }
 
 /** What the server needs to send a member's fasting notifications. */
@@ -105,6 +107,15 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/** Workout uploads give up after this long, so a hung connection counts as no signal. */
+const WORKOUT_TIMEOUT_MS = 15_000;
+
+function timeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 async function expectOk(res: Response): Promise<Response> {
   if (res.ok) return res;
   let message = `Request failed (${res.status}).`;
@@ -114,7 +125,8 @@ async function expectOk(res: Response): Promise<Response> {
   } catch {
     /* non-JSON error body */
   }
-  throw new Error(message);
+  // The status tells a rejected request apart from a dropped connection.
+  throw Object.assign(new Error(message), { status: res.status });
 }
 
 export async function detectSession(): Promise<SessionInfo> {
@@ -129,8 +141,14 @@ export async function detectSession(): Promise<SessionInfo> {
     const isJson = (res.headers.get("content-type") ?? "").includes("application/json");
     // Static hosting answers /api/session with the HTML 404 page.
     if (!isJson) return { mode: "local", reason: "no-server" };
-    const body = (await res.json()) as { storage?: string; reason?: LocalReason; notifications?: boolean };
-    if (res.ok && body.storage === "cloud") return { mode: "cloud", notifications: body.notifications === true };
+    const body = (await res.json()) as { storage?: string; reason?: LocalReason; notifications?: boolean; userId?: unknown };
+    if (res.ok && body.storage === "cloud") {
+      return {
+        mode: "cloud",
+        notifications: body.notifications === true,
+        ...(typeof body.userId === "string" && body.userId ? { userId: body.userId } : {}),
+      };
+    }
     return { mode: "local", reason: body.reason ?? "not-signed-in" };
   } catch {
     return { mode: "local", reason: "offline" };
@@ -465,11 +483,13 @@ export function createStore(mode: StorageMode): CheckinStore {
       },
       async saveWorkout(w) {
         const { id, ...body } = w;
-        const res = await expectOk(await api(`/api/workouts/${id}`, { method: "PUT", body: JSON.stringify(body) }));
+        const res = await expectOk(
+          await api(`/api/workouts/${id}`, { method: "PUT", body: JSON.stringify(body), signal: timeoutSignal(WORKOUT_TIMEOUT_MS) }),
+        );
         return ((await res.json()) as { workout: Workout }).workout;
       },
       async removeWorkout(id) {
-        await expectOk(await api(`/api/workouts/${id}`, { method: "DELETE" }));
+        await expectOk(await api(`/api/workouts/${id}`, { method: "DELETE", signal: timeoutSignal(WORKOUT_TIMEOUT_MS) }));
       },
       async saveFastingReminders(req) {
         await expectOk(await api("/api/fasting-reminders", { method: "PUT", body: JSON.stringify(req) }));

@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CloudOff,
   Dumbbell,
   History,
   ListOrdered,
@@ -90,6 +91,8 @@ interface TrainingTabProps {
   onSaveHabits: (log: HabitLog) => Promise<void>;
   /** Whether form checks (Whop, inside a community) work here. */
   formCheckAvailability: NotificationStatus["availability"];
+  /** Workout changes saved on this phone, waiting for signal to upload. */
+  unsyncedWorkouts: number;
 }
 
 /** Which sessions in which workouts set a personal record. */
@@ -121,6 +124,7 @@ export function TrainingTab({
   habitLogs,
   onSaveHabits,
   formCheckAvailability,
+  unsyncedWorkouts,
 }: TrainingTabProps) {
   const [view, setView] = React.useState<View>({ kind: "home" });
   // An exercise to ask for a form check on, from its page.
@@ -294,6 +298,7 @@ export function TrainingTab({
         settings={settings}
         mode="edit"
         saveError={saveError}
+        pendingUploads={unsyncedWorkouts}
         onChange={(next) => onSaveWorkout(next).catch(() => {})}
         onFinish={saveEdit}
         onDiscard={async () => {
@@ -318,6 +323,7 @@ export function TrainingTab({
         settings={settings}
         mode="live"
         saveError={saveError}
+        pendingUploads={unsyncedWorkouts}
         onChange={(next) => onSaveWorkout(next).catch(() => {})}
         onFinish={finish}
         onDiscard={async () => {
@@ -336,6 +342,11 @@ export function TrainingTab({
     const activeProgram = settings.programs.find((p) => p.id === settings.activeProgramId) ?? settings.programs[0] ?? null;
     body = (
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:items-start">
+        {unsyncedWorkouts > 0 || saveError ? (
+          <div className="lg:col-span-2">
+            <SyncNotice waiting={unsyncedWorkouts} error={saveError} />
+          </div>
+        ) : null}
         <div className="space-y-5">
           {finished ? (
             <FinishedCard
@@ -407,6 +418,27 @@ export function TrainingTab({
         }}
       />
     </div>
+  );
+}
+
+/** Workouts kept on this phone until there's signal, or a save the server refused. */
+function SyncNotice({ waiting, error }: { waiting: number; error: string | null }) {
+  return (
+    <p
+      role="status"
+      className={cn(
+        "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
+        error ? "border-destructive/50 text-destructive" : "border-border bg-muted/40 text-muted-foreground",
+      )}
+    >
+      <CloudOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        {error ??
+          (waiting === 1
+            ? "Your latest workout change is saved on this phone. It'll upload as soon as you're back online, even if you close the app."
+            : `${waiting} workout changes are saved on this phone. They'll upload as soon as you're back online, even if you close the app.`)}
+      </span>
+    </p>
   );
 }
 

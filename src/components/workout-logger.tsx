@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowLeftRight, ArrowUp, Check, Flag, Minus, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, CloudOff, Flag, Minus, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +89,8 @@ export interface WorkoutLoggerProps {
   /** live: a workout in progress. edit: fixing a finished one. */
   mode: "live" | "edit";
   saveError: string | null;
+  /** Changes saved on this phone, waiting for signal. */
+  pendingUploads?: number;
   onChange: (w: Workout) => void;
   /** Finish (live) or Done (edit). */
   onFinish: (w: Workout) => Promise<void>;
@@ -109,6 +111,7 @@ export function WorkoutLogger({
   settings,
   mode,
   saveError,
+  pendingUploads = 0,
   onChange,
   onFinish,
   onDiscard,
@@ -200,6 +203,11 @@ export function WorkoutLogger({
           {saveError ? (
             <p role="status" className="text-xs text-destructive">
               Not saved yet: {saveError} It will retry on your next change.
+            </p>
+          ) : pendingUploads > 0 ? (
+            <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CloudOff className="h-3.5 w-3.5 shrink-0" />
+              No signal? Every set is saved on this phone and uploads when you&apos;re back online.
             </p>
           ) : null}
         </CardHeader>

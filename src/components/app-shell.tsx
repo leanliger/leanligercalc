@@ -59,6 +59,34 @@ import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
 import { endPause, type PausePeriod } from "@/lib/pause";
+import {
+  dropEntry,
+  isRetryable,
+  markDeleted,
+  markSynced,
+  overlay,
+  pendingFor,
+  pruneBackup,
+  readAccount,
+  readBackup,
+  reconcile,
+  recordChange,
+  recordDelete,
+  writeAccount,
+  writeBackup,
+  type BackupEntry,
+} from "@/lib/workout-backup";
+import {
+  dropHabitDay,
+  markHabitDaySaved,
+  overlayHabitLogs,
+  pendingHabitDays,
+  pruneHabitBackup,
+  readHabitBackup,
+  recordHabitDay,
+  writeHabitBackup,
+  type HabitBackupEntry,
+} from "@/lib/habit-backup";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import type {
   BiometricProfile,
@@ -117,6 +145,9 @@ function newId(): string {
  *     and the saved plan replaces the local one. Otherwise → local mode.
  *  3. In cloud mode, any weigh-ins logged locally before sync existed are
  *     uploaded, so nothing is stranded on one device. Cloud wins on clashes.
+ *  4. Workouts kept on this phone because the signal dropped (see
+ *     src/lib/workout-backup.ts) are laid over the list, so the latest sets
+ *     show straight away; they upload once the app is ready.
  */
 async function bootstrap(): Promise<{
   state: AppState;
@@ -131,6 +162,8 @@ async function bootstrap(): Promise<{
   myFoods: FoodProduct[];
   measurements: Measurement[];
   workouts: Workout[];
+  /** The on-phone workout and habit backups and whose they are; `on` when in use. */
+  workoutBackup: { entries: BackupEntry[]; habits: HabitBackupEntry[]; account: string | null; on: boolean };
   /** The plan exactly as loaded from the cloud, if there was one. */
   cloudState: AppState | null;
 }> {
@@ -201,6 +234,15 @@ async function bootstrap(): Promise<{
       const workoutsToUpload = workoutsOnDevice.filter((w) => !knownWorkouts.has(w.id));
       for (const w of workoutsToUpload) await cloud.saveWorkout(w);
       if (workoutsToUpload.length > 0) workouts = await cloud.listWorkouts();
+      // And workouts kept on this phone when the signal dropped.
+      const account = session.userId ?? null;
+      if (account) writeAccount(account);
+      const backup = account ? reconcile(pruneBackup(readBackup(), Date.now()), workouts, account) : [];
+      if (account) writeBackup(backup);
+      workouts = overlay(workouts, backup, account);
+      // And habit ticks made with no signal.
+      const habitBackup = account ? pruneHabitBackup(readHabitBackup(), Date.now()) : [];
+      habitLogs = overlayHabitLogs(habitLogs, habitBackup, account);
 
       if (
         onDevice.length > 0 ||
@@ -226,6 +268,7 @@ async function bootstrap(): Promise<{
         myFoods,
         measurements,
         workouts: [...workouts].sort(byWorkoutTime),
+        workoutBackup: { entries: backup, habits: habitBackup, account, on: account !== null },
         cloudState: saved,
       };
     } catch {
@@ -235,18 +278,25 @@ async function bootstrap(): Promise<{
   }
 
   const store = createStore("local");
+  // Opened with no signal: show the workouts kept on this phone for the
+  // account last signed in here, so a workout in progress can carry on.
+  const offline = session.mode === "local" && session.reason === "offline";
+  const account = offline ? readAccount() : null;
+  const backup = account ? pruneBackup(readBackup(), Date.now()) : [];
+  const habitBackup = account ? pruneHabitBackup(readHabitBackup(), Date.now()) : [];
   return {
     state,
     session,
     store,
     weighIns: await store.list(),
-    habitLogs: await store.listHabits(),
+    habitLogs: overlayHabitLogs(await store.listHabits(), habitBackup, account),
     reviews: await store.listReviews(),
     foodLogs: await store.listFoodLogs(food.from, food.to),
     foodFrom: food.from,
     myFoods: await store.listMyFoods(),
     measurements: await store.listMeasurements(),
-    workouts: await store.listWorkouts(),
+    workouts: overlay(await store.listWorkouts(), backup, account).sort(byWorkoutTime),
+    workoutBackup: { entries: backup, habits: habitBackup, account, on: account !== null },
     cloudState: null,
   };
 }
@@ -278,6 +328,14 @@ export function AppShell() {
   const pendingWorkouts = React.useRef(new Map<string, Workout>());
   const workoutTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const workoutQueue = React.useRef<Promise<unknown>>(Promise.resolve());
+  // The on-phone workout backup (bad gym signal), whose it is, and the server
+  // to upload it to (null while offline). Off in plain local mode.
+  const backup = React.useRef<BackupEntry[]>([]);
+  const habitBackup = React.useRef<HabitBackupEntry[]>([]);
+  const backupAccount = React.useRef<string | null>(null);
+  const backupOn = React.useRef(false);
+  const cloudTarget = React.useRef<CheckinStore | null>(null);
+  const [unsyncedWorkouts, setUnsyncedWorkouts] = React.useState(0);
   // What the server holds for fasting notifications ("off", or the request
   // last sent), so they're only re-sent when something actually changed.
   const reminderSynced = React.useRef<string | null>(null);
@@ -309,6 +367,7 @@ export function AppShell() {
         myFoods: [] as FoodProduct[],
         measurements: [] as Measurement[],
         workouts: [] as Workout[],
+        workoutBackup: { entries: [] as BackupEntry[], habits: [] as HabitBackupEntry[], account: null, on: false },
         cloudState: null,
       }))
       .then((result) => {
@@ -323,6 +382,12 @@ export function AppShell() {
       setMyFoods(result.myFoods);
       setMeasurements(result.measurements);
       setWorkouts(result.workouts);
+      backup.current = result.workoutBackup.entries;
+      habitBackup.current = result.workoutBackup.habits;
+      backupAccount.current = result.workoutBackup.account;
+      backupOn.current = result.workoutBackup.on;
+      cloudTarget.current = result.store.mode === "cloud" ? result.store : null;
+      setUnsyncedWorkouts(pendingFor(backup.current, backupAccount.current).length);
       foodFrom.current = result.foodFrom;
       // Notifications on: re-send once per visit (picks up a new time zone).
       reminderSynced.current = result.state.tracking.fasting.notify ? null : "off";
@@ -523,14 +588,42 @@ export function AppShell() {
     }));
   }, []);
 
-  const saveHabitDay = React.useCallback(async (log: HabitLog) => {
-    const saved = await storeRef.current!.saveHabits(log);
-    setHabitLogs((prev) => {
-      const rest = prev.filter((l) => l.date !== saved.date);
-      const next = Object.keys(saved.entries).length > 0 ? [...rest, saved] : rest;
-      return next.sort((a, b) => (a.date < b.date ? -1 : 1));
-    });
+  const commitHabitBackup = React.useCallback((next: HabitBackupEntry[]) => {
+    habitBackup.current = next;
+    writeHabitBackup(next);
   }, []);
+
+  const saveHabitDay = React.useCallback(
+    async (log: HabitLog) => {
+      const store = storeRef.current!;
+      const account = backupOn.current ? backupAccount.current : null;
+      const show = (saved: HabitLog) =>
+        setHabitLogs((prev) => {
+          const rest = prev.filter((l) => l.date !== saved.date);
+          const next = Object.keys(saved.entries).length > 0 ? [...rest, saved] : rest;
+          return next.sort((a, b) => (a.date < b.date ? -1 : 1));
+        });
+      if (account && store.mode === "local") {
+        // Opened with no signal: saved here, and kept to upload once there's a connection.
+        const saved = await store.saveHabits(log);
+        commitHabitBackup(recordHabitDay(habitBackup.current, saved, account, Date.now()));
+        show(saved);
+        return;
+      }
+      try {
+        const saved = await store.saveHabits(log);
+        // Newer than anything waiting on the phone for that day.
+        if (account) commitHabitBackup(dropHabitDay(habitBackup.current, saved.date, account));
+        show(saved);
+      } catch (e) {
+        if (!account || !isRetryable(e)) throw e;
+        // No signal: keep the day on the phone; it uploads with the workouts.
+        commitHabitBackup(recordHabitDay(habitBackup.current, log, account, Date.now()));
+        show(log);
+      }
+    },
+    [commitHabitBackup],
+  );
 
   const saveReview = React.useCallback(async (review: WeeklyReview) => {
     const saved = await storeRef.current!.saveReview(review);
@@ -599,35 +692,86 @@ export function AppShell() {
 
   /* ------------------------------ training ------------------------------ */
 
+  const commitBackup = React.useCallback((next: BackupEntry[]) => {
+    backup.current = next;
+    writeBackup(next);
+    setUnsyncedWorkouts(pendingFor(next, backupAccount.current).length);
+  }, []);
+
+  /**
+   * Save workout changes: to this browser's store in local mode (and while
+   * offline), and — when there's a server — everything in the on-phone backup
+   * it doesn't have yet. Losing signal isn't an error: the changes are safe on
+   * the phone and go up on the next try.
+   */
   const flushWorkouts = React.useCallback((): Promise<void> => {
     if (workoutTimer.current) clearTimeout(workoutTimer.current);
     workoutTimer.current = null;
+    const store = storeRef.current;
+    if (!store) return Promise.resolve();
     const batch = [...pendingWorkouts.current.values()];
     pendingWorkouts.current.clear();
-    if (batch.length === 0 || !storeRef.current) return workoutQueue.current.then(() => undefined, () => undefined);
-    const store = storeRef.current;
+    let refused: string | null = null;
     const run = workoutQueue.current
       .catch(() => {})
       .then(async () => {
         for (const w of batch) await store.saveWorkout(w);
+        const target = cloudTarget.current;
+        if (!target || !backupOn.current) return;
+        for (const e of pendingFor(backup.current, backupAccount.current)) {
+          try {
+            if (e.workout) {
+              await target.saveWorkout(e.workout);
+              commitBackup(markSynced(backup.current, e.workout));
+            } else {
+              await target.removeWorkout(e.id);
+              commitBackup(markDeleted(backup.current, e.id));
+            }
+          } catch (err) {
+            if (isRetryable(err)) throw err; // no signal: stop here, try again later
+            // The server refused it (it isn't valid): retrying won't help.
+            commitBackup(dropEntry(backup.current, e.id));
+            refused = err instanceof Error ? err.message : "The server refused a workout.";
+          }
+        }
+        // Habit ticks made with no signal (e.g. "Completed workout" on finishing).
+        const account = backupAccount.current!;
+        for (const h of pendingHabitDays(habitBackup.current, account)) {
+          const log = { date: h.date, entries: h.entries };
+          try {
+            await target.saveHabits(log);
+            commitHabitBackup(markHabitDaySaved(habitBackup.current, log, account));
+          } catch (err) {
+            if (isRetryable(err)) throw err;
+            commitHabitBackup(dropHabitDay(habitBackup.current, h.date, account));
+          }
+        }
       });
     workoutQueue.current = run;
     return run.then(
-      () => setWorkoutSaveError(null),
+      () => setWorkoutSaveError(refused ? `Couldn't save a workout: ${refused}` : null),
       (e: unknown) => {
+        // Kept on the phone: shown as waiting to upload, not as an error.
+        if (backupOn.current && isRetryable(e)) {
+          setWorkoutSaveError(null);
+          return;
+        }
         // Keep them pending so the next change (or leaving the page) tries again.
         for (const w of batch) if (!pendingWorkouts.current.has(w.id)) pendingWorkouts.current.set(w.id, w);
         setWorkoutSaveError(e instanceof Error ? e.message : "Couldn't save your workout. Try again.");
         throw e instanceof Error ? e : new Error("Couldn't save your workout.");
       },
     );
-  }, []);
+  }, [commitBackup, commitHabitBackup]);
 
   /** Show a workout change straight away; save it shortly after (or now). */
   const saveWorkout = React.useCallback(
     (w: Workout, now = false): Promise<void> => {
       setWorkouts((prev) => [...prev.filter((x) => x.id !== w.id), w].sort(byWorkoutTime));
-      pendingWorkouts.current.set(w.id, w);
+      // On the phone first, so a dropped signal can't lose it.
+      if (backupOn.current) commitBackup(recordChange(backup.current, w, backupAccount.current, Date.now()));
+      // The backup carries it to the server; the browser's own store needs it directly.
+      if (!backupOn.current || storeRef.current?.mode === "local") pendingWorkouts.current.set(w.id, w);
       if (now) return flushWorkouts();
       if (workoutTimer.current) clearTimeout(workoutTimer.current);
       workoutTimer.current = setTimeout(() => {
@@ -635,7 +779,7 @@ export function AppShell() {
       }, WORKOUT_SAVE_DEBOUNCE_MS);
       return Promise.resolve();
     },
-    [flushWorkouts],
+    [flushWorkouts, commitBackup],
   );
 
   /** Start a program day from Today, then show it on the Training tab. */
@@ -656,12 +800,27 @@ export function AppShell() {
     [today, state.tracking.training.customExercises, workouts, saveWorkout, setTab],
   );
 
-  const removeWorkout = React.useCallback(async (id: string) => {
-    pendingWorkouts.current.delete(id);
-    await workoutQueue.current.catch(() => {});
-    await storeRef.current!.removeWorkout(id);
-    setWorkouts((prev) => prev.filter((x) => x.id !== id));
-  }, []);
+  const removeWorkout = React.useCallback(
+    async (id: string) => {
+      pendingWorkouts.current.delete(id);
+      const store = storeRef.current!;
+      if (backupOn.current) {
+        // Gone from the screen now; the server deletes it when there's signal.
+        commitBackup(recordDelete(backup.current, id, backupAccount.current, Date.now()));
+        if (store.mode === "local") {
+          await workoutQueue.current.catch(() => {});
+          await store.removeWorkout(id);
+        }
+        setWorkouts((prev) => prev.filter((x) => x.id !== id));
+        await flushWorkouts();
+        return;
+      }
+      await workoutQueue.current.catch(() => {});
+      await store.removeWorkout(id);
+      setWorkouts((prev) => prev.filter((x) => x.id !== id));
+    },
+    [commitBackup, flushWorkouts],
+  );
 
   // Leaving the page (or switching apps on a phone) saves anything unsaved.
   React.useEffect(() => {
@@ -671,6 +830,41 @@ export function AppShell() {
     document.addEventListener("visibilitychange", onHide);
     return () => document.removeEventListener("visibilitychange", onHide);
   }, [flushWorkouts]);
+
+  // Upload what's waiting on the phone: once ready, when the signal comes
+  // back, and every 30 s while anything is waiting. Opened offline, the first
+  // reconnect also checks it's the same Whop account before uploading.
+  React.useEffect(() => {
+    if (!ready || !backupOn.current) return;
+    let checking = false;
+    const retry = async () => {
+      if (!cloudTarget.current) {
+        if (checking || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
+        checking = true;
+        try {
+          const s = await detectSession();
+          if (s.mode === "cloud" && s.userId && s.userId === backupAccount.current) cloudTarget.current = createStore("cloud");
+        } finally {
+          checking = false;
+        }
+        if (!cloudTarget.current) return;
+      }
+      flushWorkouts().catch(() => {});
+    };
+    const waiting = () =>
+      pendingFor(backup.current, backupAccount.current).length > 0 ||
+      pendingHabitDays(habitBackup.current, backupAccount.current).length > 0;
+    if (waiting()) void retry();
+    const onOnline = () => void retry();
+    window.addEventListener("online", onOnline);
+    const timer = window.setInterval(() => {
+      if (waiting()) void retry();
+    }, 30_000);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.clearInterval(timer);
+    };
+  }, [ready, flushWorkouts]);
 
   // Takes an updater, so two changes in one tap (add an exercise, then put it
   // in a program) build on each other instead of the second undoing the first.
@@ -700,6 +894,11 @@ export function AppShell() {
     await workoutQueue.current.catch(() => {});
     await storeRef.current!.deleteAll();
     clearStorage();
+    // This account's workouts kept on the phone go too.
+    if (backupOn.current) {
+      commitBackup(backup.current.filter((e) => e.account !== backupAccount.current));
+      commitHabitBackup(habitBackup.current.filter((e) => e.account !== backupAccount.current));
+    }
     const reset: AppState = { ...DEFAULT_APP_STATE, unit: state.unit, activeTab: "checkin" };
     // Treat the empty defaults as already "synced" so they aren't written
     // straight back into the row that was just deleted.
@@ -714,7 +913,7 @@ export function AppShell() {
     setMeasurements([]);
     setWorkouts([]);
     setState(reset);
-  }, [state.unit]);
+  }, [state.unit, commitBackup, commitHabitBackup]);
 
   // Whether Whop notifications can be switched on here (fasting and check-in).
   const notifyAvailability: NotificationStatus["availability"] = !ready
@@ -971,6 +1170,7 @@ export function AppShell() {
                   habitLogs={habitLogs}
                   onSaveHabits={saveHabitDay}
                   formCheckAvailability={notifyAvailability}
+                  unsyncedWorkouts={unsyncedWorkouts}
                 />
               </TabsContent>
 

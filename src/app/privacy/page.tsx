@@ -178,6 +178,12 @@ export default function PrivacyPage() {
             on-device food logs older than one year are removed automatically to save space.
           </p>
           <p>
+            Inside Whop, your device also keeps a copy of a workout in progress, and any workout changes or habit ticks
+            made while you had no signal, until they reach your account (usually seconds; anything never uploaded is
+            removed after 60 days). It stores your Whop user ID with them, so on a shared device they only ever upload to
+            the account they came from. &ldquo;Delete all my data&rdquo; clears them too.
+          </p>
+          <p>
             Your browser also stores small preferences such as the light/dark theme. When the app is opened directly, the
             page address can contain your calculator settings (for example weight and goal) so that a plan can be shared
             with the &ldquo;Share&rdquo; button; it never contains your logs. Only share that link with people you trust.
