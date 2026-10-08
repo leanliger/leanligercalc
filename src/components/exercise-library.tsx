@@ -89,6 +89,8 @@ export function ExercisePicker({
   onAddCustom,
   title = "Add an exercise",
   exclude = [],
+  initialMuscle = "all",
+  footer,
 }: {
   custom: readonly Exercise[];
   onPick: (e: Exercise) => void;
@@ -98,9 +100,13 @@ export function ExercisePicker({
   title?: string;
   /** Ids already in the list, shown as added. */
   exclude?: readonly string[];
+  /** Start filtered to one muscle (a swap shows similar exercises first). */
+  initialMuscle?: MuscleFilter;
+  /** Extra controls under the list. */
+  footer?: React.ReactNode;
 }) {
   const [query, setQuery] = React.useState("");
-  const [muscle, setMuscle] = React.useState<MuscleFilter>("all");
+  const [muscle, setMuscle] = React.useState<MuscleFilter>(initialMuscle);
   const [adding, setAdding] = React.useState(false);
   const list = React.useMemo(() => allExercises(custom).filter((e) => matches(e, query, muscle)), [custom, query, muscle]);
 
@@ -148,6 +154,7 @@ export function ExercisePicker({
               })
             )}
           </ul>
+          {footer}
           <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setAdding(true)}>
             <Plus />
             Can&apos;t find it? Add your own

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ExternalLink, Pencil, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Trash2, Trophy, Video } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +79,7 @@ export function ExerciseProgress({
   backLabel,
   onSaveCustom,
   onDeleteCustom,
+  onFormCheck,
 }: {
   exercise: Exercise;
   workouts: readonly Workout[];
@@ -87,6 +88,8 @@ export function ExerciseProgress({
   backLabel: string;
   onSaveCustom?: (e: Exercise) => void;
   onDeleteCustom?: () => void;
+  /** Ask the coach for a form check on this exercise. */
+  onFormCheck?: () => void;
 }) {
   const history = React.useMemo(() => exerciseHistory(workouts, exercise.id), [workouts, exercise.id]);
   const options = exercise.bodyweight ? BODYWEIGHT : WEIGHTED;
@@ -153,6 +156,12 @@ export function ExerciseProgress({
                   <ExternalLink />
                   Watch a demo
                 </a>
+                {onFormCheck ? (
+                  <Button variant="outline" size="sm" onClick={onFormCheck}>
+                    <Video />
+                    Get a form check
+                  </Button>
+                ) : null}
                 {exercise.custom && (onSaveCustom || onDeleteCustom) ? (
                   <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                     {onSaveCustom ? (

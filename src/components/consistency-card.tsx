@@ -16,6 +16,7 @@ import {
   habitStreak,
   weeklyTrend,
 } from "@/lib/streaks";
+import { NO_PAUSES, withPauses, type PausePeriod } from "@/lib/pause";
 import { cn } from "@/lib/utils";
 
 const ZONE_BAR: Record<Zone, string> = {
@@ -36,15 +37,17 @@ interface ConsistencyCardProps {
   /** All habit logs, oldest first. */
   logs: HabitLog[];
   today: string;
+  /** Pause mode periods: excused from every streak and percentage. */
+  pauses?: PausePeriod[];
 }
 
 /**
  * Streaks and percentages, built from the same logs and rules as the weekly
  * scorecard (see src/lib/streaks.ts).
  */
-export function ConsistencyCard({ habits, logs, today }: ConsistencyCardProps) {
+export function ConsistencyCard({ habits, logs, today, pauses = NO_PAUSES }: ConsistencyCardProps) {
   const data = React.useMemo(() => {
-    const logMap = new Map(logs.map((l) => [l.date, l.entries]));
+    const logMap = withPauses(new Map(logs.map((l) => [l.date, l.entries])), pauses, today);
     const first = logs[0]?.date ?? null;
     return {
       daily: dailyStreak(habits, logMap, today, first),
@@ -56,7 +59,7 @@ export function ConsistencyCard({ habits, logs, today }: ConsistencyCardProps) {
         consistency: habitConsistency(def, logMap, today, first),
       })),
     };
-  }, [habits, logs, today]);
+  }, [habits, logs, today, pauses]);
 
   const thisWeek = data.trend[data.trend.length - 1];
 

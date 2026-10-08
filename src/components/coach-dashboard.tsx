@@ -38,6 +38,7 @@ import {
 } from "@/lib/coach";
 import { formatShort, todayISO } from "@/lib/dates";
 import { ZONES, type Zone } from "@/lib/habits";
+import { PAUSE_REASON_LABELS, type PausePeriod } from "@/lib/pause";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
@@ -374,8 +375,13 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
           {m.weekChangeLb !== null ? <span>{signedWeight(m.weekChangeLb, unit)} / wk</span> : null}
           <span>last log {describeDaysAgo(m.daysSinceLog)}</span>
         </span>
-        {m.flags.length > 0 ? (
+        {m.flags.length > 0 || m.paused ? (
           <span className="flex flex-wrap gap-1">
+            {m.paused ? (
+              <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                {pausedLabel(m.paused)}
+              </Badge>
+            ) : null}
             {m.flags.map((f) => (
               <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[10px]">
                 {FLAG_LABELS[f]}
@@ -387,6 +393,11 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
     </button>
   );
+}
+
+/** "Paused · sick to Oct 15" */
+function pausedLabel(p: PausePeriod): string {
+  return `Paused · ${PAUSE_REASON_LABELS[p.reason].toLowerCase()} to ${formatShort(p.to)}`;
 }
 
 /* ================================= detail ================================= */
@@ -432,6 +443,7 @@ function MemberDetail({
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
+          {m.paused ? <Badge variant="secondary">{pausedLabel(m.paused)}</Badge> : null}
           {m.flags.map((f) => (
             <Badge key={f} variant={FLAG_VARIANT[f]}>
               {FLAG_LABELS[f]}
@@ -515,7 +527,12 @@ function MemberDetail({
       </Card>
 
       {/* ------------------------------- habits ------------------------------- */}
-      <ConsistencyCard habits={m.state.tracking.habits} logs={[...m.data.habitLogs].sort((a, b) => (a.date < b.date ? -1 : 1))} today={today} />
+      <ConsistencyCard
+        habits={m.state.tracking.habits}
+        logs={[...m.data.habitLogs].sort((a, b) => (a.date < b.date ? -1 : 1))}
+        today={today}
+        pauses={m.state.tracking.pauses}
+      />
 
       {/* -------------------------------- food -------------------------------- */}
       <Card>

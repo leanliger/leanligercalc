@@ -14,6 +14,7 @@ import type { FoodLog } from "./food";
 import { STEPS_KEY, type HabitDef, type HabitEntries, type HabitLog } from "./habits";
 import type { Measurement } from "./measurements";
 import { dailyStreak, greenWeekStreak } from "./streaks";
+import { withPauses, type PausePeriod } from "./pause";
 import { exerciseHistory, isRecordSession, type Workout } from "./training";
 import type { WeighIn } from "./tracking";
 import type { WeightUnit } from "./types";
@@ -42,6 +43,8 @@ export interface BadgeInputs {
   foodLogs: readonly FoodLog[];
   workouts: readonly Workout[];
   measurements: readonly Measurement[];
+  /** Pause mode periods: those days don't break a streak. */
+  pauses?: readonly PausePeriod[];
 }
 
 /** A badge for reaching `n` of something, given the sorted dates each one happened. */
@@ -112,7 +115,11 @@ export function computeBadges(input: BadgeInputs): Badge[] {
   badges.push(countBadge("pr-25", "training", "PR machine", "Set 25 personal records.", prDates, 25));
 
   /* ------------------------------- habits ------------------------------- */
-  const logMap = new Map<string, HabitEntries>(input.habitLogs.map((l) => [l.date, l.entries]));
+  const logMap = withPauses(
+    new Map<string, HabitEntries>(input.habitLogs.map((l) => [l.date, l.entries])),
+    input.pauses ?? [],
+    today,
+  );
   const firstLog = input.habitLogs.length > 0 ? [...input.habitLogs].map((l) => l.date).sort()[0]! : null;
   const daily = dailyStreak([...input.habits], logMap, today, firstLog);
   const weeks = greenWeekStreak([...input.habits], logMap, today, firstLog);

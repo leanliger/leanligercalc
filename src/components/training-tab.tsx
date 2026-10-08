@@ -24,6 +24,8 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ExerciseLibraryCard } from "@/components/exercise-library";
+import { FormChecksCard } from "@/components/form-checks";
+import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
 import { ProgramEditor } from "@/components/program-editor";
 import { RestTimerBar, useRestTimer } from "@/components/rest-timer";
@@ -49,6 +51,7 @@ import {
   programFromTemplate,
   summarizeWorkout,
   createWorkout,
+  swapInProgram,
   type Program,
   type ProgramDay,
   type ProgramTemplate,
@@ -85,6 +88,8 @@ interface TrainingTabProps {
   habits: HabitDef[];
   habitLogs: HabitLog[];
   onSaveHabits: (log: HabitLog) => Promise<void>;
+  /** Whether form checks (Whop, inside a community) work here. */
+  formCheckAvailability: NotificationStatus["availability"];
 }
 
 /** Which sessions in which workouts set a personal record. */
@@ -115,8 +120,12 @@ export function TrainingTab({
   habits,
   habitLogs,
   onSaveHabits,
+  formCheckAvailability,
 }: TrainingTabProps) {
   const [view, setView] = React.useState<View>({ kind: "home" });
+  // An exercise to ask for a form check on, from its page.
+  const [askFor, setAskFor] = React.useState<string | null>(null);
+  const clearAskFor = React.useCallback(() => setAskFor(null), []);
   const [finishedId, setFinishedId] = React.useState<string | null>(null);
   const rest = useRestTimer();
   const active = activeWorkout(workouts);
@@ -140,6 +149,9 @@ export function TrainingTab({
   /* ------------------------------- settings ------------------------------- */
 
   // Every change is an updater on the latest settings (see app-shell).
+  const swapInMyProgram = (programId: string, dayId: string, fromId: string, toId: string) =>
+    onSettingsChange((s) => swapInProgram(s, programId, dayId, fromId, toId));
+
   const addCustom = (e: Exercise) =>
     onSettingsChange((s) => ({ ...s, customExercises: [e, ...s.customExercises.filter((x) => x.id !== e.id)] }));
 
@@ -245,6 +257,14 @@ export function TrainingTab({
         backLabel={active ? "Back to workout" : "Back to training"}
         onSaveCustom={ex.custom && findExercise(ex.id, custom) ? addCustom : undefined}
         onDeleteCustom={ex.custom && findExercise(ex.id, custom) ? () => deleteCustom(ex.id) : undefined}
+        onFormCheck={
+          formCheckAvailability === "ok" && !active && findExercise(ex.id, custom)
+            ? () => {
+                setAskFor(ex.id);
+                goHome();
+              }
+            : undefined
+        }
       />
     ) : null;
   } else if (view.kind === "program") {
@@ -283,6 +303,7 @@ export function TrainingTab({
         onOpenExercise={(id) => setView({ kind: "exercise", id })}
         onAddCustom={addCustom}
         onSetDone={() => {}}
+        onSwapInProgram={swapInMyProgram}
       />
     ) : null;
   }
@@ -306,6 +327,7 @@ export function TrainingTab({
         onOpenExercise={(id) => setView({ kind: "exercise", id })}
         onAddCustom={addCustom}
         onSetDone={(e, sec) => rest.start(sec, e.name)}
+        onSwapInProgram={swapInMyProgram}
       />
     );
   }
@@ -341,6 +363,13 @@ export function TrainingTab({
               onAdd={addProgram}
             />
           ) : null}
+          <FormChecksCard
+            availability={formCheckAvailability}
+            custom={custom}
+            onAddCustom={addCustom}
+            askFor={askFor}
+            onAskForHandled={clearAskFor}
+          />
         </div>
         <div className="space-y-5">
           <RecentWorkoutsCard

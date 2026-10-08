@@ -34,6 +34,7 @@ import type { Measurement } from "@/lib/measurements";
 import { buildRoadmap } from "@/lib/roadmap";
 import { DEFAULT_STEP_TARGET, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import type { WeeklyReview } from "@/lib/reviews";
+import type { PausePeriod } from "@/lib/pause";
 import { sumMacros, type FoodLog, type Macros } from "@/lib/food";
 import { addDays } from "@/lib/dates";
 import {
@@ -64,6 +65,8 @@ interface CheckinTabProps {
   carbs: CarbCyclingInputs;
   habits: HabitDef[];
   habitLogs: HabitLog[];
+  /** Pause mode periods: those days don't count for or against streaks. */
+  pauses: PausePeriod[];
   onSaveHabits: (log: HabitLog) => Promise<void>;
   reviews: WeeklyReview[];
   onSaveReview: (review: WeeklyReview) => Promise<void>;
@@ -121,6 +124,7 @@ export function CheckinTab({
   carbs,
   habits,
   habitLogs,
+  pauses,
   onSaveHabits,
   onHabitsChange,
   reviews,
@@ -266,6 +270,7 @@ export function CheckinTab({
             onSave={onSaveHabits}
             onHabitsChange={onHabitsChange}
             stepTarget={stepTarget}
+            pauses={pauses}
           />
           <div className="space-y-5">
             {habits.some((h) => h.link === "steps") ? (
@@ -277,7 +282,7 @@ export function CheckinTab({
                 weightLb={weighIns[weighIns.length - 1]?.weightLb ?? profile.weight}
               />
             ) : null}
-            <ConsistencyCard habits={habits} logs={habitLogs} today={today} />
+            <ConsistencyCard habits={habits} logs={habitLogs} today={today} pauses={pauses} />
           </div>
         </div>
       </div>
@@ -304,6 +309,7 @@ export function CheckinTab({
             <WeeklyScorecard
               habits={habits}
               logs={habitLogs}
+              pauses={pauses}
               reviews={reviews}
               today={today}
               weekTargets={weekTargets}

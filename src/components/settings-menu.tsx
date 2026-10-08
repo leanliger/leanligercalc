@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { RemindersSettings, type RemindersSettingsProps } from "@/components/reminders-settings";
 import { DataSettings, type DataSettingsProps } from "@/components/data-settings";
+import { PauseSettings, type PauseSettingsProps } from "@/components/pause-settings";
 import type { WeightUnit } from "@/lib/types";
 
 const THEME_KEY = "prep-calculator:theme";
@@ -87,12 +88,15 @@ export function SettingsMenu({
   unit,
   onUnitChange,
   reminders,
+  pause,
   data,
 }: {
   unit: WeightUnit;
   onUnitChange: (unit: WeightUnit) => void;
   /** Weigh-in / habits / recap reminders; left out on the coach dashboard. */
   reminders?: RemindersSettingsProps;
+  /** Pause mode (sick or travelling); left out on the coach dashboard. */
+  pause?: PauseSettingsProps;
   /** Sync status and "Delete all my data"; left out on the coach dashboard. */
   data?: DataSettingsProps;
 }) {
@@ -159,6 +163,12 @@ export function SettingsMenu({
             <p className="text-xs font-medium text-muted-foreground">Appearance</p>
             <SegmentedControl ariaLabel="Appearance" value={theme ?? "dark"} onValueChange={setTheme} options={THEME_OPTIONS} />
           </div>
+
+          {pause ? (
+            <div className="border-t border-border pt-4">
+              <PauseSettings {...pause} />
+            </div>
+          ) : null}
 
           {reminders ? (
             <div className="border-t border-border pt-4">

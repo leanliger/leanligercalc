@@ -94,6 +94,13 @@ export default function PrivacyPage() {
               the date, the video link you paste and any note, plus your Whop display name, username and profile photo.
             </li>
             <li>
+              <strong>Form checks — only if you ask for one:</strong> the exercise, the video link you paste and your
+              question, your coach&apos;s feedback, and your Whop display name, username and profile photo.
+            </li>
+            <li>
+              Pause mode, if you use it: the dates you paused and the reason you picked (sick, travelling or other).
+            </li>
+            <li>
               Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit, bedtime
               downtime and weekly recap reminders (for downtime, your bedtime). If you switch any notifications on, also your time zone and which Whop community you
               opened the app from (so they reach you there at the right time).
@@ -191,6 +198,7 @@ export default function PrivacyPage() {
               your progress photos — <strong>only if you switch on sharing</strong> (see &ldquo;Progress photos&rdquo;);
             </li>
             <li>your habit ticks and any step counts you logged from the last 3 months, with your streaks and weekly scores;</li>
+            <li>whether you&apos;re paused right now, the reason you picked and until when;</li>
             <li>your daily food totals (calories, protein, carbs and fat) from the last 2 weeks — not the individual foods.</li>
           </List>
           <p>
@@ -213,6 +221,11 @@ export default function PrivacyPage() {
             bodyweight isn&apos;t shown, but it can be worked out from the weight and the ratio. The video itself stays
             wherever you uploaded it (for example YouTube); we only store the link. You can withdraw a submission at any
             time, and admins can remove one.
+          </p>
+          <p>
+            <strong>Form checks.</strong> If you ask for a form check, only the admins of your Whop community see it (your
+            name and photo, the exercise, your video link and question) so they can reply. Other members never see your
+            form checks or the feedback. We only store the link, not the video. You can withdraw or delete one at any time.
           </p>
           <p>We also share information with the services needed to run the app:</p>
           <List>

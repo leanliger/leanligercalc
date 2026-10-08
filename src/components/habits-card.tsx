@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CirclePause,
   ClipboardCheck,
   Flame,
   ListChecks,
@@ -59,6 +60,7 @@ import {
 } from "@/lib/habits";
 import { REVIEW_FIELD_MAX, emptyReview, type WeeklyReview } from "@/lib/reviews";
 import { habitStreak } from "@/lib/streaks";
+import { NO_PAUSES, PAUSE_REASON_LABELS, withPauses, type PausePeriod } from "@/lib/pause";
 import type { RoadmapDay } from "@/lib/types";
 import type { Macros } from "@/lib/food";
 import { cn } from "@/lib/utils";
@@ -94,6 +96,8 @@ interface HabitsCardProps {
   onHabitsChange: (habits: HabitDef[]) => void;
   /** Daily steps the plan assumes; logging this many ticks the step habit. */
   stepTarget?: number;
+  /** Pause mode periods: those days don't count. */
+  pauses?: PausePeriod[];
 }
 
 export function HabitsCard({
@@ -105,6 +109,7 @@ export function HabitsCard({
   onSave,
   onHabitsChange,
   stepTarget = DEFAULT_STEP_TARGET,
+  pauses = NO_PAUSES,
 }: HabitsCardProps) {
   const [date, setDate] = React.useState(today);
   const [editing, setEditing] = React.useState(false);
@@ -170,8 +175,10 @@ export function HabitsCard({
     withDraft.set(date, draft);
     const firstSaved = logs[0]?.date ?? null;
     const first = firstSaved && firstSaved < date ? firstSaved : Object.keys(draft).length > 0 ? date : firstSaved;
-    return new Map(habits.map((h) => [h.id, habitStreak(h, withDraft, date, today, first).current]));
-  }, [habits, logMap, logs, date, draft, today]);
+    const scored = withPauses(withDraft, pauses, today);
+    return new Map(habits.map((h) => [h.id, habitStreak(h, scored, date, today, first).current]));
+  }, [habits, logMap, logs, date, draft, today, pauses]);
+  const pausedThisDay = pauses.find((p) => p.from <= date && date <= p.to) ?? null;
 
   const plan = dayPlanFor(date);
   const progress = dayProgress(habits, draft);
@@ -255,6 +262,16 @@ export function HabitsCard({
                 {progress.done} / {progress.total}
               </Badge>
             </div>
+
+            {pausedThisDay ? (
+              <p className="flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs">
+                <CirclePause className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>
+                  <span className="font-medium">Paused ({PAUSE_REASON_LABELS[pausedThisDay.reason].toLowerCase()})</span> ·
+                  this day doesn&apos;t count for or against your streaks. Ticks still save.
+                </span>
+              </p>
+            ) : null}
 
             {plan && !plan.isGoalDay ? (
               <p className="tabular rounded-md bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
@@ -688,7 +705,17 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function CellMark({ cell, date }: { cell: Cell; date: string }) {
   const label =
-    cell === "done" ? "done" : cell === "missed" ? "missed" : cell === "rest" ? "rest day" : cell === "upcoming" ? "not yet" : "before you started";
+    cell === "done"
+      ? "done"
+      : cell === "missed"
+        ? "missed"
+        : cell === "rest"
+          ? "rest day"
+          : cell === "paused"
+            ? "paused"
+            : cell === "upcoming"
+              ? "not yet"
+              : "before you started";
   return (
     <span title={`${formatShort(date)}: ${label}`} className="inline-flex h-5 w-5 items-center justify-center">
       {cell === "done" ? (
@@ -699,6 +726,8 @@ function CellMark({ cell, date }: { cell: Cell; date: string }) {
         <span className="h-4 w-4 rounded border border-muted-foreground/50" />
       ) : cell === "rest" ? (
         <BedDouble className="h-3.5 w-3.5 text-muted-foreground" />
+      ) : cell === "paused" ? (
+        <CirclePause className="h-3.5 w-3.5 text-muted-foreground" />
       ) : cell === "upcoming" ? (
         <span className="h-4 w-4 rounded border border-dashed border-muted-foreground/30" />
       ) : (
@@ -717,12 +746,16 @@ interface WeeklyScorecardProps {
   /** Average calorie/protein targets for a Mon–Sun week, if it's in the plan. */
   weekTargets: (weekStart: string) => { calories: number; protein: number } | null;
   onSaveReview: (review: WeeklyReview) => Promise<void>;
+  pauses?: PausePeriod[];
 }
 
-export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onSaveReview }: WeeklyScorecardProps) {
+export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onSaveReview, pauses = NO_PAUSES }: WeeklyScorecardProps) {
   const thisWeek = weekStartOf(today);
   const [weekStart, setWeekStart] = React.useState(thisWeek);
-  const logMap = React.useMemo(() => new Map(logs.map((l) => [l.date, l.entries])), [logs]);
+  const logMap = React.useMemo(
+    () => withPauses(new Map(logs.map((l) => [l.date, l.entries])), pauses, today),
+    [logs, pauses, today],
+  );
   const firstLog = logs[0]?.date ?? null;
   const score = weeklyScore(habits, logMap, weekStart, today, firstLog);
   const targets = weekTargets(weekStart);
@@ -738,7 +771,7 @@ export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onS
               Weekly scorecard
             </CardTitle>
             <CardDescription>
-              Target: {WEEKLY_TARGET_PERCENT}%+ consistency. Rest days excuse the workout only.
+              Target: {WEEKLY_TARGET_PERCENT}%+ consistency. Rest days excuse the workout only; paused days don&apos;t count.
             </CardDescription>
           </div>
           <div className="flex items-center gap-1">

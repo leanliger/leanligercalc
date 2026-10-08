@@ -8,7 +8,8 @@
  * For each member who switched them on, the scheduler works out their local
  * time and asks Whop's API to notify them when something is due. Each one goes
  * out at most once per local day. The weigh-in and habit reminders are skipped
- * when there's nothing left to do.
+ * when there's nothing left to do, and nothing is sent on a day the member has
+ * paused (sick or travelling — src/lib/pause.ts).
  *
  * Needs a Whop app API key with the `notification:create` permission, set as
  * the WHOP_API_KEY secret. Without it, nothing is sent and the app tells
@@ -42,6 +43,7 @@ import {
   type RemindersRequest,
 } from "../src/lib/reminders";
 import { dailyStreak } from "../src/lib/streaks";
+import { isPausedOn, sanitizePauses, withPauses, type PausePeriod } from "../src/lib/pause";
 import type { WeightUnit } from "../src/lib/types";
 import { secretValue } from "./secrets";
 
@@ -108,6 +110,17 @@ export async function sendWhop(
     return { ok: false, status: res.status, reason };
   } catch (e) {
     return { ok: false, status: 0, reason: e instanceof Error ? e.message.slice(0, 200) : "request failed" };
+  }
+}
+
+/** A member's pause periods, from their plan. */
+async function memberPauses(env: ReminderEnv, userId: string): Promise<PausePeriod[]> {
+  const plan = await env.DB.prepare("SELECT state FROM plans WHERE user_id = ?").bind(userId).first<{ state: string }>();
+  if (!plan) return [];
+  try {
+    return sanitizePauses((JSON.parse(plan.state) as { tracking?: { pauses?: unknown } } | null)?.tracking?.pauses);
+  } catch {
+    return [];
   }
 }
 
@@ -183,6 +196,20 @@ async function sendDueFasting(env: ReminderEnv, now: Date, budget: number): Prom
   const counts: RunCounts = { due: jobs.length, sent: 0, failed: 0, skipped: 0 };
   const marks: D1PreparedStatement[] = [];
   for (const job of jobs.slice(0, budget)) {
+    const column = job.kind === "open" ? "open_sent_on" : "close_sent_on";
+    const markSent = () =>
+      marks.push(env.DB.prepare(`UPDATE fasting_reminders SET ${column} = ? WHERE user_id = ?`).bind(job.eventDate, job.row.user_id));
+    let paused = false;
+    try {
+      paused = isPausedOn(await memberPauses(env, job.row.user_id), job.eventDate);
+    } catch {
+      paused = false; // can't tell: send as usual
+    }
+    if (paused) {
+      counts.skipped++;
+      markSent();
+      continue;
+    }
     const msg = reminderMessage(job.kind, {
       first: { label: job.row.first_label, time: job.row.first_time },
       last: { label: job.row.last_label, time: job.row.last_time },
@@ -191,10 +218,7 @@ async function sendDueFasting(env: ReminderEnv, now: Date, budget: number): Prom
     const result = await sendWhop(env, job.row.experience_id, job.row.user_id, msg);
     if (result.ok) {
       counts.sent++;
-      const column = job.kind === "open" ? "open_sent_on" : "close_sent_on";
-      marks.push(
-        env.DB.prepare(`UPDATE fasting_reminders SET ${column} = ? WHERE user_id = ?`).bind(job.eventDate, job.row.user_id),
-      );
+      markSent();
     } else {
       // Retried next minute while still inside the catch-up window. The status
       // is logged; the key and the member's details are not.
@@ -278,7 +302,7 @@ async function loadHabits(env: ReminderEnv, userId: string, upTo: string): Promi
       .bind(userId, addDays(upTo, -STREAK_LOOKBACK_DAYS), upTo)
       .all<{ date: string; entries: string }>(),
   ]);
-  type PlanState = { unit?: unknown; tracking?: { habits?: unknown } };
+  type PlanState = { unit?: unknown; tracking?: { habits?: unknown; pauses?: unknown } };
   let state: PlanState | null = null;
   try {
     state = plan ? (JSON.parse(plan.state) as PlanState) : null;
@@ -296,18 +320,20 @@ async function loadHabits(env: ReminderEnv, userId: string, upTo: string): Promi
   return {
     defs: sanitizeHabitDefs(state?.tracking?.habits),
     unit: state?.unit === "kg" ? "kg" : "lb",
-    logs,
+    // Paused days neither extend nor break the streak quoted in the reminder.
+    logs: withPauses(logs, sanitizePauses(state?.tracking?.pauses), upTo),
     firstLog: habitRows.results[0]?.date ?? null,
   };
 }
 
 /**
  * What to send for a due reminder, or null when there's nothing to remind
- * about (already weighed in, or every habit done). Reads only that member's
- * data, only when needed.
+ * about (paused, already weighed in, or every habit done). Reads only that
+ * member's data, only when needed.
  */
 async function composeReminder(env: ReminderEnv, row: ReminderRow, type: ReminderType, date: string): Promise<Message | null> {
   const userId = row.user_id;
+  if (isPausedOn(await memberPauses(env, userId), date)) return null;
   if (type === "downtime") {
     if (row.downtime_minute === null) return null;
     return downtimeMessage(

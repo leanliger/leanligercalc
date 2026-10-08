@@ -13,6 +13,7 @@
 import { addDays } from "../src/lib/dates";
 import { EXPERIENCE_ID_PATTERN, isValidTimeZone, localClock } from "../src/lib/fasting";
 import { sanitizeHabitDefs, type HabitEntries } from "../src/lib/habits";
+import { sanitizePauses, withPauses, type PausePeriod } from "../src/lib/pause";
 import {
   LEADERBOARD_LOOKBACK_DAYS,
   LEADERBOARD_MAX,
@@ -122,6 +123,7 @@ export async function getLeaderboard(
   }
   const earliest = addDays(localClock(now, "UTC").date, -LEADERBOARD_LOOKBACK_DAYS - 1);
   const defs = new Map<string, ReturnType<typeof sanitizeHabitDefs>>();
+  const pauses = new Map<string, PausePeriod[]>();
   const logs = new Map<string, Map<string, HabitEntries>>();
   const ids = results.map((r) => r.user_id);
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
@@ -136,7 +138,9 @@ export async function getLeaderboard(
     ]);
     for (const r of (plans?.results ?? []) as { user_id: string; state: string }[]) {
       try {
-        defs.set(r.user_id, sanitizeHabitDefs((JSON.parse(r.state) as { tracking?: { habits?: unknown } })?.tracking?.habits));
+        const tracking = (JSON.parse(r.state) as { tracking?: { habits?: unknown; pauses?: unknown } })?.tracking;
+        defs.set(r.user_id, sanitizeHabitDefs(tracking?.habits));
+        pauses.set(r.user_id, sanitizePauses(tracking?.pauses));
       } catch {
         /* defaults below */
       }
@@ -152,12 +156,17 @@ export async function getLeaderboard(
     }
   }
 
-  const entries: LeaderboardEntry[] = results.map((r) => ({
-    name: r.name ?? (r.username ? `@${r.username}` : "Member"),
-    avatarUrl: r.avatar_url,
-    isYou: r.user_id === userId,
-    ...leaderboardStats(defs.get(r.user_id) ?? sanitizeHabitDefs(undefined), logs.get(r.user_id) ?? new Map(), todays.get(r.user_id)!),
-  }));
+  const entries: LeaderboardEntry[] = results.map((r) => {
+    const today = todays.get(r.user_id)!;
+    // Paused days (sick, travelling) neither extend nor break a streak.
+    const memberLogs = withPauses(logs.get(r.user_id) ?? new Map(), pauses.get(r.user_id) ?? [], today);
+    return {
+      name: r.name ?? (r.username ? `@${r.username}` : "Member"),
+      avatarUrl: r.avatar_url,
+      isYou: r.user_id === userId,
+      ...leaderboardStats(defs.get(r.user_id) ?? sanitizeHabitDefs(undefined), memberLogs, today),
+    };
+  });
   const body: LeaderboardResponse = { joined: Boolean(me), entries };
   return { ok: true, body };
 }

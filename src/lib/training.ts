@@ -633,6 +633,87 @@ export function createWorkout(args: {
   };
 }
 
+/* ---------------------------------- swaps ---------------------------------- */
+
+/**
+ * Whether exercise `index` can be swapped: it has sets left to do, and a
+ * part-done one (which splits in two) still fits the workout.
+ */
+export function canSwap(workout: Workout, index: number): boolean {
+  const e = workout.exercises[index];
+  if (!e) return false;
+  const done = e.sets.filter((s) => s.done).length;
+  if (done === 0) return true;
+  return done < e.sets.length && workout.exercises.length < MAX_WORKOUT_EXERCISES;
+}
+
+/**
+ * Swap exercise `index` for `replacement` (the bench is taken, the machine's
+ * broken). Nothing done yet: it's replaced in place. Part done: the done sets
+ * stay logged on the original, and the sets still to do move to the
+ * replacement right after it. Either way the replacement keeps the program's
+ * target and rest, and its sets are pre-filled from the last time it was done.
+ */
+export function swapExercise(
+  workout: Workout,
+  index: number,
+  replacement: Exercise,
+  workouts: readonly Workout[],
+): Workout {
+  const original = workout.exercises[index];
+  if (!original || !canSwap(workout, index) || replacement.id === original.exerciseId) return workout;
+  const done = original.sets.filter((s) => s.done);
+  const remaining = original.sets.length - done.length;
+  const swapped: WorkoutExercise = {
+    exerciseId: replacement.id,
+    name: replacement.name,
+    bodyweight: replacement.bodyweight,
+    target: original.target,
+    restSec: original.restSec,
+    sets: prefillSets(remaining, lastPerformance(workouts, replacement.id, workout.id), replacement.bodyweight),
+  };
+  const list = [...workout.exercises];
+  if (done.length === 0) list[index] = swapped;
+  else list.splice(index, 1, { ...original, sets: done }, swapped);
+  return { ...workout, exercises: list };
+}
+
+/** Use `toId` instead of `fromId` on one program day from now on. */
+export function swapInProgram(
+  settings: TrainingSettings,
+  programId: string,
+  dayId: string,
+  fromId: string,
+  toId: string,
+): TrainingSettings {
+  return {
+    ...settings,
+    programs: settings.programs.map((p) =>
+      p.id !== programId
+        ? p
+        : {
+            ...p,
+            days: p.days.map((d) => {
+              if (d.id !== dayId) return d;
+              // Already on the day: just drop the one being replaced.
+              if (d.exercises.some((pe) => pe.exerciseId === toId)) {
+                return { ...d, exercises: d.exercises.filter((pe) => pe.exerciseId !== fromId) };
+              }
+              return { ...d, exercises: d.exercises.map((pe) => (pe.exerciseId === fromId ? { ...pe, exerciseId: toId } : pe)) };
+            }),
+          },
+    ),
+  };
+}
+
+/** The program day a workout came from, if it still exists and includes `exerciseId`. */
+export function programDayWith(settings: TrainingSettings, workout: Workout, exerciseId: string): { program: Program; day: ProgramDay } | null {
+  const program = settings.programs.find((p) => p.id === workout.programId);
+  const day = program?.days.find((d) => d.id === workout.dayId);
+  if (!program || !day || !day.exercises.some((pe) => pe.exerciseId === exerciseId)) return null;
+  return { program, day };
+}
+
 /** The program day to do next: the one after the last finished workout from this program. */
 export function nextProgramDay(program: Program, workouts: readonly Workout[]): ProgramDay | null {
   if (program.days.length === 0) return null;

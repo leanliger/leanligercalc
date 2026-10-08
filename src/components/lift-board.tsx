@@ -46,7 +46,7 @@ const LIFT_OPTIONS = LIFTS.map((l) => ({ value: l, label: l === "bench" ? "Bench
 
 const load1 = (lb: number, unit: WeightUnit) => `${Math.round(fromLb(lb, unit) * 10) / 10} ${unit}`;
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+export async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     credentials: "same-origin",
@@ -58,7 +58,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-function Avatar({ name, url }: { name: string; url: string | null }) {
+export function Avatar({ name, url }: { name: string; url: string | null }) {
   const [broken, setBroken] = React.useState(false);
   const initials = name
     .replace(/^@/, "")
@@ -84,7 +84,7 @@ function Avatar({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-function VideoLink({ url, label, compact }: { url: string; label: string; compact?: boolean }) {
+export function VideoLink({ url, label, compact }: { url: string; label: string; compact?: boolean }) {
   return (
     <a
       href={url}

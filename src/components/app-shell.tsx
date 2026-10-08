@@ -58,6 +58,7 @@ import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/f
 import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
+import { endPause, type PausePeriod } from "@/lib/pause";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import type {
   BiometricProfile,
@@ -685,6 +686,10 @@ export function AppShell() {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, fasting } }));
   }, []);
 
+  const updatePauses = React.useCallback((pauses: PausePeriod[]) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, pauses } }));
+  }, []);
+
   const updateHabitDefs = React.useCallback((habits: HabitDef[]) => {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, habits } }));
   }, []);
@@ -731,6 +736,7 @@ export function AppShell() {
               <SettingsMenu
                 unit={state.unit}
                 onUnitChange={(unit) => setState((prev) => ({ ...prev, unit }))}
+                pause={ready ? { pauses: state.tracking.pauses, today, onChange: updatePauses } : undefined}
                 reminders={{
                   prefs: state.tracking.reminders,
                   onChange: updateReminders,
@@ -870,6 +876,8 @@ export function AppShell() {
                   onStartWorkout={startWorkout}
                   fasting={state.tracking.fasting}
                   measurements={measurements}
+                  pauses={state.tracking.pauses}
+                  onResume={() => updatePauses(endPause(state.tracking.pauses, today))}
                   onOpen={openFromToday}
                 />
               </TabsContent>
@@ -962,6 +970,7 @@ export function AppShell() {
                   habits={state.tracking.habits}
                   habitLogs={habitLogs}
                   onSaveHabits={saveHabitDay}
+                  formCheckAvailability={notifyAvailability}
                 />
               </TabsContent>
 
@@ -987,6 +996,7 @@ export function AppShell() {
                   carbs={state.carbs}
                   habits={state.tracking.habits}
                   habitLogs={habitLogs}
+                  pauses={state.tracking.pauses}
                   onSaveHabits={saveHabitDay}
                   reviews={reviews}
                   onSaveReview={saveReview}

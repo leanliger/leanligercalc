@@ -14,6 +14,7 @@ import type { FatLossResult } from "./types";
 import { weekStartOf, weeklyScore, type Zone } from "./habits";
 import { sanitizeAppState, type AppState } from "./persistence";
 import { dailyStreak } from "./streaks";
+import { activePause, withPauses, type PausePeriod } from "./pause";
 
 export {
   COMPANY_ID_PATTERN,
@@ -49,6 +50,8 @@ export interface MemberSummary {
   weekChangeLb: number | null;
   /** Average daily calories and protein over the last 7 days with food logged. */
   food7: { days: number; kcal: number; protein: number } | null;
+  /** Their pause (sick, travelling) covering today, if any. */
+  paused: PausePeriod | null;
   flags: Flag[];
 }
 
@@ -69,7 +72,8 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   const hasPlan = data.plan !== null && typeof data.plan === "object";
   const state = sanitizeAppState(data.plan ?? {});
   const weighIns = [...data.weighIns].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const logMap = new Map(data.habitLogs.map((l) => [l.date, l.entries]));
+  const logMap = withPauses(new Map(data.habitLogs.map((l) => [l.date, l.entries])), state.tracking.pauses, today);
+  const paused = activePause(state.tracking.pauses, today);
   const firstHabit = data.habitLogs.reduce<string | null>((m, l) => (!m || l.date < m ? l.date : m), null);
   const habits = state.tracking.habits;
 
@@ -118,7 +122,8 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   if (!hasPlan) flags.push("no-plan");
   if (progress?.status === "behind") flags.push("behind");
   if (score.zone === "red") flags.push("red");
-  if (daysSinceLog === null || daysSinceLog >= INACTIVE_DAYS) flags.push("inactive");
+  // A paused member isn't expected to log.
+  if (!paused && (daysSinceLog === null || daysSinceLog >= INACTIVE_DAYS)) flags.push("inactive");
 
   return {
     data,
@@ -134,6 +139,7 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     latestWeightLb: latest?.weightLb ?? null,
     weekChangeLb,
     food7,
+    paused,
     flags,
   };
 }

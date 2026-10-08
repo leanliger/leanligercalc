@@ -36,6 +36,10 @@
  *   POST   /api/lift-board/submissions        submit a lift with a video link
  *   DELETE /api/lift-board/submissions/:id    withdraw one of mine
  *   PUT    /api/lift-board/submissions/:id/review  admins: approve or reject
+ *   GET    /api/form-checks?experience=exp_…  my form checks (+ the queue for admins)
+ *   POST   /api/form-checks                   ask for a form check with a video link
+ *   DELETE /api/form-checks/:id               withdraw / delete one of mine
+ *   PUT    /api/form-checks/:id/feedback      admins: reply
  *   GET    /api/workouts           all of my workouts, oldest first
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
@@ -92,6 +96,8 @@ import { MAX_WORKOUTS, WORKOUT_ID_PATTERN, validateWorkout, type Workout } from 
 import { getLeaderboard, joinLeaderboard, leaveLeaderboard, type LeaderboardEnv } from "./leaderboard";
 import { getLiftBoard, reviewLift, submitLift, withdrawLift } from "./lift-board";
 import { SUBMISSION_ID_PATTERN } from "../src/lib/lift-board";
+import { answerFormCheck, askFormCheck, deleteFormCheck, getFormChecks } from "./form-checks";
+import { FORM_CHECK_ID_PATTERN } from "../src/lib/form-checks";
 import { secretValue } from "./secrets";
 
 export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv {
@@ -726,6 +732,38 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return noContent();
   }
 
+  /* ------------------------------ form checks ------------------------------ */
+
+  if (path === "/api/form-checks") {
+    if (method === "GET") {
+      const result = await getFormChecks(env, userId, url.searchParams.get("experience") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "POST") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await askFormCheck(env, userId, body.value);
+      return result.ok ? json(result.body, 201) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  const formMatch = /^\/api\/form-checks\/([^/]+)(\/feedback)?$/.exec(path);
+  if (formMatch) {
+    const id = formMatch[1]!;
+    if (!FORM_CHECK_ID_PATTERN.test(id)) return error(404, "Not found.");
+    if (formMatch[2]) {
+      if (method !== "PUT") return error(405, "Method not allowed.");
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await answerFormCheck(env, userId, id, body.value);
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    await deleteFormCheck(env, userId, id);
+    return noContent();
+  }
+
   /* -------------------------------- plan -------------------------------- */
 
   if (path === "/api/plan") {
@@ -786,6 +824,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM reminders WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM leaderboard WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM lift_submissions WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM form_checks WHERE user_id = ?").bind(userId),
     ]);
     return noContent();
   }

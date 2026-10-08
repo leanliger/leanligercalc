@@ -57,6 +57,11 @@ export interface HabitLog {
 export const REST_KEY = "_rest";
 /** Reserved entry key holding the day's step count, when the member logs it. */
 export const STEPS_KEY = "_steps";
+/**
+ * Marks a paused day while scoring (see src/lib/pause.ts). Never stored: the
+ * pause periods live in the plan, and saved logs drop this key.
+ */
+export const PAUSE_KEY = "_paused";
 export const MAX_DAILY_STEPS = 100_000;
 /** Step target when the plan doesn't set one (it uses an activity level). */
 export const DEFAULT_STEP_TARGET = 10_000;
@@ -114,7 +119,7 @@ export function sanitizeHabitDefs(raw: unknown): HabitDef[] {
     if (typeof item !== "object" || item === null) continue;
     const h = item as Record<string, unknown>;
     const id =
-      typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY && h.id !== STEPS_KEY ? h.id : null;
+      typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY && h.id !== STEPS_KEY && h.id !== PAUSE_KEY ? h.id : null;
     const name = typeof h.name === "string" ? h.name.trim().slice(0, HABIT_NAME_MAX) : "";
     const kind: HabitKind = h.kind === "count" ? "count" : "check";
     if (!id || !name || seen.has(id)) continue;
@@ -160,6 +165,7 @@ export function validateHabitEntries(
   for (const key of keys) {
     if (!ID_PATTERN.test(key)) return { ok: false, error: "Invalid habit id." };
     const value = (entries as Record<string, unknown>)[key];
+    if (key === PAUSE_KEY) continue; // pauses are kept in the plan, not the day's log
     if (key === REST_KEY) {
       if (typeof value !== "boolean") return { ok: false, error: "Rest day must be true or false." };
       if (value) clean[key] = true;
@@ -194,9 +200,13 @@ export function isRestDay(entries: HabitEntries | undefined): boolean {
   return entries?.[REST_KEY] === true;
 }
 
-/** Whether a habit counts on a day: a rest day excuses only the workout. */
+export function isPausedDay(entries: HabitEntries | undefined): boolean {
+  return entries?.[PAUSE_KEY] === true;
+}
+
+/** Whether a habit counts on a day: a rest day excuses only the workout; a paused day excuses everything. */
 export function counts(def: HabitDef, entries: HabitEntries | undefined): boolean {
-  return !(def.link === "workout" && isRestDay(entries));
+  return !isPausedDay(entries) && !(def.link === "workout" && isRestDay(entries));
 }
 
 export function dayProgress(defs: HabitDef[], entries: HabitEntries | undefined) {
@@ -217,7 +227,7 @@ export function restDaysInWeek(logs: Map<string, HabitEntries>, weekStart: strin
   return n;
 }
 
-export type Cell = "done" | "missed" | "rest" | "upcoming" | "before";
+export type Cell = "done" | "missed" | "rest" | "paused" | "upcoming" | "before";
 
 export interface WeekScore {
   weekStart: string;
@@ -256,6 +266,7 @@ export function weeklyScore(
       if (d > today) return "upcoming";
       if (firstLogDate === null || d < firstLogDate) return "before";
       const entries = logs.get(d);
+      if (isPausedDay(entries)) return "paused";
       if (!counts(def, entries)) return "rest";
       possible++;
       if (isDone(def, entries?.[def.id])) {

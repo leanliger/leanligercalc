@@ -6,6 +6,7 @@ import {
   BedDouble,
   Check,
   ChevronRight,
+  CirclePause,
   Dumbbell,
   Footprints,
   ListChecks,
@@ -41,6 +42,8 @@ import {
   type HabitLog,
 } from "@/lib/habits";
 import type { Measurement } from "@/lib/measurements";
+import { PAUSE_REASON_LABELS, activePause, type PausePeriod } from "@/lib/pause";
+import { formatShort } from "@/lib/dates";
 import { trendSeries } from "@/lib/adaptive";
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
 import {
@@ -83,6 +86,9 @@ interface TodayTabProps {
   onStartWorkout: (program: Program, day: ProgramDay) => void;
   fasting: FastingSettings;
   measurements: Measurement[];
+  /** Pause mode periods; a banner shows while one is on. */
+  pauses: PausePeriod[];
+  onResume: () => void;
   onOpen: (dest: TodayDestination) => void;
 }
 
@@ -189,9 +195,11 @@ export function TodayTab(props: TodayTabProps) {
         foodLogs,
         workouts,
         measurements: props.measurements,
+        pauses: props.pauses,
       }),
-    [today, unit, habits, habitLogs, weighIns, foodLogs, workouts, props.measurements],
+    [today, unit, habits, habitLogs, weighIns, foodLogs, workouts, props.measurements, props.pauses],
   );
+  const paused = activePause(props.pauses, today);
   const newBadges = useNewBadges(badges);
 
   const tasks = [
@@ -236,6 +244,26 @@ export function TodayTab(props: TodayTabProps) {
           </ul>
         </CardContent>
       </Card>
+
+      {paused ? (
+        <Card className="border-primary/50 bg-primary/10">
+          <CardContent className="flex flex-wrap items-center gap-3 p-4 sm:p-6">
+            <CirclePause className="h-5 w-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                Paused ({PAUSE_REASON_LABELS[paused.reason].toLowerCase()}) until {formatShort(paused.to)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Your streaks are frozen and reminders are off. Log anything you like; it still saves.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={props.onResume}>
+              <Play />
+              Resume now
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {fresh ? (
         <Card className="border-primary/40 bg-primary/5">

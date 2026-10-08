@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, Check, Flag, Minus, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, Flag, Minus, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,9 @@ import {
   MAX_WORKOUT_EXERCISES,
   NOTE_MAX,
   bestBefore,
+  canSwap,
   e1rm,
+  findExercise,
   formatDuration,
   formatLoad,
   formatRest,
@@ -25,8 +27,10 @@ import {
   formatWork,
   lastPerformance,
   prefillSets,
+  programDayWith,
   shouldAddWeight,
   summarizeWorkout,
+  swapExercise,
   type DoneSet,
   type TrainingSettings,
   type Workout,
@@ -94,6 +98,8 @@ export interface WorkoutLoggerProps {
   onAddCustom: (e: Exercise) => void;
   /** A set was ticked off: start the rest timer. */
   onSetDone: (exercise: WorkoutExercise, restSec: number) => void;
+  /** Use one exercise instead of another on a program day from now on. */
+  onSwapInProgram: (programId: string, dayId: string, fromId: string, toId: string) => void;
 }
 
 export function WorkoutLogger({
@@ -109,6 +115,7 @@ export function WorkoutLogger({
   onOpenExercise,
   onAddCustom,
   onSetDone,
+  onSwapInProgram,
 }: WorkoutLoggerProps) {
   const live = mode === "live";
   const now = useNow(15_000, live);
@@ -220,6 +227,21 @@ export function WorkoutLogger({
           onMove={(dir) => move(i, dir)}
           onOpen={() => onOpenExercise(e.exerciseId)}
           onSetDone={() => onSetDone(e, e.restSec ?? settings.restSec)}
+          swap={
+            canSwap(workout, i)
+              ? {
+                  custom: settings.customExercises,
+                  exclude: workout.exercises.map((x) => x.exerciseId),
+                  programDay: programDayWith(settings, workout, e.exerciseId),
+                  onAddCustom,
+                  onSwap: (replacement, inProgram) => {
+                    const pd = programDayWith(settings, workout, e.exerciseId);
+                    if (inProgram && pd) onSwapInProgram(pd.program.id, pd.day.id, e.exerciseId, replacement.id);
+                    onChange(swapExercise(workout, i, replacement, workouts));
+                  },
+                }
+              : null
+          }
         />
       ))}
 
@@ -283,6 +305,7 @@ function ExerciseBlock({
   onMove,
   onOpen,
   onSetDone,
+  swap,
 }: {
   exercise: WorkoutExercise;
   index: number;
@@ -297,7 +320,10 @@ function ExerciseBlock({
   onMove: (dir: -1 | 1) => void;
   onOpen: () => void;
   onSetDone: () => void;
+  /** Swapping for another exercise; null when there's nothing left to swap. */
+  swap: SwapOptions | null;
 }) {
+  const [swapping, setSwapping] = React.useState(false);
   const bw = exercise.bodyweight;
   const rest = exercise.restSec ?? defaultRest;
   const doneCount = exercise.sets.filter((s) => s.done).length;
@@ -343,6 +369,21 @@ function ExerciseBlock({
             </p>
           </div>
           <div className="flex shrink-0 items-center">
+            {swap ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2"
+                aria-expanded={swapping}
+                onClick={() => setSwapping((v) => !v)}
+                aria-label={`Swap ${exercise.name} for another exercise`}
+              >
+                <ArrowLeftRight />
+                <span className="hidden sm:inline" aria-hidden>
+                  Swap
+                </span>
+              </Button>
+            ) : null}
             <Button variant="ghost" size="icon" className="h-8 w-8" disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move ${exercise.name} up`}>
               <ArrowUp />
             </Button>
@@ -364,6 +405,7 @@ function ExerciseBlock({
             ? `Last time: ${last.map((s) => formatSet(s, unit, bw)).join(", ")}`
             : "First time logging this — pick a weight you can lift with good form."}
         </p>
+        {swap && swapping ? <SwapPicker exercise={exercise} options={swap} onDone={() => setSwapping(false)} /> : null}
         {shouldAddWeight(exercise.target, last) ? (
           <p className="flex items-center gap-1.5 text-xs font-medium text-success">
             <TrendingUp className="h-3.5 w-3.5 shrink-0" />
@@ -412,6 +454,68 @@ function ExerciseBlock({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+interface SwapOptions {
+  custom: readonly Exercise[];
+  exclude: readonly string[];
+  /** The program day this exercise came from, for "use it there from now on". */
+  programDay: ReturnType<typeof programDayWith>;
+  onAddCustom: (e: Exercise) => void;
+  onSwap: (replacement: Exercise, inProgram: boolean) => void;
+}
+
+/** Pick a replacement, starting with exercises for the same muscle. */
+function SwapPicker({ exercise, options, onDone }: { exercise: WorkoutExercise; options: SwapOptions; onDone: () => void }) {
+  const [inProgram, setInProgram] = React.useState(false);
+  const checkId = React.useId();
+  const muscle = findExercise(exercise.exerciseId, options.custom)?.muscle ?? "all";
+  const done = exercise.sets.filter((s) => s.done).length;
+  return (
+    <div className="pt-1">
+      <ExercisePicker
+        title={`Swap ${exercise.name} for…`}
+        custom={options.custom}
+        exclude={options.exclude}
+        initialMuscle={muscle}
+        onAddCustom={options.onAddCustom}
+        onClose={onDone}
+        onPick={(e) => {
+          options.onSwap(e, inProgram);
+          onDone();
+        }}
+        footer={
+          done > 0 || options.programDay ? (
+            <div className="space-y-1.5">
+              {done > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {done === 1 ? "Your done set stays" : `Your ${done} done sets stay`} logged on {exercise.name}; the rest move to the new exercise.
+                </p>
+              ) : null}
+              {options.programDay ? (
+                <label htmlFor={checkId} className="flex items-start gap-2 text-xs">
+                  <input
+                    id={checkId}
+                    type="checkbox"
+                    checked={inProgram}
+                    onChange={(e) => setInProgram(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
+                  />
+                  <span>
+                    Also use it in{" "}
+                    <span className="font-medium">
+                      {options.programDay.program.name} · {options.programDay.day.name}
+                    </span>{" "}
+                    from now on
+                  </span>
+                </label>
+              ) : null}
+            </div>
+          ) : null
+        }
+      />
+    </div>
   );
 }
 

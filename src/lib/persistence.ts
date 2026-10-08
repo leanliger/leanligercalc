@@ -38,6 +38,7 @@ import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
 import { DEFAULT_FASTING, sanitizeFasting, type FastingSettings } from "./fasting";
 import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./reminders";
 import { DEFAULT_TRAINING, sanitizeTraining, type TrainingSettings } from "./training";
+import { sanitizePauses, type PausePeriod } from "./pause";
 import { STEP_LIMITS, TRAINING_DAY_LIMITS } from "./activity";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
@@ -58,6 +59,8 @@ export interface TrackingState {
   reminders: ReminderPrefs;
   /** Programs, the member's own exercises and rest settings (Training tab). */
   training: TrainingSettings;
+  /** Pause mode periods, past and current (Settings). */
+  pauses: PausePeriod[];
 }
 
 export interface AppState {
@@ -75,7 +78,7 @@ export const DEFAULT_APP_STATE: AppState = {
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
-  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING },
+  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [] },
 };
 
 /* --------------------------- sanitisation --------------------------- */
@@ -214,6 +217,7 @@ export function sanitizeAppState(raw: unknown): AppState {
       fasting: sanitizeFasting(obj(parsed.tracking).fasting),
       reminders: sanitizeReminderPrefs(obj(parsed.tracking).reminders),
       training: sanitizeTraining(obj(parsed.tracking).training),
+      pauses: sanitizePauses(obj(parsed.tracking).pauses),
     },
   };
 }
@@ -357,7 +361,7 @@ export function decodeStateFromQuery(search: string): AppState | null {
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),
-    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING },
+    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [] },
   };
 }
 
