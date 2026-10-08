@@ -2,8 +2,8 @@
  * Notifications sent through Whop by a one-minute Cron Trigger:
  *
  *   fasting     the eating window opening and closing (src/lib/fasting.ts)
- *   reminders   morning weigh-in, evening habits, Sunday recap
- *               (src/lib/reminders.ts)
+ *   reminders   morning weigh-in, evening habits, bedtime downtime,
+ *               Sunday recap (src/lib/reminders.ts)
  *
  * For each member who switched them on, the scheduler works out their local
  * time and asks Whop's API to notify them when something is due. Each one goes
@@ -20,12 +20,16 @@ import {
   localClock,
   reminderMessage,
   reminderMinutes,
+  timeOf,
   type ReminderKind,
   type ReminderSchedule,
 } from "../src/lib/fasting";
 import { addDays } from "../src/lib/dates";
 import { sanitizeHabitDefs, weekStartOf, weeklyScore, type HabitDef, type HabitEntries } from "../src/lib/habits";
 import {
+  DEFAULT_DOWNTIME_LEAD,
+  downtimeMessage,
+  downtimeMinute,
   dueOn,
   habitsMessage,
   isSunday,
@@ -211,30 +215,47 @@ interface ReminderRow {
   weighin_minute: number | null;
   habits_minute: number | null;
   recap_minute: number | null;
+  /** Bedtime; the reminder goes out downtime_lead minutes before. */
+  downtime_minute: number | null;
+  downtime_lead: number | null;
   weighin_sent_on: string | null;
   habits_sent_on: string | null;
   recap_sent_on: string | null;
+  downtime_sent_on: string | null;
 }
 
 const SENT_COLUMN: Record<ReminderType, string> = {
   weighIn: "weighin_sent_on",
   habits: "habits_sent_on",
+  downtime: "downtime_sent_on",
   recap: "recap_sent_on",
 };
 
 export async function saveReminders(env: ReminderEnv, userId: string, r: RemindersRequest): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO reminders (user_id, experience_id, time_zone, weighin_minute, habits_minute, recap_minute)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO reminders
+       (user_id, experience_id, time_zone, weighin_minute, habits_minute, recap_minute, downtime_minute, downtime_lead)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id) DO UPDATE SET
-       experience_id  = excluded.experience_id,
-       time_zone      = excluded.time_zone,
-       weighin_minute = excluded.weighin_minute,
-       habits_minute  = excluded.habits_minute,
-       recap_minute   = excluded.recap_minute,
-       updated_at     = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+       experience_id   = excluded.experience_id,
+       time_zone       = excluded.time_zone,
+       weighin_minute  = excluded.weighin_minute,
+       habits_minute   = excluded.habits_minute,
+       recap_minute    = excluded.recap_minute,
+       downtime_minute = excluded.downtime_minute,
+       downtime_lead   = excluded.downtime_lead,
+       updated_at      = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
   )
-    .bind(userId, r.experienceId, r.timeZone, minuteOrNull(r.weighIn), minuteOrNull(r.habits), minuteOrNull(r.recap))
+    .bind(
+      userId,
+      r.experienceId,
+      r.timeZone,
+      minuteOrNull(r.weighIn),
+      minuteOrNull(r.habits),
+      minuteOrNull(r.recap),
+      minuteOrNull(r.downtime),
+      r.downtimeLead,
+    )
     .run();
 }
 
@@ -287,6 +308,14 @@ async function loadHabits(env: ReminderEnv, userId: string, upTo: string): Promi
  */
 async function composeReminder(env: ReminderEnv, row: ReminderRow, type: ReminderType, date: string): Promise<Message | null> {
   const userId = row.user_id;
+  if (type === "downtime") {
+    if (row.downtime_minute === null) return null;
+    return downtimeMessage(
+      timeOf(row.downtime_minute),
+      row.downtime_lead ?? DEFAULT_DOWNTIME_LEAD,
+      row.weighin_minute === null ? null : timeOf(row.weighin_minute),
+    );
+  }
   if (type === "weighIn") {
     const logged = await env.DB.prepare("SELECT 1 AS x FROM weigh_ins WHERE user_id = ? AND date = ?").bind(userId, date).first();
     return logged ? null : weighInMessage();
@@ -334,7 +363,7 @@ async function composeReminder(env: ReminderEnv, row: ReminderRow, type: Reminde
 async function sendDueCheckinReminders(env: ReminderEnv, now: Date, budget: number): Promise<RunCounts> {
   const { results } = await env.DB.prepare(
     `SELECT user_id, experience_id, time_zone, weighin_minute, habits_minute, recap_minute,
-            weighin_sent_on, habits_sent_on, recap_sent_on
+            downtime_minute, downtime_lead, weighin_sent_on, habits_sent_on, recap_sent_on, downtime_sent_on
      FROM reminders`,
   ).all<ReminderRow>();
 
@@ -354,6 +383,11 @@ async function sendDueCheckinReminders(env: ReminderEnv, now: Date, budget: numb
     check("weighIn", row.weighin_minute, row.weighin_sent_on);
     check("habits", row.habits_minute, row.habits_sent_on);
     check("recap", row.recap_minute, row.recap_sent_on);
+    check(
+      "downtime",
+      row.downtime_minute === null ? null : downtimeMinute(row.downtime_minute, row.downtime_lead ?? DEFAULT_DOWNTIME_LEAD),
+      row.downtime_sent_on,
+    );
   }
 
   const counts: RunCounts = { due: jobs.length, sent: 0, failed: 0, skipped: 0 };

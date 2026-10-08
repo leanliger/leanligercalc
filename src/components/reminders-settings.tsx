@@ -3,10 +3,19 @@
 import * as React from "react";
 import { Bell, BellOff, BellRing } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import type { NotificationStatus } from "@/components/fasting-card";
-import { minutesOf } from "@/lib/fasting";
-import { REMINDER_TYPES, type ReminderPrefs, type ReminderType } from "@/lib/reminders";
+import { minutesOf, timeOf } from "@/lib/fasting";
+import {
+  DOWNTIME_LEADS,
+  REMINDER_TYPES,
+  downtimeMinute,
+  type DowntimeLead,
+  type ReminderPref,
+  type ReminderPrefs,
+  type ReminderType,
+} from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
 const COPY: Record<ReminderType, { title: string; detail: string; when: string }> = {
@@ -19,6 +28,11 @@ const COPY: Record<ReminderType, { title: string; detail: string; when: string }
     title: "Evening habits",
     detail: "How many habits are left and your current streak. Skipped once they're all done.",
     when: "Every day at",
+  },
+  downtime: {
+    title: "Bedtime downtime",
+    detail: "A nudge to put the phone down and start winding down before bed, so you get your 7+ hours.",
+    when: "Bedtime",
   },
   recap: {
     title: "Sunday weekly recap",
@@ -52,8 +66,9 @@ export function RemindersSettings({ prefs, onChange, status }: RemindersSettings
   const available = status.availability === "ok";
   const anyOn = available && REMINDER_TYPES.some((t) => prefs[t].on);
 
-  const set = (type: ReminderType, patch: Partial<ReminderPrefs[ReminderType]>) =>
+  const set = (type: ReminderType, patch: Partial<ReminderPref>) =>
     onChange({ ...prefs, [type]: { ...prefs[type], ...patch } });
+  const setLead = (leadMin: DowntimeLead) => onChange({ ...prefs, downtime: { ...prefs.downtime, leadMin } });
 
   return (
     <div className="space-y-2">
@@ -75,7 +90,11 @@ export function RemindersSettings({ prefs, onChange, status }: RemindersSettings
           disabled={!available}
           onToggle={(on) => set(type, { on })}
           onTime={(time) => set(type, { time })}
-        />
+        >
+          {type === "downtime" ? (
+            <DowntimeLeadPicker bedtime={prefs.downtime.time} lead={prefs.downtime.leadMin} onChange={setLead} />
+          ) : null}
+        </ReminderRow>
       ))}
       {available && status.error ? (
         <p role="alert" className="text-xs text-destructive">
@@ -93,6 +112,7 @@ function ReminderRow({
   disabled,
   onToggle,
   onTime,
+  children,
 }: {
   type: ReminderType;
   on: boolean;
@@ -100,6 +120,8 @@ function ReminderRow({
   disabled: boolean;
   onToggle: (on: boolean) => void;
   onTime: (time: string) => void;
+  /** Extra settings shown while it's on. */
+  children?: React.ReactNode;
 }) {
   const id = React.useId();
   const timeId = React.useId();
@@ -130,6 +152,36 @@ function ReminderRow({
           <span className="sr-only">Currently {clockOf(time)}</span>
         </div>
       ) : null}
+      {on ? children : null}
+    </div>
+  );
+}
+
+/** How long before bedtime, and when that means the reminder arrives. */
+function DowntimeLeadPicker({
+  bedtime,
+  lead,
+  onChange,
+}: {
+  bedtime: string;
+  lead: DowntimeLead;
+  onChange: (lead: DowntimeLead) => void;
+}) {
+  const options = DOWNTIME_LEADS.map((m) => ({ value: String(m) as `${DowntimeLead}`, label: `${m} min` }));
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">Remind me before bed</p>
+      <SegmentedControl
+        ariaLabel="How long before bedtime"
+        size="sm"
+        value={String(lead) as `${DowntimeLead}`}
+        onValueChange={(v) => onChange(Number(v) as DowntimeLead)}
+        options={options}
+      />
+      <p className="text-xs text-muted-foreground">
+        Arrives at <span className="font-medium text-foreground">{clockOf(timeOf(downtimeMinute(minutesOf(bedtime), lead)))}</span>{" "}
+        every night.
+      </p>
     </div>
   );
 }

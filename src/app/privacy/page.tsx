@@ -94,8 +94,8 @@ export default function PrivacyPage() {
               the date, the video link you paste and any note, plus your Whop display name, username and profile photo.
             </li>
             <li>
-              Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit and
-              weekly recap reminders. If you switch any notifications on, also your time zone and which Whop community you
+              Reminder settings: your intermittent fasting meal times and the times you choose for weigh-in, habit, bedtime
+              downtime and weekly recap reminders (for downtime, your bedtime). If you switch any notifications on, also your time zone and which Whop community you
               opened the app from (so they reach you there at the right time).
             </li>
           </List>
@@ -268,7 +268,7 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
-              Nutrition tab (Fasting), and weigh-in, habit and recap reminders from Settings (the gear at the top left).
+              Nutrition tab (Fasting), and weigh-in, habit, downtime and recap reminders from Settings (the gear at the top left).
             </li>
             <li>
               <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.

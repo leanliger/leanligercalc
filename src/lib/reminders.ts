@@ -4,6 +4,8 @@
  *   weigh-in   every morning, unless today's weigh-in is already logged
  *   habits     every evening, unless today's habits are all done:
  *              "3 habits left today" + the current 80%+ day streak
+ *   downtime   every night, 15, 20 or 30 minutes before the member's bedtime:
+ *              time to put the phone down and wind down
  *   recap      Sunday evening: the week's scorecard, weight change and
  *              average protein
  *
@@ -18,6 +20,7 @@ import { addDays, parseISODate } from "./dates";
 import {
   EXPERIENCE_ID_PATTERN,
   REMINDER_CATCH_UP_MINUTES,
+  clock12,
   isValidTime,
   isValidTimeZone,
   minutesOf,
@@ -28,34 +31,63 @@ import type { ValidationResult } from "./tracking";
 import type { WeightUnit } from "./types";
 import { fromLb } from "./units";
 
-export type ReminderType = "weighIn" | "habits" | "recap";
-export const REMINDER_TYPES: readonly ReminderType[] = ["weighIn", "habits", "recap"];
+export type ReminderType = "weighIn" | "habits" | "downtime" | "recap";
+export const REMINDER_TYPES: readonly ReminderType[] = ["weighIn", "habits", "downtime", "recap"];
 
 export interface ReminderPref {
   on: boolean;
-  /** Local wall-clock "HH:MM". The recap is sent on Sundays at this time. */
+  /**
+   * Local wall-clock "HH:MM". The recap is sent on Sundays at this time; for
+   * downtime it's bedtime, and the reminder goes out `leadMin` before it.
+   */
   time: string;
 }
 
-export type ReminderPrefs = Record<ReminderType, ReminderPref>;
+/** How long before bedtime the downtime reminder goes out. */
+export const DOWNTIME_LEADS = [15, 20, 30] as const;
+export type DowntimeLead = (typeof DOWNTIME_LEADS)[number];
+export const DEFAULT_DOWNTIME_LEAD: DowntimeLead = 30;
+
+export function isDowntimeLead(v: unknown): v is DowntimeLead {
+  return DOWNTIME_LEADS.includes(v as DowntimeLead);
+}
+
+export interface DowntimePref extends ReminderPref {
+  leadMin: DowntimeLead;
+}
+
+export interface ReminderPrefs {
+  weighIn: ReminderPref;
+  habits: ReminderPref;
+  downtime: DowntimePref;
+  recap: ReminderPref;
+}
 
 export const DEFAULT_REMINDERS: ReminderPrefs = {
   weighIn: { on: false, time: "07:00" },
   habits: { on: false, time: "20:00" },
+  downtime: { on: false, time: "22:30", leadMin: DEFAULT_DOWNTIME_LEAD },
   recap: { on: false, time: "18:00" },
 };
 
 export function sanitizeReminderPrefs(raw: unknown): ReminderPrefs {
   const obj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const out = {} as ReminderPrefs;
-  for (const type of REMINDER_TYPES) {
-    const p = (typeof obj[type] === "object" && obj[type] !== null ? obj[type] : {}) as Record<string, unknown>;
-    out[type] = {
+  const field = (type: ReminderType) =>
+    (typeof obj[type] === "object" && obj[type] !== null ? obj[type] : {}) as Record<string, unknown>;
+  const pref = (type: ReminderType): ReminderPref => {
+    const p = field(type);
+    return {
       on: p.on === true,
       time: typeof p.time === "string" && isValidTime(p.time) ? p.time : DEFAULT_REMINDERS[type].time,
     };
-  }
-  return out;
+  };
+  const lead = field("downtime").leadMin;
+  return {
+    weighIn: pref("weighIn"),
+    habits: pref("habits"),
+    downtime: { ...pref("downtime"), leadMin: isDowntimeLead(lead) ? lead : DEFAULT_DOWNTIME_LEAD },
+    recap: pref("recap"),
+  };
 }
 
 export function anyReminderOn(p: ReminderPrefs): boolean {
@@ -70,6 +102,9 @@ export interface RemindersRequest {
   timeZone: string;
   weighIn: string | null;
   habits: string | null;
+  /** Bedtime; the reminder goes out `downtimeLead` minutes before it. */
+  downtime: string | null;
+  downtimeLead: DowntimeLead | null;
   recap: string | null;
 }
 
@@ -89,7 +124,25 @@ export function validateRemindersRequest(raw: unknown): ValidationResult<Reminde
   if (REMINDER_TYPES.every((t) => times[t] === null)) {
     return { ok: false, error: "Turn on at least one reminder (or delete them instead)." };
   }
-  return { ok: true, value: { experienceId: body.experienceId, timeZone: body.timeZone, ...times } };
+  let downtimeLead: DowntimeLead | null = null;
+  if (times.downtime !== null) {
+    if (!isDowntimeLead(body.downtimeLead)) {
+      return { ok: false, error: "Pick 15, 20 or 30 minutes before bedtime." };
+    }
+    downtimeLead = body.downtimeLead;
+  }
+  return {
+    ok: true,
+    value: {
+      experienceId: body.experienceId,
+      timeZone: body.timeZone,
+      weighIn: times.weighIn,
+      habits: times.habits,
+      downtime: times.downtime,
+      downtimeLead,
+      recap: times.recap,
+    },
+  };
 }
 
 /** The server request for a member's preferences, or null when all are off. */
@@ -100,6 +153,8 @@ export function remindersRequest(p: ReminderPrefs, experienceId: string, timeZon
     timeZone,
     weighIn: p.weighIn.on ? p.weighIn.time : null,
     habits: p.habits.on ? p.habits.time : null,
+    downtime: p.downtime.on ? p.downtime.time : null,
+    downtimeLead: p.downtime.on ? p.downtime.leadMin : null,
     recap: p.recap.on ? p.recap.time : null,
   };
 }
@@ -126,6 +181,11 @@ export function minuteOrNull(time: string | null): number | null {
   return time === null ? null : minutesOf(time);
 }
 
+/** When the downtime reminder goes out: `leadMin` before bedtime, wrapping past midnight. */
+export function downtimeMinute(bedtimeMinute: number, leadMin: number): number {
+  return (((bedtimeMinute - leadMin) % 1440) + 1440) % 1440;
+}
+
 /* -------------------------------- messages -------------------------------- */
 
 export interface Message {
@@ -137,6 +197,36 @@ export function weighInMessage(): Message {
   return {
     title: "Time for your weigh-in",
     content: "Step on the scale before you eat or drink, then log it in Check-in. It takes ten seconds.",
+  };
+}
+
+/** 450 → "7 h 30 min", 480 → "8 h". */
+function hoursText(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/**
+ * The downtime nudge. When the member also has a morning weigh-in reminder,
+ * it says how much sleep bedtime leaves before it (and flags under 7 hours,
+ * the "Slept 7+ hours" habit).
+ */
+export function downtimeMessage(bedtime: string, leadMin: number, weighInTime: string | null): Message {
+  let sleep = "";
+  if (weighInTime !== null) {
+    const minutes = (minutesOf(weighInTime) - minutesOf(bedtime) + 1440) % 1440;
+    // Only when the weigh-in plausibly marks waking up.
+    if (minutes >= 4 * 60 && minutes <= 12 * 60) {
+      sleep =
+        minutes >= 7 * 60
+          ? ` That's ${hoursText(minutes)} of sleep before your ${clock12(weighInTime)} weigh-in.`
+          : ` That's only ${hoursText(minutes)} before your ${clock12(weighInTime)} weigh-in. Aim for 7+.`;
+    }
+  }
+  return {
+    title: `Time to wind down · bed at ${clock12(bedtime)}`,
+    content: `${leadMin} minutes to bedtime. Put the phone down, dim the lights and get tomorrow ready.${sleep}`,
   };
 }
 
