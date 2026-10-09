@@ -184,3 +184,45 @@ export function applyAssignedProgram(
     },
   };
 }
+
+/* ---------------------------- coach program library ---------------------------- */
+
+/** Programs a coach saves to reuse when assigning, per whop. */
+export const MAX_SAVED_PROGRAMS = 50;
+
+export interface SavedProgram {
+  id: string;
+  name: string;
+  program: Program;
+  /** The training days and length it usually runs for (pre-fill the schedule step). */
+  weekdays: number[] | null;
+  weeks: number | null;
+  updatedAt: string;
+}
+
+/**
+ * A program to keep: library exercises only, at least one exercise — but,
+ * unlike one being sent, days still being filled in are kept.
+ */
+export function cleanSavedProgram(raw: unknown): Program | null {
+  const p = sanitizeProgram(raw);
+  if (!p || p.days.length === 0) return null;
+  const days = p.days.map((d) => ({ ...d, exercises: d.exercises.filter((e) => findExercise(e.exerciseId, [])) }));
+  if (!days.some((d) => d.exercises.length > 0)) return null;
+  // Dates belong to an assignment, not the saved program.
+  return { id: p.id, name: p.name, days };
+}
+
+export function validateSavedProgram(
+  raw: unknown,
+): ValidationResult<{ company: string; program: Program; weekdays: number[] | null; weeks: number | null }> {
+  const b = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  if (typeof b.company !== "string" || !COMPANY_ID_PATTERN.test(b.company)) return { ok: false, error: "Open the dashboard from your Whop." };
+  const program = cleanSavedProgram(b.program);
+  if (!program) return { ok: false, error: "Add at least one exercise before saving." };
+  const weekdays = Array.isArray(b.weekdays)
+    ? [...new Set(b.weekdays.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6))].sort((x, y) => x - y)
+    : [];
+  const weeks = typeof b.weeks === "number" && Number.isInteger(b.weeks) && b.weeks >= 1 && b.weeks <= 26 ? b.weeks : null;
+  return { ok: true, value: { company: b.company, program, weekdays: weekdays.length > 0 ? weekdays : null, weeks } };
+}

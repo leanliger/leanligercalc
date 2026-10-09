@@ -38,6 +38,7 @@
  *   POST   /api/coach/assignments             coaches: send one to everyone, a group or a member
  *   DELETE /api/coach/assignments/:id?company  coaches: cancel one
  *   POST   /api/coach/groups                  coaches: save a group; PUT/DELETE /api/coach/groups/:id
+ *   GET    /api/coach/programs?company=…      coaches: saved programs; POST to save, PUT/DELETE /api/coach/programs/:id
  *   GET    /api/assignments                   members: assignments waiting for me
  *   PUT    /api/assignments/:id               members: { accept } used it, or Not now
  *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
@@ -107,6 +108,9 @@ import {
   cancelAssignment,
   createAssignment,
   deleteGroup,
+  deleteProgram,
+  listPrograms,
+  saveProgram,
   listAssignments,
   myAssignments,
   saveGroup,
@@ -609,6 +613,27 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       if (!body.ok) return body.response;
       const result = await saveGroup(env, userId, body.value, groupId);
       return result.ok ? json(result.body, groupId ? 200 : 201) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  const programMatch = /^\/api\/coach\/programs(?:\/([^/]+))?$/.exec(path);
+  if (programMatch) {
+    const programId = programMatch[1] ?? null;
+    if (programId !== null && !ASSIGNMENT_ID_PATTERN.test(programId)) return error(404, "Not found.");
+    if (method === "GET" && !programId) {
+      const result = await listPrograms(env, userId, url.searchParams.get("company") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "DELETE" && programId) {
+      const result = await deleteProgram(env, userId, programId, url.searchParams.get("company") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if ((method === "POST" && !programId) || (method === "PUT" && programId)) {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await saveProgram(env, userId, body.value, programId);
+      return result.ok ? json(result.body, programId ? 200 : 201) : error(result.status, result.error);
     }
     return error(405, "Method not allowed.");
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Dumbbell, ListChecks, Pencil, Search, Send, Trash2, Users, X } from "lucide-react";
+import { Bookmark, Check, Copy, Dumbbell, ListChecks, Pencil, Save, Search, Send, Trash2, Users, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   type AssignmentTarget,
   type CoachAssignment,
   type CoachGroup,
+  type SavedProgram,
 } from "@/lib/assignments";
 import type { CoachMemberData } from "@/lib/coach";
 import { formatShort } from "@/lib/dates";
@@ -55,6 +56,18 @@ type Audience = "all" | "group" | "member";
 export function CoachAssignPanel({ companyId, members }: { companyId: string; members: CoachMemberData[] }) {
   const [data, setData] = React.useState<{ assignments: CoachAssignment[]; groups: CoachGroup[] } | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState<SavedProgram[]>([]);
+
+  const loadPrograms = React.useCallback(async () => {
+    try {
+      setSaved((await call<{ programs: SavedProgram[] }>(`/api/coach/programs?company=${encodeURIComponent(companyId)}`)).programs);
+    } catch {
+      /* the list just stays as it was; saving shows its own errors */
+    }
+  }, [companyId]);
+  React.useEffect(() => {
+    void loadPrograms();
+  }, [loadPrograms]);
 
   const load = React.useCallback(async () => {
     try {
@@ -70,7 +83,15 @@ export function CoachAssignPanel({ companyId, members }: { companyId: string; me
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] xl:items-start">
-      <NewAssignment companyId={companyId} members={members} groups={data?.groups ?? []} onSent={load} onGroupsChanged={load} />
+      <NewAssignment
+        companyId={companyId}
+        members={members}
+        groups={data?.groups ?? []}
+        saved={saved}
+        onProgramsChanged={loadPrograms}
+        onSent={load}
+        onGroupsChanged={load}
+      />
       <div className="space-y-5">
         {loadError ? (
           <p role="alert" className="text-sm text-destructive">
@@ -90,12 +111,17 @@ function NewAssignment({
   companyId,
   members,
   groups,
+  saved,
+  onProgramsChanged,
   onSent,
   onGroupsChanged,
 }: {
   companyId: string;
   members: CoachMemberData[];
   groups: CoachGroup[];
+  /** The coach's saved programs, newest first. */
+  saved: SavedProgram[];
+  onProgramsChanged: () => Promise<void>;
   onSent: () => Promise<void>;
   onGroupsChanged: () => Promise<void>;
 }) {
@@ -112,9 +138,58 @@ function NewAssignment({
   const [startDate, setStartDate] = React.useState(() => nextMonday(todayISO()));
   const [weekdays, setWeekdays] = React.useState<number[]>(defaultWeekdays(4));
   const [weeks, setWeeks] = React.useState(6);
+  // The saved program being edited (null = a new one), and what it looked like when last saved.
+  const [savedId, setSavedId] = React.useState<string | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = React.useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = React.useState(false);
   const chooseProgram = (p: Program) => {
     setProgram(p);
     setWeekdays(defaultWeekdays(p.days.length));
+    setSavedId(null);
+    setSavedSnapshot(null);
+    setSaveMsg(null);
+  };
+  const snapshotOf = (p: Program | null, days: number[], w: number) => JSON.stringify({ p, days, w });
+  const chooseSaved = (sp: SavedProgram) => {
+    const days = sp.weekdays ?? defaultWeekdays(sp.program.days.length);
+    const w = sp.weeks ?? 6;
+    setProgram(sp.program);
+    setWeekdays(days);
+    setWeeks(w);
+    setSavedId(sp.id);
+    setSavedSnapshot(snapshotOf(sp.program, days, w));
+    setSaveMsg(null);
+  };
+  const changed = savedId === null || snapshotOf(program, weekdays, weeks) !== savedSnapshot;
+  const saveProgram = async (asNew: boolean) => {
+    if (!program) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const updating = savedId !== null && !asNew;
+      const r = await call<{ program: SavedProgram | null }>(updating ? `/api/coach/programs/${savedId}` : "/api/coach/programs", {
+        method: updating ? "PUT" : "POST",
+        body: JSON.stringify({ company: companyId, program: asNew && savedId ? { ...program, name: `${program.name} (copy)` } : program, weekdays, weeks }),
+      });
+      if (r.program) {
+        setProgram(r.program.program);
+        setSavedId(r.program.id);
+        setSavedSnapshot(snapshotOf(r.program.program, weekdays, weeks));
+      }
+      setSaveMsg({ ok: true, text: updating ? "Changes saved." : "Saved to your programs." });
+      await onProgramsChanged();
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't save it. Try again." });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const resetProgram = () => {
+    setProgram(null);
+    setSavedId(null);
+    setSavedSnapshot(null);
+    setSaveMsg(null);
   };
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<{ ok: boolean; text: string } | null>(null);
@@ -135,7 +210,8 @@ function NewAssignment({
   const ready = (kind === "program" ? programReady && scheduleReady : habits.length > 0) && target !== null;
   const scheduled: Program | null =
     program && scheduleOn && scheduleReady ? { ...program, schedule: { startDate, weekdays, weeks, note: "" } } : program;
-  const n = (step: number) => (kind === "program" ? step : step - 1);
+  // The schedule step only shows once a program is loaded.
+  const n = (step: number) => (kind === "program" && program ? step : step - 1);
 
   const send = async () => {
     if (!target) return;
@@ -155,7 +231,7 @@ function NewAssignment({
         }`,
       });
       setNote("");
-      if (kind === "program") setProgram(null);
+      if (kind === "program") resetProgram();
       await onSent();
     } catch (e) {
       setResult({ ok: false, text: e instanceof Error ? e.message : "Couldn't send it. Try again." });
@@ -193,13 +269,39 @@ function NewAssignment({
         {kind === "program" ? (
           program ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">1. Build the program</p>
-                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setProgram(null)}>
-                  <X />
-                  Start over
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  1. {savedId ? "Your saved program" : "Build the program"}
+                </p>
+                <div className="flex flex-wrap items-center gap-1">
+                  {savedId ? (
+                    <>
+                      <Button variant={changed ? "default" : "outline"} size="sm" className="h-8 px-2.5" disabled={saving || !changed} onClick={() => void saveProgram(false)}>
+                        {changed ? <Save /> : <Check />}
+                        {changed ? "Save changes" : "Saved"}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 px-2" disabled={saving} onClick={() => void saveProgram(true)}>
+                        <Copy />
+                        Save as new
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" className="h-8 px-2.5" disabled={saving} onClick={() => void saveProgram(false)}>
+                      <Save />
+                      Save to my programs
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" className="h-8 px-2" onClick={resetProgram}>
+                    <X />
+                    Start over
+                  </Button>
+                </div>
               </div>
+              {saveMsg ? (
+                <p role={saveMsg.ok ? "status" : "alert"} className={cn("text-xs", saveMsg.ok ? "text-success" : "text-destructive")}>
+                  {saveMsg.text}
+                </p>
+              ) : null}
               <ProgramEditor
                 program={program}
                 custom={[]}
@@ -210,8 +312,47 @@ function NewAssignment({
               />
             </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">1. Start from a template, or build your own</p>
+            <div className="space-y-3">
+              {saved.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Bookmark className="h-3.5 w-3.5" />
+                    1. Your programs
+                  </p>
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {saved.map((sp) => (
+                      <li key={sp.id} className="flex items-stretch gap-1 rounded-lg border border-primary/40 bg-primary/[0.03]">
+                        <button
+                          type="button"
+                          onClick={() => chooseSaved(sp)}
+                          className="min-w-0 flex-1 space-y-1 rounded-l-lg p-3 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span className="block truncate text-sm font-semibold">{sp.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{sp.program.days.map((d) => d.name).join(" · ")}</span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {sp.weekdays ? sp.weekdays.map((d) => WEEKDAY_SHORT[d]).join(" · ") : `${sp.program.days.length} days`}
+                            {sp.weeks ? ` · ${sp.weeks} weeks` : ""} · saved {formatShort(sp.updatedAt.slice(0, 10))}
+                          </span>
+                        </button>
+                        <ConfirmButton
+                          size="icon"
+                          className="m-1 h-8 w-8 shrink-0 text-muted-foreground"
+                          label={<span className="sr-only">Delete {sp.name}</span>}
+                          icon={<Trash2 />}
+                          confirmLabel="Delete"
+                          onConfirm={async () => {
+                            await call(`/api/coach/programs/${sp.id}?company=${encodeURIComponent(companyId)}`, { method: "DELETE" });
+                            await onProgramsChanged();
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="text-xs font-medium text-muted-foreground">
+                {saved.length > 0 ? "Or start from a template, or build a new one" : "1. Start from a template, or build your own"}
+              </p>
               <ul className="grid gap-2 sm:grid-cols-2">
                 {TEMPLATES.map((t) => (
                   <li key={t.id}>

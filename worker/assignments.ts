@@ -7,6 +7,10 @@
  *   POST   /api/coach/groups                      save a group { company, name, memberIds }
  *   PUT    /api/coach/groups/:id                  update it
  *   DELETE /api/coach/groups/:id?company=…        delete it
+ *   GET    /api/coach/programs?company=biz_…      the coach's saved programs
+ *   POST   /api/coach/programs                    save one { company, program, weekdays, weeks }
+ *   PUT    /api/coach/programs/:id                update it
+ *   DELETE /api/coach/programs/:id?company=…      delete it
  *   GET    /api/assignments                       members: what's waiting for me
  *   PUT    /api/assignments/:id  { accept }       members: used it, or Not now
  *
@@ -17,6 +21,10 @@
 import {
   ASSIGNMENT_ID_PATTERN,
   MAX_GROUPS,
+  MAX_SAVED_PROGRAMS,
+  cleanSavedProgram,
+  validateSavedProgram,
+  type SavedProgram,
   assignmentMessage,
   validateAssignment,
   validateGroup,
@@ -244,6 +252,84 @@ export async function deleteGroup(env: AssignmentEnv, viewerId: string, groupId:
   const denied = await adminCheck(env, viewerId, companyId);
   if (denied) return denied;
   await env.DB.prepare("DELETE FROM coach_groups WHERE id = ? AND company_id = ?").bind(groupId, companyId).run();
+  return { ok: true, body: { deleted: true } };
+}
+
+/* ------------------------------ program library ------------------------------ */
+
+interface ProgramRow {
+  id: string;
+  name: string;
+  program: string;
+  weekdays: string | null;
+  weeks: number | null;
+  updated_at: string;
+}
+
+function toSaved(r: ProgramRow): SavedProgram | null {
+  try {
+    const program = cleanSavedProgram(JSON.parse(r.program));
+    if (!program) return null;
+    let weekdays: number[] | null = null;
+    if (r.weekdays) {
+      const parsed = JSON.parse(r.weekdays) as unknown;
+      if (Array.isArray(parsed)) weekdays = parsed.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6);
+    }
+    return { id: r.id, name: r.name, program, weekdays: weekdays && weekdays.length > 0 ? weekdays : null, weeks: r.weeks, updatedAt: r.updated_at };
+  } catch {
+    return null;
+  }
+}
+
+export async function listPrograms(env: AssignmentEnv, viewerId: string, companyId: string): Promise<AssignmentResult> {
+  const denied = await adminCheck(env, viewerId, companyId);
+  if (denied) return denied;
+  const { results } = await env.DB.prepare(
+    "SELECT id, name, program, weekdays, weeks, updated_at FROM coach_programs WHERE company_id = ? ORDER BY updated_at DESC LIMIT ?",
+  )
+    .bind(companyId, MAX_SAVED_PROGRAMS)
+    .all<ProgramRow>();
+  return { ok: true, body: { programs: results.map(toSaved).filter((p): p is SavedProgram => p !== null) } };
+}
+
+export async function saveProgram(env: AssignmentEnv, viewerId: string, raw: unknown, programId: string | null): Promise<AssignmentResult> {
+  const v = validateSavedProgram(raw);
+  if (!v.ok) return { ok: false, status: 422, error: v.error };
+  const p = v.value;
+  const denied = await adminCheck(env, viewerId, p.company);
+  if (denied) return denied;
+  const json = JSON.stringify(p.program);
+  const weekdays = p.weekdays ? JSON.stringify(p.weekdays) : null;
+  if (programId) {
+    const r = await env.DB.prepare(
+      `UPDATE coach_programs SET name = ?, program = ?, weekdays = ?, weeks = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = ? AND company_id = ?`,
+    )
+      .bind(p.program.name, json, weekdays, p.weeks, programId, p.company)
+      .run();
+    if (!r.meta.changes) return { ok: false, status: 404, error: "That saved program no longer exists." };
+  } else {
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM coach_programs WHERE company_id = ?").bind(p.company).first<{ n: number }>();
+    if ((count?.n ?? 0) >= MAX_SAVED_PROGRAMS) {
+      return { ok: false, status: 409, error: `You have ${MAX_SAVED_PROGRAMS} saved programs. Delete one first.` };
+    }
+    programId = newId();
+    await env.DB.prepare(
+      "INSERT INTO coach_programs (id, company_id, name, program, weekdays, weeks, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(programId, p.company, p.program.name, json, weekdays, p.weeks, viewerId)
+      .run();
+  }
+  const row = await env.DB.prepare("SELECT id, name, program, weekdays, weeks, updated_at FROM coach_programs WHERE id = ?")
+    .bind(programId)
+    .first<ProgramRow>();
+  return { ok: true, body: { program: row ? toSaved(row) : null } };
+}
+
+export async function deleteProgram(env: AssignmentEnv, viewerId: string, programId: string, companyId: string): Promise<AssignmentResult> {
+  const denied = await adminCheck(env, viewerId, companyId);
+  if (denied) return denied;
+  await env.DB.prepare("DELETE FROM coach_programs WHERE id = ? AND company_id = ?").bind(programId, companyId).run();
   return { ok: true, body: { deleted: true } };
 }
 
