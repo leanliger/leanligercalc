@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { RemindersSettings, type RemindersSettingsProps } from "@/components/reminders-settings";
 import { DataSettings, type DataSettingsProps } from "@/components/data-settings";
 import { PauseSettings, type PauseSettingsProps } from "@/components/pause-settings";
+import { CoachAccessSettings, type CoachAccessProps } from "@/components/coach-access";
 import type { WeightUnit } from "@/lib/types";
 
 const THEME_KEY = "prep-calculator:theme";
@@ -89,6 +90,7 @@ export function SettingsMenu({
   onUnitChange,
   reminders,
   pause,
+  coach,
   data,
 }: {
   unit: WeightUnit;
@@ -97,6 +99,8 @@ export function SettingsMenu({
   reminders?: RemindersSettingsProps;
   /** Pause mode (sick or travelling); left out on the coach dashboard. */
   pause?: PauseSettingsProps;
+  /** Whether the member shares their progress with their coach; left out on the coach dashboard. */
+  coach?: CoachAccessProps;
   /** Sync status and "Delete all my data"; left out on the coach dashboard. */
   data?: DataSettingsProps;
 }) {
@@ -167,6 +171,12 @@ export function SettingsMenu({
           {pause ? (
             <div className="border-t border-border pt-4">
               <PauseSettings {...pause} />
+            </div>
+          ) : null}
+
+          {coach ? (
+            <div className="border-t border-border pt-4">
+              <CoachAccessSettings {...coach} />
             </div>
           ) : null}
 

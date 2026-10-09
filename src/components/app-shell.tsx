@@ -59,6 +59,12 @@ import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
 import { endPause, type PausePeriod } from "@/lib/pause";
+import type { MySharing } from "@/lib/sharing";
+import type { SavedMeal } from "@/lib/saved-meals";
+import { loadSharing, saveSharing } from "@/components/coach-access";
+import { answerAssignment, loadAssignments } from "@/components/assignment-cards";
+import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
+import { sanitizeHabitDefs } from "@/lib/habits";
 import {
   dropEntry,
   isRetryable,
@@ -87,6 +93,20 @@ import {
   writeHabitBackup,
   type HabitBackupEntry,
 } from "@/lib/habit-backup";
+import {
+  dropDay,
+  markDaySaved,
+  overlayFoodLogs,
+  overlayWeighIns,
+  pendingDays,
+  pruneDays,
+  readFoodBackup,
+  readWeighInBackup,
+  recordDay,
+  writeFoodBackup,
+  writeWeighInBackup,
+  type DayBackupEntry,
+} from "@/lib/day-backup";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import type {
   BiometricProfile,
@@ -163,7 +183,14 @@ async function bootstrap(): Promise<{
   measurements: Measurement[];
   workouts: Workout[];
   /** The on-phone workout and habit backups and whose they are; `on` when in use. */
-  workoutBackup: { entries: BackupEntry[]; habits: HabitBackupEntry[]; account: string | null; on: boolean };
+  workoutBackup: {
+    entries: BackupEntry[];
+    habits: HabitBackupEntry[];
+    food: DayBackupEntry<FoodEntry[]>[];
+    weighIns: DayBackupEntry<WeighIn>[];
+    account: string | null;
+    on: boolean;
+  };
   /** The plan exactly as loaded from the cloud, if there was one. */
   cloudState: AppState | null;
 }> {
@@ -243,6 +270,9 @@ async function bootstrap(): Promise<{
       // And habit ticks made with no signal.
       const habitBackup = account ? pruneHabitBackup(readHabitBackup(), Date.now()) : [];
       habitLogs = overlayHabitLogs(habitLogs, habitBackup, account);
+      // And food days and weigh-ins saved with no signal.
+      const foodBackup = account ? pruneDays(readFoodBackup(), Date.now()) : [];
+      const weighInBackup = account ? pruneDays(readWeighInBackup(), Date.now()) : [];
 
       if (
         onDevice.length > 0 ||
@@ -260,15 +290,15 @@ async function bootstrap(): Promise<{
         state,
         session,
         store: cloud,
-        weighIns: sortByDate(weighIns),
+        weighIns: overlayWeighIns(sortByDate(weighIns), weighInBackup, account),
         habitLogs,
         reviews,
-        foodLogs,
+        foodLogs: overlayFoodLogs(foodLogs, foodBackup, account),
         foodFrom: food.from,
         myFoods,
         measurements,
         workouts: [...workouts].sort(byWorkoutTime),
-        workoutBackup: { entries: backup, habits: habitBackup, account, on: account !== null },
+        workoutBackup: { entries: backup, habits: habitBackup, food: foodBackup, weighIns: weighInBackup, account, on: account !== null },
         cloudState: saved,
       };
     } catch {
@@ -284,19 +314,21 @@ async function bootstrap(): Promise<{
   const account = offline ? readAccount() : null;
   const backup = account ? pruneBackup(readBackup(), Date.now()) : [];
   const habitBackup = account ? pruneHabitBackup(readHabitBackup(), Date.now()) : [];
+  const foodBackup = account ? pruneDays(readFoodBackup(), Date.now()) : [];
+  const weighInBackup = account ? pruneDays(readWeighInBackup(), Date.now()) : [];
   return {
     state,
     session,
     store,
-    weighIns: await store.list(),
+    weighIns: overlayWeighIns(await store.list(), weighInBackup, account),
     habitLogs: overlayHabitLogs(await store.listHabits(), habitBackup, account),
     reviews: await store.listReviews(),
-    foodLogs: await store.listFoodLogs(food.from, food.to),
+    foodLogs: overlayFoodLogs(await store.listFoodLogs(food.from, food.to), foodBackup, account),
     foodFrom: food.from,
     myFoods: await store.listMyFoods(),
     measurements: await store.listMeasurements(),
     workouts: overlay(await store.listWorkouts(), backup, account).sort(byWorkoutTime),
-    workoutBackup: { entries: backup, habits: habitBackup, account, on: account !== null },
+    workoutBackup: { entries: backup, habits: habitBackup, food: foodBackup, weighIns: weighInBackup, account, on: account !== null },
     cloudState: null,
   };
 }
@@ -332,10 +364,22 @@ export function AppShell() {
   // to upload it to (null while offline). Off in plain local mode.
   const backup = React.useRef<BackupEntry[]>([]);
   const habitBackup = React.useRef<HabitBackupEntry[]>([]);
+  const foodBackup = React.useRef<DayBackupEntry<FoodEntry[]>[]>([]);
+  const weighInBackup = React.useRef<DayBackupEntry<WeighIn>[]>([]);
+  // Anything kept on the phone waiting for signal (workouts, habits, food, weigh-ins).
+  const [offlineWaiting, setOfflineWaiting] = React.useState(0);
+  // An upload just failed for lack of signal (or the app opened offline). Until
+  // then, changes waiting a moment for their normal save aren't worth a notice.
+  const [uploadStalled, setUploadStalled] = React.useState(false);
   const backupAccount = React.useRef<string | null>(null);
   const backupOn = React.useRef(false);
   const cloudTarget = React.useRef<CheckinStore | null>(null);
   const [unsyncedWorkouts, setUnsyncedWorkouts] = React.useState(0);
+  // Whether this member shares their progress with their coach (cloud mode only).
+  const [coachSharing, setCoachSharing] = React.useState<MySharing | null>(null);
+  const [coachSharingError, setCoachSharingError] = React.useState<string | null>(null);
+  // Programs and habit sets a coach has sent, waiting for an answer.
+  const [assignments, setAssignments] = React.useState<MemberAssignment[]>([]);
   // What the server holds for fasting notifications ("off", or the request
   // last sent), so they're only re-sent when something actually changed.
   const reminderSynced = React.useRef<string | null>(null);
@@ -367,7 +411,14 @@ export function AppShell() {
         myFoods: [] as FoodProduct[],
         measurements: [] as Measurement[],
         workouts: [] as Workout[],
-        workoutBackup: { entries: [] as BackupEntry[], habits: [] as HabitBackupEntry[], account: null, on: false },
+        workoutBackup: {
+          entries: [] as BackupEntry[],
+          habits: [] as HabitBackupEntry[],
+          food: [] as DayBackupEntry<FoodEntry[]>[],
+          weighIns: [] as DayBackupEntry<WeighIn>[],
+          account: null,
+          on: false,
+        },
         cloudState: null,
       }))
       .then((result) => {
@@ -384,10 +435,19 @@ export function AppShell() {
       setWorkouts(result.workouts);
       backup.current = result.workoutBackup.entries;
       habitBackup.current = result.workoutBackup.habits;
+      foodBackup.current = result.workoutBackup.food;
+      weighInBackup.current = result.workoutBackup.weighIns;
       backupAccount.current = result.workoutBackup.account;
       backupOn.current = result.workoutBackup.on;
       cloudTarget.current = result.store.mode === "cloud" ? result.store : null;
+      setUploadStalled(result.workoutBackup.on && result.store.mode === "local");
       setUnsyncedWorkouts(pendingFor(backup.current, backupAccount.current).length);
+      setOfflineWaiting(
+        pendingFor(backup.current, backupAccount.current).length +
+          pendingHabitDays(habitBackup.current, backupAccount.current).length +
+          pendingDays(foodBackup.current, backupAccount.current).length +
+          pendingDays(weighInBackup.current, backupAccount.current).length,
+      );
       foodFrom.current = result.foodFrom;
       // Notifications on: re-send once per visit (picks up a new time zone).
       reminderSynced.current = result.state.tracking.fasting.notify ? null : "off";
@@ -544,10 +604,69 @@ export function AppShell() {
 
   /* ------------------------------ check-ins ------------------------------ */
 
-  const saveWeighIn = React.useCallback(async (w: WeighIn) => {
-    const saved = await storeRef.current!.save(w);
-    setWeighIns((prev) => sortByDate([...prev.filter((x) => x.date !== saved.date), saved]));
+  const recountOffline = React.useCallback(() => {
+    const a = backupAccount.current;
+    setOfflineWaiting(
+      pendingFor(backup.current, a).length +
+        pendingHabitDays(habitBackup.current, a).length +
+        pendingDays(foodBackup.current, a).length +
+        pendingDays(weighInBackup.current, a).length,
+    );
   }, []);
+
+  const commitHabitBackup = React.useCallback(
+    (next: HabitBackupEntry[]) => {
+      habitBackup.current = next;
+      writeHabitBackup(next);
+      recountOffline();
+    },
+    [recountOffline],
+  );
+
+  const commitFoodBackup = React.useCallback(
+    (next: DayBackupEntry<FoodEntry[]>[]) => {
+      foodBackup.current = next;
+      writeFoodBackup(next);
+      recountOffline();
+    },
+    [recountOffline],
+  );
+
+  const commitWeighInBackup = React.useCallback(
+    (next: DayBackupEntry<WeighIn>[]) => {
+      weighInBackup.current = next;
+      writeWeighInBackup(next);
+      recountOffline();
+    },
+    [recountOffline],
+  );
+
+  const saveWeighIn = React.useCallback(
+    async (w: WeighIn) => {
+      const store = storeRef.current!;
+      const account = backupOn.current ? backupAccount.current : null;
+      const show = (x: WeighIn) => setWeighIns((prev) => sortByDate([...prev.filter((y) => y.date !== x.date), x]));
+      try {
+        const saved = await store.save(w);
+        // Opened with no signal: saved here, and kept to upload. Otherwise it's newer than anything waiting.
+        if (account) {
+          commitWeighInBackup(
+            store.mode === "local"
+              ? recordDay(weighInBackup.current, saved.date, saved, account, Date.now())
+              : dropDay(weighInBackup.current, saved.date, account),
+          );
+        }
+        show(saved);
+      } catch (e) {
+        if (!account || store.mode === "local" || !isRetryable(e)) throw e;
+        setUploadStalled(true);
+        // No signal: keep it on the phone; it uploads with the workouts.
+        commitWeighInBackup(recordDay(weighInBackup.current, w.date, w, account, Date.now()));
+        show(w);
+      }
+    },
+    [commitWeighInBackup],
+  );
 
   const saveMeasurement = React.useCallback(async (m: Measurement) => {
     const saved = await storeRef.current!.saveMeasurement(m);
@@ -559,10 +678,28 @@ export function AppShell() {
     setMeasurements((prev) => prev.filter((x) => x.date !== date));
   }, []);
 
-  const deleteWeighIn = React.useCallback(async (date: string) => {
-    await storeRef.current!.remove(date);
-    setWeighIns((prev) => prev.filter((x) => x.date !== date));
-  }, []);
+  const deleteWeighIn = React.useCallback(
+    async (date: string) => {
+      const store = storeRef.current!;
+      const account = backupOn.current ? backupAccount.current : null;
+      try {
+        await store.remove(date);
+        if (account) {
+          commitWeighInBackup(
+            store.mode === "local"
+              ? recordDay(weighInBackup.current, date, null, account, Date.now())
+              : dropDay(weighInBackup.current, date, account),
+          );
+        }
+      } catch (e) {
+        if (!account || store.mode === "local" || !isRetryable(e)) throw e;
+        setUploadStalled(true);
+        commitWeighInBackup(recordDay(weighInBackup.current, date, null, account, Date.now()));
+      }
+      setWeighIns((prev) => prev.filter((x) => x.date !== date));
+    },
+    [commitWeighInBackup],
+  );
 
   const applyAdjustment = React.useCallback(
     (rec: Recommendation, _analysis: ProgressAnalysis) => {
@@ -588,10 +725,6 @@ export function AppShell() {
     }));
   }, []);
 
-  const commitHabitBackup = React.useCallback((next: HabitBackupEntry[]) => {
-    habitBackup.current = next;
-    writeHabitBackup(next);
-  }, []);
 
   const saveHabitDay = React.useCallback(
     async (log: HabitLog) => {
@@ -617,6 +750,7 @@ export function AppShell() {
         show(saved);
       } catch (e) {
         if (!account || !isRetryable(e)) throw e;
+        setUploadStalled(true);
         // No signal: keep the day on the phone; it uploads with the workouts.
         commitHabitBackup(recordHabitDay(habitBackup.current, log, account, Date.now()));
         show(log);
@@ -640,13 +774,30 @@ export function AppShell() {
   // the day is reloaded so the screen matches what was actually stored.
   const saveFoodDay = React.useCallback((date: string, entries: FoodEntry[]) => {
     setFoodLogs((prev) => withFoodDay(prev, date, entries));
+    const store = storeRef.current!;
+    const account = backupOn.current ? backupAccount.current : null;
     const run = foodQueue.current
       .catch(() => {})
-      .then(() => storeRef.current!.saveFoodLog({ date, entries }));
+      .then(() => store.saveFoodLog({ date, entries }));
     foodQueue.current = run;
     return run.then(
-      () => undefined,
+      () => {
+        // Opened with no signal: kept to upload. Otherwise newer than anything waiting.
+        if (account) {
+          commitFoodBackup(
+            store.mode === "local"
+              ? recordDay(foodBackup.current, date, entries, account, Date.now())
+              : dropDay(foodBackup.current, date, account),
+          );
+        }
+      },
       async (e: unknown) => {
+        if (account && store.mode !== "local" && isRetryable(e)) {
+          setUploadStalled(true);
+          // No signal: the day stays on screen and on the phone, and uploads later.
+          commitFoodBackup(recordDay(foodBackup.current, date, entries, account, Date.now()));
+          return;
+        }
         try {
           const [stored] = await storeRef.current!.listFoodLogs(date, date);
           setFoodLogs((prev) => withFoodDay(prev, date, stored?.entries ?? []));
@@ -656,7 +807,7 @@ export function AppShell() {
         throw e instanceof Error ? e : new Error("Couldn't save. Try again.");
       },
     );
-  }, []);
+  }, [commitFoodBackup]);
 
   // Older days load a page at a time as the member steps back through them.
   const ensureFoodLoaded = React.useCallback((date: string) => {
@@ -696,7 +847,8 @@ export function AppShell() {
     backup.current = next;
     writeBackup(next);
     setUnsyncedWorkouts(pendingFor(next, backupAccount.current).length);
-  }, []);
+    recountOffline();
+  }, [recountOffline]);
 
   /**
    * Save workout changes: to this browser's store in local mode (and while
@@ -746,13 +898,38 @@ export function AppShell() {
             commitHabitBackup(dropHabitDay(habitBackup.current, h.date, account));
           }
         }
+        // Food days and weigh-ins saved with no signal.
+        for (const d of pendingDays(foodBackup.current, account)) {
+          try {
+            await target.saveFoodLog({ date: d.date, entries: d.value ?? [] });
+            commitFoodBackup(markDaySaved(foodBackup.current, d.date, d.value, account));
+          } catch (err) {
+            if (isRetryable(err)) throw err;
+            commitFoodBackup(dropDay(foodBackup.current, d.date, account));
+          }
+        }
+        for (const d of pendingDays(weighInBackup.current, account)) {
+          try {
+            if (d.value) await target.save(d.value);
+            else await target.remove(d.date);
+            commitWeighInBackup(markDaySaved(weighInBackup.current, d.date, d.value, account));
+          } catch (err) {
+            if (isRetryable(err)) throw err;
+            commitWeighInBackup(dropDay(weighInBackup.current, d.date, account));
+          }
+        }
       });
     workoutQueue.current = run;
     return run.then(
-      () => setWorkoutSaveError(refused ? `Couldn't save a workout: ${refused}` : null),
+      () => {
+        setWorkoutSaveError(refused ? `Couldn't save a workout: ${refused}` : null);
+        // Got through to the server: nothing is stuck any more.
+        if (cloudTarget.current) setUploadStalled(false);
+      },
       (e: unknown) => {
         // Kept on the phone: shown as waiting to upload, not as an error.
         if (backupOn.current && isRetryable(e)) {
+          setUploadStalled(true);
           setWorkoutSaveError(null);
           return;
         }
@@ -762,7 +939,7 @@ export function AppShell() {
         throw e instanceof Error ? e : new Error("Couldn't save your workout.");
       },
     );
-  }, [commitBackup, commitHabitBackup]);
+  }, [commitBackup, commitHabitBackup, commitFoodBackup, commitWeighInBackup]);
 
   /** Show a workout change straight away; save it shortly after (or now). */
   const saveWorkout = React.useCallback(
@@ -853,7 +1030,9 @@ export function AppShell() {
     };
     const waiting = () =>
       pendingFor(backup.current, backupAccount.current).length > 0 ||
-      pendingHabitDays(habitBackup.current, backupAccount.current).length > 0;
+      pendingHabitDays(habitBackup.current, backupAccount.current).length > 0 ||
+      pendingDays(foodBackup.current, backupAccount.current).length > 0 ||
+      pendingDays(weighInBackup.current, backupAccount.current).length > 0;
     if (waiting()) void retry();
     const onOnline = () => void retry();
     window.addEventListener("online", onOnline);
@@ -880,6 +1059,77 @@ export function AppShell() {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, fasting } }));
   }, []);
 
+  // Coach access: load the member's choice (and any request) once ready.
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud") return;
+    let cancelled = false;
+    loadSharing(experienceIdFromPath(window.location.pathname))
+      .then((s) => {
+        if (!cancelled) setCoachSharing(s);
+      })
+      .catch(() => {
+        if (!cancelled) setCoachSharingError("Couldn't load your coach access setting. Try reopening the app.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, session.mode]);
+
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud") return;
+    let cancelled = false;
+    loadAssignments()
+      .then((list) => {
+        if (!cancelled) setAssignments(list);
+      })
+      .catch(() => {
+        /* nothing to show; tried again next open */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, session.mode]);
+
+  /** Use a coach's assignment: add the program (made active) or switch to the habits. */
+  const useAssignment = React.useCallback(
+    async (a: MemberAssignment): Promise<string | null> => {
+      if (a.kind === "program") {
+        const program = cleanAssignedProgram(a.program);
+        if (!program) return "This program can't be used. Ask your coach to send it again.";
+        const applied = applyAssignedProgram(state.tracking.training, a.id, program);
+        if (!applied.ok) return applied.error;
+        setState((prev) => ({ ...prev, tracking: { ...prev.tracking, training: applied.settings } }));
+      } else {
+        const habits = sanitizeHabitDefs(a.habits ?? []);
+        if (habits.length === 0) return "These habits can't be used. Ask your coach to send them again.";
+        setState((prev) => ({ ...prev, tracking: { ...prev.tracking, habits } }));
+      }
+      await answerAssignment(a.id, true).catch(() => {});
+      setAssignments((prev) => prev.filter((x) => x.id !== a.id));
+      return null;
+    },
+    [state.tracking.training],
+  );
+
+  const declineAssignment = React.useCallback(async (a: MemberAssignment) => {
+    await answerAssignment(a.id, false);
+    setAssignments((prev) => prev.filter((x) => x.id !== a.id));
+  }, []);
+
+  const changeCoachSharing = React.useCallback(async (shared: boolean) => {
+    try {
+      setCoachSharing(await saveSharing(shared));
+      setCoachSharingError(null);
+    } catch (e) {
+      setCoachSharingError(e instanceof Error ? e.message : "Couldn't save that. Try again.");
+      throw e;
+    }
+  }, []);
+
+  const updateSavedMeals = React.useCallback((savedMeals: SavedMeal[]) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, savedMeals } }));
+  }, []);
+
   const updatePauses = React.useCallback((pauses: PausePeriod[]) => {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, pauses } }));
   }, []);
@@ -898,6 +1148,8 @@ export function AppShell() {
     if (backupOn.current) {
       commitBackup(backup.current.filter((e) => e.account !== backupAccount.current));
       commitHabitBackup(habitBackup.current.filter((e) => e.account !== backupAccount.current));
+      commitFoodBackup(foodBackup.current.filter((e) => e.account !== backupAccount.current));
+      commitWeighInBackup(weighInBackup.current.filter((e) => e.account !== backupAccount.current));
     }
     const reset: AppState = { ...DEFAULT_APP_STATE, unit: state.unit, activeTab: "checkin" };
     // Treat the empty defaults as already "synced" so they aren't written
@@ -912,8 +1164,10 @@ export function AppShell() {
     setMyFoods([]);
     setMeasurements([]);
     setWorkouts([]);
+    setCoachSharing((prev) => (prev ? { shared: false, sharedAt: null, requestedAt: null } : prev));
+    setAssignments([]);
     setState(reset);
-  }, [state.unit, commitBackup, commitHabitBackup]);
+  }, [state.unit, commitBackup, commitHabitBackup, commitFoodBackup, commitWeighInBackup]);
 
   // Whether Whop notifications can be switched on here (fasting and check-in).
   const notifyAvailability: NotificationStatus["availability"] = !ready
@@ -936,6 +1190,18 @@ export function AppShell() {
                 unit={state.unit}
                 onUnitChange={(unit) => setState((prev) => ({ ...prev, unit }))}
                 pause={ready ? { pauses: state.tracking.pauses, today, onChange: updatePauses } : undefined}
+                coach={
+                  ready
+                    ? {
+                        available: session.mode === "cloud",
+                        sharing: coachSharing,
+                        error: coachSharingError,
+                        onChange: async (shared) => {
+                          await changeCoachSharing(shared).catch(() => {});
+                        },
+                      }
+                    : undefined
+                }
                 reminders={{
                   prefs: state.tracking.reminders,
                   onChange: updateReminders,
@@ -1048,6 +1314,12 @@ export function AppShell() {
                     Carb plan linked to timeline
                   </Badge>
                 ) : null}
+                {offlineWaiting > 0 && uploadStalled ? (
+                  <Badge variant="secondary" role="status" title="Saved on this phone; uploads as soon as you're back online, even if you close the app.">
+                    <CloudOff />
+                    {offlineWaiting === 1 ? "1 change" : `${offlineWaiting} changes`} saved on this phone
+                  </Badge>
+                ) : null}
                 {syncError ? (
                   <Badge variant="warning" role="status">
                     <CloudOff />
@@ -1077,6 +1349,11 @@ export function AppShell() {
                   measurements={measurements}
                   pauses={state.tracking.pauses}
                   onResume={() => updatePauses(endPause(state.tracking.pauses, today))}
+                  coachSharing={coachSharing}
+                  onCoachSharing={changeCoachSharing}
+                  assignments={assignments}
+                  onUseAssignment={useAssignment}
+                  onDeclineAssignment={declineAssignment}
                   onOpen={openFromToday}
                 />
               </TabsContent>
@@ -1153,6 +1430,9 @@ export function AppShell() {
                   onNavigate={navigateFor.habits}
                   section={nutritionSection}
                   onSectionChange={setNutritionSection}
+                  unit={state.unit}
+                  savedMeals={state.tracking.savedMeals}
+                  onSavedMealsChange={updateSavedMeals}
                 />
               </TabsContent>
 
@@ -1170,7 +1450,7 @@ export function AppShell() {
                   habitLogs={habitLogs}
                   onSaveHabits={saveHabitDay}
                   formCheckAvailability={notifyAvailability}
-                  unsyncedWorkouts={unsyncedWorkouts}
+                  unsyncedWorkouts={uploadStalled ? unsyncedWorkouts : 0}
                 />
               </TabsContent>
 

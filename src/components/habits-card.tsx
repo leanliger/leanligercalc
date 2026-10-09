@@ -60,6 +60,7 @@ import {
 } from "@/lib/habits";
 import { REVIEW_FIELD_MAX, emptyReview, type WeeklyReview } from "@/lib/reviews";
 import { habitStreak } from "@/lib/streaks";
+import { WATER_GOAL_BOTTLES, bottlesOn } from "@/lib/water";
 import { NO_PAUSES, PAUSE_REASON_LABELS, withPauses, type PausePeriod } from "@/lib/pause";
 import type { RoadmapDay } from "@/lib/types";
 import type { Macros } from "@/lib/food";
@@ -192,6 +193,10 @@ export function HabitsCard({
 
   const eaten = eatenFor?.(date) ?? null;
   const hint = (h: HabitDef): string | null => {
+    if (h.link === "water") {
+      const n = bottlesOn(draft);
+      return `${n} / ${WATER_GOAL_BOTTLES} bottles`;
+    }
     if (h.link === "steps") {
       const logged = draft[STEPS_KEY];
       return typeof logged === "number"
@@ -552,9 +557,10 @@ const LINK_LABEL = {
   calories: "Shows today's calorie target",
   workout: "Excused on rest days",
   steps: "Log your steps; ticks itself at your step target",
+  water: "Ticks itself at 6 bottles (100+ oz) in Nutrition → Water",
 } as const;
 
-function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange: (habits: HabitDef[]) => void }) {
+export function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange: (habits: HabitDef[]) => void }) {
   const [name, setName] = React.useState("");
   const [kind, setKind] = React.useState<HabitKind>("check");
   const [target, setTarget] = React.useState("");

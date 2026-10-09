@@ -7,6 +7,9 @@
  *   - The members shown are the company's members according to Whop. Data
  *     belonging to anyone else in the database is never returned, even if the
  *     app is installed in more than one whop.
+ *   - A member's data is only returned while they share it with their coach
+ *     (worker/sharing.ts). Everyone else appears with their Whop name, photo
+ *     and sharing status only.
  *
  * Returns each member's saved plan and recent logs; the browser does the maths
  * with the same code the member's own app uses (src/lib/coach.ts).
@@ -20,6 +23,7 @@ import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
 import { accessLevel, hasWhopKey, whopGet, whopReason, type WhopEnv } from "./whop";
 import { isSharingWithCoach, streamPhoto, type PhotoEnv } from "./photos";
+import { isSharingProgress, sharingFor } from "./sharing";
 import type { Pose } from "../src/lib/photos";
 
 export interface CoachEnv extends WhopEnv, PhotoEnv {
@@ -44,24 +48,13 @@ interface WhopMember {
   user?: { id?: string; name?: string | null; username?: string | null; profile_picture?: { url?: string } | null } | null;
 }
 
-type Profile = Pick<CoachMemberData, "userId" | "name" | "username" | "avatarUrl" | "lastAccessedAt" | "joinedAt">;
+export type Profile = Pick<CoachMemberData, "userId" | "name" | "username" | "avatarUrl" | "lastAccessedAt" | "joinedAt">;
 
-export async function coachOverview(env: CoachEnv, viewerId: string, companyId: string, now = new Date()): Promise<CoachResult> {
-  if (!COMPANY_ID_PATTERN.test(companyId)) return { ok: false, status: 422, error: "Open the dashboard from your Whop." };
-  if (!hasWhopKey(env)) {
-    return { ok: false, status: 503, error: "The app's Whop API key isn't set up yet." };
-  }
-
-  // 1. Is the viewer an admin of this company?
-  const level = await accessLevel(env, viewerId, companyId);
-  if (level === null) {
-    return { ok: false, status: 502, error: "Couldn't confirm your access with Whop. Try again in a moment." };
-  }
-  if (level !== "admin") {
-    return { ok: false, status: 403, error: "Only the owner and admins of this whop can open the coach dashboard." };
-  }
-
-  // 2. The company's members, according to Whop.
+/** The company's current members, according to Whop (also used for coach assignments). */
+export async function companyMembers(
+  env: WhopEnv,
+  companyId: string,
+): Promise<{ ok: true; profiles: Map<string, Profile> } | { ok: false; status: number; error: string }> {
   const profiles = new Map<string, Profile>();
   let after: string | null = null;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -95,6 +88,28 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     if (!body.page_info?.has_next_page || !body.page_info.end_cursor) break;
     after = body.page_info.end_cursor;
   }
+  return { ok: true, profiles };
+}
+
+export async function coachOverview(env: CoachEnv, viewerId: string, companyId: string, now = new Date()): Promise<CoachResult> {
+  if (!COMPANY_ID_PATTERN.test(companyId)) return { ok: false, status: 422, error: "Open the dashboard from your Whop." };
+  if (!hasWhopKey(env)) {
+    return { ok: false, status: 503, error: "The app's Whop API key isn't set up yet." };
+  }
+
+  // 1. Is the viewer an admin of this company?
+  const level = await accessLevel(env, viewerId, companyId);
+  if (level === null) {
+    return { ok: false, status: 502, error: "Couldn't confirm your access with Whop. Try again in a moment." };
+  }
+  if (level !== "admin") {
+    return { ok: false, status: 403, error: "Only the owner and admins of this whop can open the coach dashboard." };
+  }
+
+  // 2. The company's members, according to Whop.
+  const listed = await companyMembers(env, companyId);
+  if (!listed.ok) return listed;
+  const profiles = listed.profiles;
 
   // 3. Their data — only theirs.
   const today = toISODate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));
@@ -104,11 +119,13 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     food: addDays(today, -OVERVIEW_DAYS.food),
     measurements: addDays(today, -OVERVIEW_DAYS.measurements),
   };
+  const sharing = await sharingFor(env, [...profiles.keys()]);
   const members = new Map<string, CoachMemberData>();
   for (const p of profiles.values()) {
-    members.set(p.userId, { ...p, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null });
+    members.set(p.userId, { ...p, sharing: sharing.get(p.userId)!, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null });
   }
-  const ids = [...profiles.keys()];
+  // Only members who share their progress: nobody else's data is read at all.
+  const ids = [...profiles.keys()].filter((id) => sharing.get(id)?.state === "shared");
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
@@ -151,7 +168,10 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
         const plan = JSON.parse(r.state) as { tracking?: Record<string, unknown> } | null;
         // Training (programs, own exercises) isn't part of the coach view, and
         // can be the largest part of a plan: leave it out.
-        if (plan?.tracking && typeof plan.tracking === "object") delete plan.tracking.training;
+        if (plan?.tracking && typeof plan.tracking === "object") {
+          delete plan.tracking.training;
+          delete plan.tracking.savedMeals;
+        }
         m.plan = plan;
       } catch {
         m.plan = null;
@@ -218,7 +238,7 @@ export async function coachPhoto(
   }
   const memberLevel = await accessLevel(env, memberId, companyId);
   if (memberLevel !== "customer" && memberLevel !== "admin") return { ok: false, status: 404, error: "Not found." };
-  if (!(await isSharingWithCoach(env, memberId))) {
+  if (!(await isSharingProgress(env, memberId)) || !(await isSharingWithCoach(env, memberId))) {
     return { ok: false, status: 403, error: "This member hasn't shared their photos with you." };
   }
   return (await streamPhoto(env, memberId, photoId)) ?? { ok: false, status: 404, error: "Not found." };

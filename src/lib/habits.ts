@@ -29,10 +29,11 @@ export type HabitKind = "check" | "count";
 /**
  * Ties a habit to app data: protein and calories show the day's targets from
  * the roadmap; workout is the habit a rest day excuses; steps takes the day's
- * step count and ticks itself at the plan's step target.
+ * step count and ticks itself at the plan's step target; water ticks itself
+ * once the day's bottles reach the goal (src/lib/water.ts).
  */
-export type HabitLink = "protein" | "calories" | "workout" | "steps";
-const HABIT_LINKS: readonly HabitLink[] = ["protein", "calories", "workout", "steps"];
+export type HabitLink = "protein" | "calories" | "workout" | "steps" | "water";
+const HABIT_LINKS: readonly HabitLink[] = ["protein", "calories", "workout", "steps", "water"];
 
 export interface HabitDef {
   id: string;
@@ -57,6 +58,9 @@ export interface HabitLog {
 export const REST_KEY = "_rest";
 /** Reserved entry key holding the day's step count, when the member logs it. */
 export const STEPS_KEY = "_steps";
+/** Reserved entry key holding the day's water, in bottles (src/lib/water.ts). */
+export const WATER_KEY = "_water";
+export const MAX_DAILY_BOTTLES = 20;
 /**
  * Marks a paused day while scoring (see src/lib/pause.ts). Never stored: the
  * pause periods live in the plan, and saved logs drop this key.
@@ -80,7 +84,7 @@ export const DEFAULT_HABITS: HabitDef[] = [
   { id: "calories", name: "Hit calorie target", kind: "check", target: null, unit: null, link: "calories" },
   { id: "prelog", name: "Pre-logged meals before eating", kind: "check", target: null, unit: null, link: null },
   { id: "steps", name: "Hit daily step target", kind: "check", target: null, unit: null, link: "steps" },
-  { id: "hydration", name: "Hit hydration goal (100+ oz)", kind: "check", target: null, unit: null, link: null },
+  { id: "hydration", name: "Hit hydration goal (100+ oz)", kind: "check", target: null, unit: null, link: "water" },
   { id: "sleep", name: "Slept 7+ hours", kind: "check", target: null, unit: null, link: null },
   { id: "workout", name: "Completed workout", kind: "check", target: null, unit: null, link: "workout" },
 ];
@@ -119,7 +123,7 @@ export function sanitizeHabitDefs(raw: unknown): HabitDef[] {
     if (typeof item !== "object" || item === null) continue;
     const h = item as Record<string, unknown>;
     const id =
-      typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY && h.id !== STEPS_KEY && h.id !== PAUSE_KEY ? h.id : null;
+      typeof h.id === "string" && ID_PATTERN.test(h.id) && h.id !== REST_KEY && h.id !== STEPS_KEY && h.id !== WATER_KEY && h.id !== PAUSE_KEY ? h.id : null;
     const name = typeof h.name === "string" ? h.name.trim().slice(0, HABIT_NAME_MAX) : "";
     const kind: HabitKind = h.kind === "count" ? "count" : "check";
     if (!id || !name || seen.has(id)) continue;
@@ -136,6 +140,8 @@ export function sanitizeHabitDefs(raw: unknown): HabitDef[] {
     let link: HabitLink | null = (HABIT_LINKS as readonly unknown[]).includes(h.link) ? (h.link as HabitLink) : null;
     // The default step habit, saved before step logging existed.
     if (!link && id === "steps" && kind === "check") link = "steps";
+    // And the default hydration habit, saved before the water tracker existed.
+    if (!link && id === "hydration" && kind === "check") link = "water";
     if (link && usedLinks.has(link)) link = null;
     if (link) usedLinks.add(link);
     out.push({ id, name, kind, target: kind === "count" ? (target ?? 1) : null, unit, link });
@@ -169,6 +175,11 @@ export function validateHabitEntries(
     if (key === REST_KEY) {
       if (typeof value !== "boolean") return { ok: false, error: "Rest day must be true or false." };
       if (value) clean[key] = true;
+    } else if (key === WATER_KEY) {
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_DAILY_BOTTLES) {
+        return { ok: false, error: `Water must be a whole number of bottles up to ${MAX_DAILY_BOTTLES}.` };
+      }
+      if (value > 0) clean[key] = value;
     } else if (key === STEPS_KEY) {
       if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_DAILY_STEPS) {
         return { ok: false, error: "Steps must be a whole number up to 100,000." };

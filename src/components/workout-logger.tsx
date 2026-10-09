@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowLeftRight, ArrowUp, Check, CloudOff, Flag, Minus, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, Check, ChevronsUp, CloudOff, Disc3, Flag, Minus, Pause, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
+import { BarPicker, PlateResult, useBar } from "@/components/plate-calculator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,12 @@ import {
   lastPerformance,
   prefillSets,
   programDayWith,
-  shouldAddWeight,
+  progressionAdvice,
+  formatRir,
+  formatSetEffort,
+  RIR_CHOICES,
+  MAX_RIR,
+  type AdviceKind,
   summarizeWorkout,
   swapExercise,
   type DoneSet,
@@ -38,7 +44,7 @@ import {
   type WorkoutSet,
 } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
-import { toLb } from "@/lib/units";
+import { fromLb, toLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 const ROW_GRID = "grid grid-cols-[1.75rem_minmax(0,1fr)_4.5rem_3.75rem_2.5rem] items-center gap-1.5";
@@ -235,6 +241,8 @@ export function WorkoutLogger({
           onMove={(dir) => move(i, dir)}
           onOpen={() => onOpenExercise(e.exerciseId)}
           onSetDone={() => onSetDone(e, e.restSec ?? settings.restSec)}
+          barbell={findExercise(e.exerciseId, settings.customExercises)?.equipment === "barbell"}
+          trackRir={settings.trackRir}
           swap={
             canSwap(workout, i)
               ? {
@@ -313,6 +321,8 @@ function ExerciseBlock({
   onMove,
   onOpen,
   onSetDone,
+  barbell,
+  trackRir,
   swap,
 }: {
   exercise: WorkoutExercise;
@@ -328,10 +338,16 @@ function ExerciseBlock({
   onMove: (dir: -1 | 1) => void;
   onOpen: () => void;
   onSetDone: () => void;
+  /** A barbell lift: offers the plate calculator for the next set. */
+  barbell: boolean;
+  /** Ask how many reps were left after each completed set. */
+  trackRir: boolean;
   /** Swapping for another exercise; null when there's nothing left to swap. */
   swap: SwapOptions | null;
 }) {
   const [swapping, setSwapping] = React.useState(false);
+  const [showPlates, setShowPlates] = React.useState(false);
+  const advice = progressionAdvice(exercise.target, last, exercise.bodyweight, unit);
   const bw = exercise.bodyweight;
   const rest = exercise.restSec ?? defaultRest;
   const doneCount = exercise.sets.filter((s) => s.done).length;
@@ -410,14 +426,14 @@ function ExerciseBlock({
         </div>
         <p className="tabular text-xs text-muted-foreground">
           {last.length > 0
-            ? `Last time: ${last.map((s) => formatSet(s, unit, bw)).join(", ")}`
+            ? `Last time: ${last.map((s) => formatSetEffort(s, unit, bw)).join(", ")}`
             : "First time logging this — pick a weight you can lift with good form."}
         </p>
         {swap && swapping ? <SwapPicker exercise={exercise} options={swap} onDone={() => setSwapping(false)} /> : null}
-        {shouldAddWeight(exercise.target, last) ? (
-          <p className="flex items-center gap-1.5 text-xs font-medium text-success">
-            <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-            You hit the top of the rep range on every set last time. Try a little more weight.
+        {advice ? (
+          <p className={cn("flex items-start gap-1.5 text-xs font-medium", ADVICE_STYLE[advice.kind].text)}>
+            {ADVICE_STYLE[advice.kind].icon}
+            {advice.text}
           </p>
         ) : null}
       </CardHeader>
@@ -438,6 +454,7 @@ function ExerciseBlock({
             unit={unit}
             bodyweight={bw}
             pr={isPR(s)}
+            trackRir={trackRir}
             onChange={(next) => setSet(i, next)}
             onDone={() => {
               if (live) onSetDone();
@@ -459,9 +476,78 @@ function ExerciseBlock({
             <Minus />
             Remove set
           </Button>
+          {barbell && !bw ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn("ml-auto h-8 px-2", showPlates && "text-primary")}
+              aria-expanded={showPlates}
+              onClick={() => setShowPlates((v) => !v)}
+            >
+              <Disc3 />
+              Plates
+            </Button>
+          ) : null}
         </div>
+        {barbell && !bw && showPlates ? <NextSetPlates sets={exercise.sets} unit={unit} /> : null}
       </CardContent>
     </Card>
+  );
+}
+
+const ADVICE_STYLE: Record<AdviceKind, { text: string; icon: React.ReactNode }> = {
+  "add-weight": { text: "text-success", icon: <TrendingUp className="mt-px h-3.5 w-3.5 shrink-0" /> },
+  "add-reps": { text: "text-primary", icon: <ChevronsUp className="mt-px h-3.5 w-3.5 shrink-0" /> },
+  hold: { text: "text-muted-foreground", icon: <Pause className="mt-px h-3.5 w-3.5 shrink-0" /> },
+};
+
+/** "How many more reps could you have done?" for a completed set: one tap, tap again to clear. */
+function RirPicker({ n, value, onChange }: { n: number; value: number | null; onChange: (rir: number | null) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-1 pb-1.5 pl-9">
+      <span className="text-[11px] text-muted-foreground">{value === null ? "Reps left in the tank?" : "Effort:"}</span>
+      <div role="radiogroup" aria-label={`Set ${n}: reps left in reserve`} className="flex gap-1">
+        {RIR_CHOICES.map((r) => {
+          const on = value === r;
+          return (
+            <button
+              key={r}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              aria-label={r === 0 ? "0, all out" : r >= MAX_RIR ? `${MAX_RIR} or more` : String(r)}
+              onClick={() => onChange(on ? null : r)}
+              className={cn(
+                "h-6 min-w-[1.75rem] rounded-full border px-1.5 text-[11px] font-medium tabular transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                on ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted/50",
+              )}
+            >
+              {r >= MAX_RIR ? `${MAX_RIR}+` : r}
+            </button>
+          );
+        })}
+      </div>
+      {value !== null ? <span className="text-[11px] text-muted-foreground">{formatRir(value)}</span> : null}
+    </div>
+  );
+}
+
+/** Plates for the next set still to do (or the last one with a weight). */
+function NextSetPlates({ sets, unit }: { sets: readonly WorkoutSet[]; unit: WeightUnit }) {
+  const [bar, setBar] = useBar(unit);
+  const next = sets.find((s) => !s.done && s.weight !== null) ?? [...sets].reverse().find((s) => s.weight !== null) ?? null;
+  const total = next?.weight != null ? Math.round(fromLb(next.weight, unit) * 100) / 100 : null;
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <p className="text-xs font-medium">
+          {total === null ? "Enter a weight to see the plates." : `Loading ${total} ${unit}`}
+        </p>
+        <BarPicker unit={unit} bar={bar} onBar={setBar} className="w-36" />
+      </div>
+      {total !== null ? <PlateResult total={total} bar={bar} unit={unit} /> : null}
+    </div>
   );
 }
 
@@ -534,6 +620,7 @@ function SetRow({
   unit,
   bodyweight,
   pr,
+  trackRir,
   onChange,
   onDone,
 }: {
@@ -543,6 +630,7 @@ function SetRow({
   unit: WeightUnit;
   bodyweight: boolean;
   pr: boolean;
+  trackRir: boolean;
   onChange: (s: WorkoutSet) => void;
   onDone: () => void;
 }) {
@@ -590,12 +678,14 @@ function SetRow({
       repsRef.current?.focus();
       return;
     }
-    onChange({ ...set, done: !set.done });
+    // Un-ticking a set clears how hard it was.
+    onChange(set.done ? { ...set, done: false, rir: null } : { ...set, done: true });
     if (!set.done) onDone();
   };
 
   return (
-    <div className={cn(ROW_GRID, "rounded-md px-1 py-1 transition-colors", set.done && "bg-success/10")}>
+    <div className={cn("rounded-md transition-colors", set.done && "bg-success/10")}>
+    <div className={cn(ROW_GRID, "px-1 py-1")}>
       <span className="flex justify-center text-xs font-semibold tabular">
         {pr ? (
           <span title="Personal record" className="text-primary">
@@ -641,6 +731,8 @@ function SetRow({
       >
         <Check className={cn("h-4 w-4", !set.done && "opacity-30")} />
       </button>
+    </div>
+    {set.done && trackRir ? <RirPicker n={n} value={typeof set.rir === "number" ? set.rir : null} onChange={(rir) => onChange({ ...set, rir })} /> : null}
     </div>
   );
 }

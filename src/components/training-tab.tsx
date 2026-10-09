@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
@@ -26,6 +27,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ConfirmButton } from "@/components/confirm-button";
 import { ExerciseLibraryCard } from "@/components/exercise-library";
 import { FormChecksCard } from "@/components/form-checks";
+import { PlateCalculatorCard } from "@/components/plate-calculator";
+import { ProgramCalendar } from "@/components/program-calendar";
+import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
 import { ProgramEditor } from "@/components/program-editor";
@@ -45,6 +49,7 @@ import {
   formatDuration,
   formatRest,
   formatSet,
+  formatSetEffort,
   formatTarget,
   formatWork,
   isRecordSession,
@@ -176,6 +181,8 @@ export function TrainingTab({
     onSettingsChange((s) => ({ ...s, programs: s.programs.map((x) => (x.id === p.id ? p : x)) }));
 
   const setActiveProgram = (id: string) => onSettingsChange((s) => ({ ...s, activeProgramId: id }));
+  // Workouts (log, programs, library) or Program (the coach's plan on a calendar).
+  const [section, setSection] = React.useState<"workouts" | "program">("workouts");
 
   const addProgram = (template: ProgramTemplate | null) => {
     const program: Program = template
@@ -313,6 +320,24 @@ export function TrainingTab({
     ) : null;
   }
 
+  if (!body && section === "program") {
+    body = (
+      <ProgramCalendar
+        settings={settings}
+        workouts={workouts}
+        today={today}
+        live={active}
+        onStart={(p, d) => {
+          setSection("workouts");
+          start(p, d);
+        }}
+        onMakeActive={setActiveProgram}
+        onResume={() => setSection("workouts")}
+        onShowWorkouts={() => setSection("workouts")}
+      />
+    );
+  }
+
   if (!body && active) {
     body = (
       <WorkoutLogger
@@ -361,10 +386,13 @@ export function TrainingTab({
             settings={settings}
             program={activeProgram}
             workouts={workouts}
+            today={today}
+            onShowPlan={() => setSection("program")}
             onPickProgram={setActiveProgram}
             onStart={start}
             onAddProgram={addProgram}
             onRestChange={(restSec) => onSettingsChange((s) => ({ ...s, restSec }))}
+            onTrackRirChange={(trackRir) => onSettingsChange((s) => ({ ...s, trackRir }))}
           />
           {settings.programs.length > 0 ? (
             <ProgramsCard
@@ -374,6 +402,7 @@ export function TrainingTab({
               onAdd={addProgram}
             />
           ) : null}
+          <PlateCalculatorCard unit={unit} />
           <FormChecksCard
             availability={formCheckAvailability}
             custom={custom}
@@ -404,6 +433,18 @@ export function TrainingTab({
 
   return (
     <div className={cn(rest.timer && "pb-40")}>
+      {view.kind === "home" ? (
+        <SegmentedControl
+          ariaLabel="Training section"
+          value={section}
+          onValueChange={setSection}
+          options={[
+            { value: "workouts" as const, label: "Workouts" },
+            { value: "program" as const, label: "Program" },
+          ]}
+          className="mb-5 max-w-xs"
+        />
+      ) : null}
       {body}
       <RestTimerBar
         rest={rest}
@@ -448,20 +489,49 @@ function TodayCard({
   settings,
   program,
   workouts,
+  today,
+  onShowPlan,
   onPickProgram,
   onStart,
   onAddProgram,
   onRestChange,
+  onTrackRirChange,
 }: {
   settings: TrainingSettings;
   program: Program | null;
   workouts: readonly Workout[];
+  today: string;
+  onShowPlan: () => void;
   onPickProgram: (id: string) => void;
   onStart: (program: Program | null, day: ProgramDay | null) => void;
   onAddProgram: (template: ProgramTemplate | null) => void;
   onRestChange: (sec: number) => void;
+  onTrackRirChange: (on: boolean) => void;
 }) {
-  const next = program ? nextProgramDay(program, workouts) : null;
+  const rirId = React.useId();
+  // A program on a calendar: today's planned workout (or the next one) comes first.
+  const plan = program ? planToday(program, workouts, today) : null;
+  const planned =
+    plan?.kind === "today"
+      ? plan.session.day
+      : plan?.kind === "rest" || plan?.kind === "done-today"
+        ? (plan.next?.day ?? null)
+        : plan?.kind === "not-started"
+          ? plan.next.day
+          : null;
+  const next = planned ?? (program ? nextProgramDay(program, workouts) : null);
+  const heading =
+    plan?.kind === "today"
+      ? "Today in your plan"
+      : plan?.kind === "rest" && plan.next
+        ? `Rest day · next on ${formatShort(plan.next.date)}`
+        : plan?.kind === "done-today"
+          ? plan.next
+            ? `Done for today · next on ${formatShort(plan.next.date)}`
+            : "Done for today"
+          : plan?.kind === "not-started"
+            ? `Plan starts ${formatShort(plan.next.date)}`
+            : "Next up";
   const custom = settings.customExercises;
 
   return (
@@ -529,10 +599,16 @@ function TodayCard({
             {next ? (
               <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-primary">Next up</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Day {program.days.findIndex((d) => d.id === next.id) + 1} of {program.days.length}
-                  </p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-primary">{heading}</p>
+                  {plan ? (
+                    <button type="button" className="text-[11px] text-muted-foreground underline underline-offset-2" onClick={onShowPlan}>
+                      See the plan
+                    </button>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Day {program.days.findIndex((d) => d.id === next.id) + 1} of {program.days.length}
+                    </p>
+                  )}
                 </div>
                 <p className="text-lg font-semibold leading-tight">{next.name}</p>
                 {next.exercises.length > 0 ? (
@@ -593,6 +669,19 @@ function TodayCard({
           />
           <p className="text-[11px] text-muted-foreground">
             The timer starts when you tick off a set. Program exercises can set their own rest.
+          </p>
+        </div>
+
+        <div className="space-y-1 border-t border-border pt-3">
+          <div className="flex items-center gap-2.5">
+            <label htmlFor={rirId} className="min-w-0 flex-1 text-xs font-medium">
+              Ask how many reps were left after each set
+            </label>
+            <Switch id={rirId} checked={settings.trackRir} onCheckedChange={onTrackRirChange} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Reps in reserve: 0 means all out. It makes the &ldquo;add weight&rdquo; suggestions smarter: easy sets move you up
+            faster, all-out ones hold the weight.
           </p>
         </div>
       </CardContent>
@@ -837,7 +926,7 @@ function RecentWorkoutsCard({
                           <li key={`${e.exerciseId}-${i}`} className="text-sm">
                             <span className="font-medium">{e.name}</span>
                             <span className="tabular block text-xs text-muted-foreground">
-                              {doneSets(e).map((x) => formatSet(x, unit, e.bodyweight)).join(" · ") || "no completed sets"}
+                              {doneSets(e).map((x) => formatSetEffort(x, unit, e.bodyweight)).join(" · ") || "no completed sets"}
                             </span>
                           </li>
                         ))}

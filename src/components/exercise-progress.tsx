@@ -16,6 +16,7 @@ import {
   exerciseHistory,
   formatLoad,
   formatSet,
+  formatSetEffort,
   isRecordSession,
   type ExerciseSession,
   type Workout,
@@ -243,7 +244,7 @@ export function ExerciseProgress({
                         </span>
                       </div>
                       <p className="tabular text-xs text-muted-foreground">
-                        {s.sets.map((x) => formatSet(x, unit, exercise.bodyweight)).join(" · ")}
+                        {s.sets.map((x) => formatSetEffort(x, unit, exercise.bodyweight)).join(" · ")}
                       </p>
                     </li>
                   ))}

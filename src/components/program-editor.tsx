@@ -72,16 +72,22 @@ export function ProgramEditor({
   onDelete,
   onBack,
   onAddCustom,
+  title = "Edit program",
+  description = "Changes save as you go. Workouts you've already logged don't change.",
 }: {
   program: Program;
   custom: readonly Exercise[];
   defaultRest: number;
-  isActive: boolean;
+  /** Member's own program: shows Active / Make active. Left out when a coach builds one to send. */
+  isActive?: boolean;
   onChange: (p: Program) => void;
-  onMakeActive: () => void;
-  onDelete: () => void;
-  onBack: () => void;
-  onAddCustom: (e: Exercise) => void;
+  onMakeActive?: () => void;
+  onDelete?: () => void;
+  onBack?: () => void;
+  /** Without it, only library exercises can be picked (a coach's program goes to many members). */
+  onAddCustom?: (e: Exercise) => void;
+  title?: string;
+  description?: string;
 }) {
   const [name, setName] = React.useState(program.name);
   const [picking, setPicking] = React.useState<string | null>(null);
@@ -104,16 +110,18 @@ export function ProgramEditor({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <Button variant="ghost" size="sm" className="-ml-2 h-8 px-2" onClick={onBack}>
-        <ArrowLeft />
-        Back to training
-      </Button>
+      {onBack ? (
+        <Button variant="ghost" size="sm" className="-ml-2 h-8 px-2" onClick={onBack}>
+          <ArrowLeft />
+          Back to training
+        </Button>
+      ) : null}
 
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="text-lg">Edit program</CardTitle>
-            {isActive ? (
+            <CardTitle className="text-lg">{title}</CardTitle>
+            {!onMakeActive ? null : isActive ? (
               <Badge variant="success">
                 <Check />
                 Active
@@ -125,7 +133,7 @@ export function ProgramEditor({
               </Button>
             )}
           </div>
-          <CardDescription>Changes save as you go. Workouts you&apos;ve already logged don&apos;t change.</CardDescription>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1.5">
           <Label htmlFor="program-name">Program name</Label>
@@ -197,7 +205,8 @@ export function ProgramEditor({
               <ExercisePicker
                 custom={custom}
                 onClose={() => setPicking(null)}
-                onAddCustom={onAddCustom}
+                onAddCustom={onAddCustom ?? (() => {})}
+                allowCustom={Boolean(onAddCustom)}
                 exclude={day.exercises.map((e) => e.exerciseId)}
                 onPick={(e) => {
                   setPicking(null);
@@ -221,7 +230,7 @@ export function ProgramEditor({
           <Plus />
           Add day
         </Button>
-        <ConfirmButton label="Delete program" icon={<Trash2 />} confirmLabel="Yes, delete this program" onConfirm={onDelete} />
+        {onDelete ? <ConfirmButton label="Delete program" icon={<Trash2 />} confirmLabel="Yes, delete this program" onConfirm={onDelete} /> : null}
       </div>
       <Button className="w-full sm:w-auto" onClick={onBack}>
         <Check />

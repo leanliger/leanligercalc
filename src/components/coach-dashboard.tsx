@@ -8,8 +8,10 @@ import {
   Lock,
   ArrowLeft,
   ChevronRight,
+  EyeOff,
   Flame,
   RefreshCw,
+  Send,
   Scale,
   Search,
   Users,
@@ -25,6 +27,9 @@ import { ProgressChart } from "@/components/progress-chart";
 import { ConsistencyCard } from "@/components/consistency-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { PhotoGallery } from "@/components/photos-card";
+import { ConfirmButton } from "@/components/confirm-button";
+import { CoachAssignPanel } from "@/components/coach-assign";
+import { SegmentedControl } from "@/components/ui/segmented";
 import {
   FLAG_LABELS,
   INACTIVE_DAYS,
@@ -32,10 +37,12 @@ import {
   describeDaysAgo,
   sortForAttention,
   summarizeMember,
+  type CoachMemberData,
   type CoachOverview,
   type Flag,
   type MemberSummary,
 } from "@/lib/coach";
+import type { MemberSharing } from "@/lib/sharing";
 import { formatShort, todayISO } from "@/lib/dates";
 import { ZONES, type Zone } from "@/lib/habits";
 import { PAUSE_REASON_LABELS, type PausePeriod } from "@/lib/pause";
@@ -95,6 +102,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("member"),
   );
   const [unit, setUnit] = React.useState<WeightUnit>("lb");
+  // Members (progress) or Assign (send programs and habit sets).
+  const [view, setView] = React.useState<"members" | "assign">("members");
   const [today] = React.useState(() => todayISO());
 
   // Keep the open member in the address bar, so it can be bookmarked or shared with another admin.
@@ -135,10 +144,38 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     void load();
   }, [load]);
 
+  // Only members who share their progress have data; the rest are listed separately.
   const summaries = React.useMemo(
-    () => (overview ? sortForAttention(overview.members.map((m) => summarizeMember(m, today))) : []),
+    () =>
+      overview
+        ? sortForAttention(overview.members.filter((m) => m.sharing.state === "shared").map((m) => summarizeMember(m, today)))
+        : [],
     [overview, today],
   );
+  const notSharing = React.useMemo(
+    () =>
+      (overview?.members ?? [])
+        .filter((m) => m.sharing.state !== "shared")
+        .sort((a, b) => SHARING_ORDER[a.sharing.state] - SHARING_ORDER[b.sharing.state] || memberName(a).localeCompare(memberName(b))),
+    [overview],
+  );
+
+  /** Replace one member's sharing status after asking or stopping. */
+  const setSharing = (userId: string, sharing: MemberSharing, clearData = false) =>
+    setOverview((prev) =>
+      prev
+        ? {
+            ...prev,
+            members: prev.members.map((m) =>
+              m.userId !== userId
+                ? m
+                : clearData
+                  ? { ...m, sharing, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null }
+                  : { ...m, sharing },
+            ),
+          }
+        : prev,
+    );
 
   const q = query.trim().toLowerCase();
   const shown = summaries.filter((m) => {
@@ -148,6 +185,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     return m.flags.includes(filter);
   });
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
+  const currentNotSharing = current ? null : (notSharing.find((m) => m.userId === selected) ?? null);
+  const shownNotSharing = notSharing.filter((m) => !q || `${m.name ?? ""} ${m.username ?? ""}`.toLowerCase().includes(q));
 
   const counts = {
     total: summaries.length,
@@ -200,10 +239,39 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             </div>
             <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
           </div>
+        ) : view === "assign" ? (
+          <>
+            <SegmentedControl
+              ariaLabel="Dashboard view"
+              value={view}
+              onValueChange={setView}
+              options={[
+                { value: "members" as const, label: "Members" },
+                { value: "assign" as const, label: "Assign programs & habits" },
+              ]}
+              className="max-w-md"
+            />
+            <CoachAssignPanel companyId={companyId} members={overview.members} />
+          </>
         ) : (
           <>
+            <SegmentedControl
+              ariaLabel="Dashboard view"
+              value={view}
+              onValueChange={setView}
+              options={[
+                { value: "members" as const, label: "Members" },
+                { value: "assign" as const, label: "Assign programs & habits" },
+              ]}
+              className="max-w-md"
+            />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Stat label="Members" value={counts.total} icon={<Users className="h-3.5 w-3.5" />} sub="in your whop" />
+              <Stat
+                label="Sharing with you"
+                value={counts.total}
+                icon={<Users className="h-3.5 w-3.5" />}
+                sub={`of ${overview.members.length} member${overview.members.length === 1 ? "" : "s"} in your whop`}
+              />
               <Stat
                 label="Logging"
                 value={counts.active}
@@ -227,7 +295,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
             <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
               {/* ------------------------------ list ------------------------------ */}
-              <div className={cn("space-y-3", current && "hidden lg:block")}>
+              <div className={cn("space-y-3", (current || currentNotSharing) && "hidden lg:block")}>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <label htmlFor="coach-search" className="sr-only">
@@ -273,7 +341,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
                 {summaries.length === 0 ? (
                   <EmptyNote>
-                    No members yet. Once members open Prep Calculator in your whop, they&apos;ll appear here.
+                    {overview.members.length === 0
+                      ? "No members yet. Once people join your whop, they'll appear here."
+                      : "Nobody is sharing their progress with you yet. Ask a member below, or they can turn on sharing in their app's Settings."}
                   </EmptyNote>
                 ) : shown.length === 0 ? (
                   <EmptyNote>Nobody matches this filter.</EmptyNote>
@@ -286,16 +356,47 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     ))}
                   </ul>
                 )}
+                {notSharing.length > 0 ? (
+                  <NotSharingList
+                    members={shownNotSharing}
+                    total={notSharing.length}
+                    selected={selected}
+                    companyId={companyId}
+                    today={today}
+                    onOpen={setSelected}
+                    onChange={setSharing}
+                  />
+                ) : null}
+
                 <p className="text-[11px] text-muted-foreground">
                   Updated {new Date(overview.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
-                  Read-only: members&apos; plans and logs can only be changed from their own app.
+                  Read-only: members&apos; plans and logs can only be changed from their own app. You only see members who
+                  share their progress with you.
                 </p>
               </div>
 
               {/* ----------------------------- detail ----------------------------- */}
-              <div className={cn(!current && "hidden lg:block")}>
+              <div className={cn(!current && !currentNotSharing && "hidden lg:block")}>
                 {current ? (
-                  <MemberDetail m={current} unit={unit} today={today} companyId={companyId} onBack={() => setSelected(null)} />
+                  <MemberDetail
+                    m={current}
+                    unit={unit}
+                    today={today}
+                    companyId={companyId}
+                    onBack={() => setSelected(null)}
+                    onStopped={(sharing) => {
+                      setSharing(current.data.userId, sharing, true);
+                      setSelected(null);
+                    }}
+                  />
+                ) : currentNotSharing ? (
+                  <NotSharingDetail
+                    m={currentNotSharing}
+                    companyId={companyId}
+                    today={today}
+                    onBack={() => setSelected(null)}
+                    onChange={setSharing}
+                  />
                 ) : (
                   <EmptyNote>Select a member to see their progress, habits and food.</EmptyNote>
                 )}
@@ -312,19 +413,19 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function Avatar({ m, size = "h-9 w-9" }: { m: MemberSummary; size?: string }) {
+function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | null; size?: string }) {
   const [broken, setBroken] = React.useState(false);
-  const initials = m.displayName
+  const initials = name
     .replace(/^@/, "")
     .split(/\s+/)
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  return m.data.avatarUrl && !broken ? (
+  return url && !broken ? (
     // eslint-disable-next-line @next/next/no-img-element -- static export: no image optimiser
     <img
-      src={m.data.avatarUrl}
+      src={url}
       alt=""
       loading="lazy"
       referrerPolicy="no-referrer"
@@ -350,7 +451,7 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
         selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
       )}
     >
-      <Avatar m={m} />
+      <Avatar name={m.displayName} url={m.data.avatarUrl} />
       <span className="min-w-0 flex-1 space-y-1">
         <span className="flex items-baseline gap-1.5">
           <span className="truncate text-sm font-medium">{m.displayName}</span>
@@ -395,6 +496,181 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
   );
 }
 
+/* ============================== coach access ============================== */
+
+const SHARING_ORDER: Record<MemberSharing["state"], number> = { requested: 0, declined: 1, off: 2, shared: 3 };
+
+function memberName(d: Pick<CoachMemberData, "name" | "username">): string {
+  return d.name?.trim() || (d.username ? `@${d.username}` : "Member");
+}
+
+async function sharingCall<T>(action: "request" | "stop", company: string, member: string): Promise<T> {
+  const res = await fetch(`/api/coach/sharing/${action}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ company, member }),
+  });
+  const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
+  if (!res.ok || !body) throw new Error(body?.error ?? `Request failed (${res.status}).`);
+  return body;
+}
+
+function sharingText(s: MemberSharing): string {
+  if (s.state === "requested") return `Asked ${s.since ? formatShort(s.since.slice(0, 10)) : ""}`.trim();
+  if (s.state === "declined") return `Said not now${s.askAgainFrom ? ` · ask again ${formatShort(s.askAgainFrom)}` : ""}`;
+  return "Not sharing";
+}
+
+/** Ask a member to share, or cancel a request that hasn't been answered. */
+function AskButton({
+  m,
+  companyId,
+  today,
+  onChange,
+  size = "sm",
+}: {
+  m: CoachMemberData;
+  companyId: string;
+  today: string;
+  onChange: (userId: string, sharing: MemberSharing) => void;
+  size?: "sm" | "default";
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [note, setNote] = React.useState<string | null>(null);
+  const waiting = m.sharing.state === "declined" && m.sharing.askAgainFrom !== null && today < m.sharing.askAgainFrom;
+  const act = async (action: "request" | "stop") => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await sharingCall<{ sharing: MemberSharing; notified?: boolean }>(action, companyId, m.userId);
+      onChange(m.userId, r.sharing);
+      if (action === "request") setNote(r.notified ? "Sent: they'll get a Whop notification." : "Asked: they'll see it next time they open the app.");
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Couldn't do that. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="flex flex-col items-end gap-1">
+      {m.sharing.state === "requested" ? (
+        <Button variant="ghost" size={size} className="h-8 px-2 text-muted-foreground" disabled={busy} onClick={() => void act("stop")}>
+          Cancel request
+        </Button>
+      ) : (
+        <Button variant="outline" size={size} className="h-8 px-2.5" disabled={busy || waiting} onClick={() => void act("request")}>
+          <Send />
+          Ask to share
+        </Button>
+      )}
+      {note ? (
+        <span role="status" className="max-w-[14rem] text-right text-[11px] text-muted-foreground">
+          {note}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function NotSharingList({
+  members,
+  total,
+  selected,
+  companyId,
+  today,
+  onOpen,
+  onChange,
+}: {
+  members: CoachMemberData[];
+  total: number;
+  selected: string | null;
+  companyId: string;
+  today: string;
+  onOpen: (id: string) => void;
+  onChange: (userId: string, sharing: MemberSharing) => void;
+}) {
+  return (
+    <div className="space-y-2 border-t border-border pt-4">
+      <div>
+        <p className="flex items-center gap-1.5 text-sm font-semibold">
+          <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+          Not sharing with you <span className="tabular font-normal text-muted-foreground">({total})</span>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          You can see their name only. Ask, and they choose whether to share; they can stop any time.
+        </p>
+      </div>
+      {members.length === 0 ? (
+        <EmptyNote>Nobody matches your search.</EmptyNote>
+      ) : (
+        <ul className="space-y-1.5">
+          {members.map((m) => (
+            <li
+              key={m.userId}
+              className={cn(
+                "flex items-center gap-3 rounded-lg border px-3 py-2",
+                m.userId === selected ? "border-primary/50 bg-primary/5" : "border-border",
+              )}
+            >
+              <button type="button" onClick={() => onOpen(m.userId)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                <Avatar name={memberName(m)} url={m.avatarUrl} size="h-8 w-8" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{memberName(m)}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{sharingText(m.sharing)}</span>
+                </span>
+              </button>
+              <AskButton m={m} companyId={companyId} today={today} onChange={onChange} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function NotSharingDetail({
+  m,
+  companyId,
+  today,
+  onBack,
+  onChange,
+}: {
+  m: CoachMemberData;
+  companyId: string;
+  today: string;
+  onBack: () => void;
+  onChange: (userId: string, sharing: MemberSharing) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={onBack}>
+        <ArrowLeft />
+        All members
+      </Button>
+      <Card>
+        <CardContent className="space-y-4 p-5 sm:p-6">
+          <div className="flex items-center gap-3">
+            <Avatar name={memberName(m)} url={m.avatarUrl} size="h-12 w-12" />
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold">{memberName(m)}</h2>
+              <p className="text-xs text-muted-foreground">{sharingText(m.sharing)}</p>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {m.sharing.state === "requested"
+              ? "You've asked. Once they tap Share in their app, their weigh-ins, habits, food totals and plan show up here."
+              : m.sharing.state === "declined"
+                ? "They chose not to share for now. You can ask again after a week, or they can turn sharing on from their app's Settings."
+                : "They haven't shared their progress with you. Ask, and they'll get a notification to choose Share or Not now."}
+          </p>
+          <AskButton m={m} companyId={companyId} today={today} onChange={onChange} size="default" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 /** "Paused · sick to Oct 15" */
 function pausedLabel(p: PausePeriod): string {
   return `Paused · ${PAUSE_REASON_LABELS[p.reason].toLowerCase()} to ${formatShort(p.to)}`;
@@ -408,13 +684,16 @@ function MemberDetail({
   today,
   companyId,
   onBack,
+  onStopped,
 }: {
   m: MemberSummary;
   unit: WeightUnit;
   today: string;
   companyId: string;
   onBack: () => void;
+  onStopped: (sharing: MemberSharing) => void;
 }) {
+  const [stopError, setStopError] = React.useState<string | null>(null);
   const p = m.progress;
   const status = STATUS_LABEL[p?.status ?? (m.hasPlan ? "no-data" : "no-plan")] ?? STATUS_LABEL["no-data"]!;
   const weighIns = [...m.data.weighIns].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -429,7 +708,7 @@ function MemberDetail({
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Avatar m={m} size="h-12 w-12" />
+        <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-12 w-12" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold">{m.displayName}</h2>
           <p className="text-xs text-muted-foreground">
@@ -437,11 +716,31 @@ function MemberDetail({
               m.data.username && m.data.name ? `@${m.data.username}` : null,
               m.data.joinedAt ? `joined ${formatShort(m.data.joinedAt.slice(0, 10))}` : null,
               `last log ${describeDaysAgo(m.daysSinceLog)}`,
+              m.data.sharing.since ? `sharing since ${formatShort(m.data.sharing.since.slice(0, 10))}` : null,
             ]
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {stopError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {stopError}
+            </p>
+          ) : null}
         </div>
+        <ConfirmButton
+          label="Stop viewing"
+          icon={<EyeOff />}
+          confirmLabel="Yes, stop viewing"
+          variant="outline"
+          onConfirm={async () => {
+            try {
+              const r = await sharingCall<{ sharing: MemberSharing }>("stop", companyId, m.data.userId);
+              onStopped(r.sharing);
+            } catch (e) {
+              setStopError(e instanceof Error ? e.message : "Couldn't do that. Try again.");
+            }
+          }}
+        />
         <div className="flex flex-wrap gap-1">
           {m.paused ? <Badge variant="secondary">{pausedLabel(m.paused)}</Badge> : null}
           {m.flags.map((f) => (

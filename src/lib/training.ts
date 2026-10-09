@@ -19,6 +19,7 @@
 import { EQUIPMENT, LIBRARY, MUSCLES, libraryExercise, type Equipment, type Exercise, type Muscle } from "./exercises";
 import { isAcceptableWeighInDate, type ValidationResult } from "./tracking";
 import type { WeightUnit } from "./types";
+import { sanitizeSchedule, type ProgramSchedule } from "./program-schedule";
 import { fromLb } from "./units";
 
 /* --------------------------------- limits --------------------------------- */
@@ -69,6 +70,8 @@ export interface Program {
   id: string;
   name: string;
   days: ProgramDay[];
+  /** Dates for it, when a coach put it on a calendar (src/lib/program-schedule.ts). */
+  schedule?: ProgramSchedule;
 }
 
 export interface TrainingSettings {
@@ -78,6 +81,8 @@ export interface TrainingSettings {
   activeProgramId: string | null;
   /** Default rest between sets, seconds. */
   restSec: number;
+  /** Ask "how many reps were left?" after each set (reps in reserve). */
+  trackRir: boolean;
 }
 
 export const DEFAULT_TRAINING: TrainingSettings = {
@@ -85,6 +90,7 @@ export const DEFAULT_TRAINING: TrainingSettings = {
   customExercises: [],
   activeProgramId: null,
   restSec: DEFAULT_REST_SEC,
+  trackRir: true,
 };
 
 export interface WorkoutSet {
@@ -92,7 +98,17 @@ export interface WorkoutSet {
   weight: number | null;
   reps: number | null;
   done: boolean;
+  /**
+   * Reps in reserve: how many more reps the member could have done (0 = all
+   * out; MAX_RIR means MAX_RIR or more). Completed sets only; undefined/null =
+   * not recorded (older workouts never have it).
+   */
+  rir?: number | null;
 }
+
+/** The highest reps-in-reserve choice; it stands for "this many or more". */
+export const MAX_RIR = 4;
+export const RIR_CHOICES = [0, 1, 2, 3, 4] as const;
 
 export interface SetTarget {
   sets: number;
@@ -214,7 +230,12 @@ export function validateWorkout(raw: unknown, id: string, now: Date = new Date()
       if (reps !== null && !isInt(reps, 0, MAX_REPS)) return bad(`Reps must be a whole number up to ${MAX_REPS}.`);
       if (typeof s.done !== "boolean") return bad("Invalid set.");
       if (s.done && (reps === null || reps < 1)) return bad("A completed set needs at least 1 rep.");
-      sets.push({ weight: weight === null ? null : round2(weight), reps, done: s.done });
+      const rir = s.rir ?? null;
+      if (rir !== null && !isInt(rir, 0, MAX_RIR)) return bad(`Reps in reserve must be 0–${MAX_RIR}.`);
+      const set: WorkoutSet = { weight: weight === null ? null : round2(weight), reps, done: s.done };
+      // Only a completed set has an effort to record.
+      if (s.done && rir !== null) set.rir = rir;
+      sets.push(set);
     }
     exercises.push({ exerciseId, name: exName, bodyweight: e.bodyweight === true, target, restSec, sets });
   }
@@ -236,7 +257,7 @@ function sanitizeProgramExercise(v: unknown): ProgramExercise | null {
   return { exerciseId, sets, repsMin, repsMax, restSec: restSec === undefined ? null : restSec };
 }
 
-function sanitizeProgram(v: unknown): Program | null {
+export function sanitizeProgram(v: unknown): Program | null {
   if (!isObj(v) || typeof v.id !== "string" || !ID_PATTERN.test(v.id)) return null;
   const days: ProgramDay[] = [];
   const dayIds = new Set<string>();
@@ -250,7 +271,8 @@ function sanitizeProgram(v: unknown): Program | null {
       .slice(0, MAX_DAY_EXERCISES);
     days.push({ id: d.id, name: cleanText(d.name, DAY_NAME_MAX) ?? `Day ${days.length + 1}`, exercises });
   }
-  return { id: v.id, name: cleanText(v.name, NAME_MAX) ?? "My program", days };
+  const schedule = sanitizeSchedule(v.schedule);
+  return { id: v.id, name: cleanText(v.name, NAME_MAX) ?? "My program", days, ...(schedule ? { schedule } : {}) };
 }
 
 /** A member's own exercise, from anything. */
@@ -299,7 +321,7 @@ export function sanitizeTraining(raw: unknown): TrainingSettings {
     ? raw.activeProgramId
     : null;
   const restSec = isInt(raw.restSec, REST_MIN_SEC, REST_MAX_SEC) ? raw.restSec : DEFAULT_REST_SEC;
-  return { programs, customExercises, activeProgramId: active, restSec };
+  return { programs, customExercises, activeProgramId: active, restSec, trackRir: raw.trackRir !== false };
 }
 
 /* -------------------------------- templates ------------------------------- */
@@ -481,10 +503,14 @@ export function e1rm(weight: number, reps: number): number {
 export interface DoneSet {
   weight: number;
   reps: number;
+  /** Reps in reserve, when recorded. */
+  rir: number | null;
 }
 
 export function doneSets(e: WorkoutExercise): DoneSet[] {
-  return e.sets.filter((s) => s.done && s.reps !== null && s.reps > 0).map((s) => ({ weight: s.weight ?? 0, reps: s.reps! }));
+  return e.sets
+    .filter((s) => s.done && s.reps !== null && s.reps > 0)
+    .map((s) => ({ weight: s.weight ?? 0, reps: s.reps!, rir: typeof s.rir === "number" ? s.rir : null }));
 }
 
 const byTime = (a: Workout, b: Workout) => (a.date === b.date ? a.startedAt - b.startedAt : a.date < b.date ? -1 : 1);
@@ -584,6 +610,60 @@ export function prefillSets(count: number, last: readonly DoneSet[], bodyweight:
       done: false,
     };
   });
+}
+
+export type AdviceKind = "add-weight" | "add-reps" | "hold";
+
+export interface Advice {
+  kind: AdviceKind;
+  text: string;
+}
+
+/**
+ * What to do this time, from last time's sets — double progression, sharpened
+ * by reps in reserve when it was recorded:
+ *   - every set at the top of the rep range with reps to spare → add weight
+ *     (a bigger jump when every set had 3+ left);
+ *   - at the top of the range but the hardest set was all out (0 left) →
+ *     repeat the weight until it moves easier;
+ *   - not at the top yet, but every set had 3+ left → push for more reps
+ *     (or, without a rep range, add weight).
+ * Without reps in reserve it falls back to the plain rule: top of the range
+ * on every set → add weight.
+ */
+export function progressionAdvice(
+  target: SetTarget | null,
+  last: readonly DoneSet[],
+  bodyweight: boolean,
+  unit: WeightUnit,
+): Advice | null {
+  if (last.length === 0) return null;
+  if (target && last.length < target.sets) return null;
+  const sets = target ? last.slice(0, target.sets) : last;
+  const rirs = sets.map((s) => s.rir).filter((r): r is number => r !== null);
+  const allRecorded = rirs.length === sets.length;
+  const hardest = rirs.length > 0 ? Math.min(...rirs) : null;
+  const easy = allRecorded && hardest !== null && hardest >= 3;
+  const allTop = target !== null && sets.every((s) => s.reps >= target.repsMax);
+  const jump = (big: boolean) =>
+    bodyweight ? "a little weight (or a harder variation)" : unit === "kg" ? (big ? "about 5 kg" : "about 2.5 kg") : big ? "about 10 lb" : "about 5 lb";
+
+  if (allTop) {
+    if (hardest === 0) {
+      return {
+        kind: "hold",
+        text: "You hit the top of the rep range, but the hardest set was all out. Repeat this weight until it moves easier.",
+      };
+    }
+    if (easy) return { kind: "add-weight", text: `Top of the range with 3+ reps to spare on every set. Try adding ${jump(true)}.` };
+    return { kind: "add-weight", text: `You hit the top of the rep range on every set last time. Try adding ${jump(false)}.` };
+  }
+  if (easy) {
+    return target
+      ? { kind: "add-reps", text: "Every set felt easy last time (3+ reps to spare). Push for more reps, toward the top of the range." }
+      : { kind: "add-weight", text: `Every set felt easy last time (3+ reps to spare). Try adding ${jump(false)}.` };
+  }
+  return null;
 }
 
 /** A nudge to add weight when every target set reached the top of the rep range last time. */
@@ -765,6 +845,17 @@ export function formatLoad(lb: number, unit: WeightUnit): string {
 export function formatSet(s: DoneSet, unit: WeightUnit, bodyweight: boolean): string {
   if (bodyweight) return s.weight > 0 ? `BW+${formatLoad(s.weight, unit)} × ${s.reps}` : `BW × ${s.reps}`;
   return `${formatLoad(s.weight, unit)} × ${s.reps}`;
+}
+
+/** A set with its effort when recorded: "185 × 8 (2 left)". */
+export function formatSetEffort(s: DoneSet, unit: WeightUnit, bodyweight: boolean): string {
+  return s.rir === null ? formatSet(s, unit, bodyweight) : `${formatSet(s, unit, bodyweight)} (${formatRir(s.rir)})`;
+}
+
+/** "2 left", "all out", "4+ left". */
+export function formatRir(rir: number): string {
+  if (rir === 0) return "all out";
+  return `${rir >= MAX_RIR ? `${MAX_RIR}+` : rir} left`;
 }
 
 /** What a workout moved: "3,000 lb", or "24 reps" when it was all bodyweight. */

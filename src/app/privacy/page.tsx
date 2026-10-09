@@ -83,7 +83,8 @@ export default function PrivacyPage() {
               &ldquo;My foods&rdquo; (including barcodes).
             </li>
             <li>
-              Workouts you log: the exercises, sets, weights and reps, when you started and finished, and any workout note.
+              Workouts you log: the exercises, sets, weights and reps, how many reps you had left on a set if you record it,
+              when you started and finished, and any workout note.
             </li>
             <li>
               Your training setup: the programs you pick or build, your default rest time, and any exercises you add
@@ -178,8 +179,8 @@ export default function PrivacyPage() {
             on-device food logs older than one year are removed automatically to save space.
           </p>
           <p>
-            Inside Whop, your device also keeps a copy of a workout in progress, and any workout changes or habit ticks
-            made while you had no signal, until they reach your account (usually seconds; anything never uploaded is
+            Inside Whop, your device also keeps a copy of a workout in progress, and any workout changes, habit ticks, food
+            log days and weigh-ins made while you had no signal, until they reach your account (usually seconds; anything never uploaded is
             removed after 60 days). It stores your Whop user ID with them, so on a shared device they only ever upload to
             the account they came from. &ldquo;Delete all my data&rdquo; clears them too.
           </p>
@@ -192,24 +193,36 @@ export default function PrivacyPage() {
 
         <Section title="5. Your coach, and who else sees it">
           <p>
-            <strong>Your coach.</strong> {BUSINESS} runs this app as part of your coaching program. The owner and admins
-            of the Whop you joined can see a <strong>coach dashboard</strong> showing, for each member:
+            <strong>Your coach — only if you share.</strong> {BUSINESS} runs this app as part of its community. The owner
+            and admins of the Whop you joined have a <strong>coach dashboard</strong>. In it they see your Whop display
+            name, username and profile photo, and whether you share your progress with them.{" "}
+            <strong>Sharing is off unless you turn it on</strong> (Settings → Coach access). Your coach can ask; you get a
+            notification and choose Share or Not now. You can stop sharing at any time and your coach loses access
+            straight away; your coach can also stop viewing. While you share, they can see:
           </p>
           <List>
-            <li>your Whop display name, username and profile photo;</li>
             <li>your plan (profile, goal and settings) and how your weight is tracking against it;</li>
             <li>your weigh-ins from the last 4 months, including any calories and notes you added;</li>
             <li>your body measurements from the last 12 months;</li>
             <li>
-              your progress photos — <strong>only if you switch on sharing</strong> (see &ldquo;Progress photos&rdquo;);
+              your progress photos — <strong>only if you also switch on photo sharing</strong> (see &ldquo;Progress
+              photos&rdquo;);
             </li>
-            <li>your habit ticks and any step counts you logged from the last 3 months, with your streaks and weekly scores;</li>
+            <li>
+              your habit ticks and any step counts and water bottles you logged from the last 3 months, with your streaks
+              and weekly scores;
+            </li>
             <li>whether you&apos;re paused right now, the reason you picked and until when;</li>
             <li>your daily food totals (calories, protein, carbs and fat) from the last 2 weeks — not the individual foods.</li>
           </List>
           <p>
             Your coach can only view this, not change it. Only admins of the Whop you&apos;re a member of can open the
-            dashboard. Your weekly self-audit notes, saved foods, workouts and training programs are not shown.
+            dashboard. When you don&apos;t share, none of your data is sent to it.
+          </p>
+          <p>
+            <strong>Programs and habits from your coach.</strong> Your coach can send a training program or a set of
+            daily habits to everyone, a group, or just you. You get a notification and decide whether to use it; your coach
+            sees only whether you used it or said not now. Saved groups contain members&apos; names, nothing else. Your weekly self-audit notes, saved foods, workouts and training programs are not shown.
           </p>
           <p>
             <strong>Other members</strong> never see your data — unless you choose to join the{" "}

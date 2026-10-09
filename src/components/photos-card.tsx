@@ -297,7 +297,7 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 </label>
                 <p className="text-xs text-muted-foreground">
                   {state.shareWithCoach
-                    ? "On: your coach can see your progress photos in their coach dashboard. Turn off any time."
+                    ? "On: your coach can see your progress photos while Coach access is also on (Settings). Turn off any time."
                     : "Off: nobody but you can see your photos."}
                 </p>
               </div>

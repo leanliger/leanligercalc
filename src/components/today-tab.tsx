@@ -43,6 +43,11 @@ import {
 } from "@/lib/habits";
 import type { Measurement } from "@/lib/measurements";
 import { PAUSE_REASON_LABELS, activePause, type PausePeriod } from "@/lib/pause";
+import { planToday } from "@/lib/program-schedule";
+import type { MySharing } from "@/lib/sharing";
+import { CoachRequestCard } from "@/components/coach-access";
+import { AssignmentCards } from "@/components/assignment-cards";
+import type { MemberAssignment } from "@/lib/assignments";
 import { formatShort } from "@/lib/dates";
 import { trendSeries } from "@/lib/adaptive";
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
@@ -89,6 +94,13 @@ interface TodayTabProps {
   /** Pause mode periods; a banner shows while one is on. */
   pauses: PausePeriod[];
   onResume: () => void;
+  /** Coach access: shows the prompt when a coach has asked. */
+  coachSharing: MySharing | null;
+  onCoachSharing: (shared: boolean) => Promise<void>;
+  /** Programs and habit sets from the coach, waiting for an answer. */
+  assignments: MemberAssignment[];
+  onUseAssignment: (a: MemberAssignment) => Promise<string | null>;
+  onDeclineAssignment: (a: MemberAssignment) => Promise<void>;
   onOpen: (dest: TodayDestination) => void;
 }
 
@@ -245,6 +257,12 @@ export function TodayTab(props: TodayTabProps) {
         </CardContent>
       </Card>
 
+      <AssignmentCards assignments={props.assignments} onUse={props.onUseAssignment} onDecline={props.onDeclineAssignment} />
+
+      {props.coachSharing?.requestedAt && !props.coachSharing.shared ? (
+        <CoachRequestCard sharing={props.coachSharing} onChange={props.onCoachSharing} />
+      ) : null}
+
       {paused ? (
         <Card className="border-primary/50 bg-primary/10">
           <CardContent className="flex flex-wrap items-center gap-3 p-4 sm:p-6">
@@ -348,6 +366,7 @@ export function TodayTab(props: TodayTabProps) {
           rest={rest}
           training={props.training}
           workouts={workouts}
+          today={today}
           onStart={props.onStartWorkout}
           onOpen={() => onOpen("training")}
         />
@@ -577,6 +596,7 @@ function WorkoutToday({
   rest,
   training,
   workouts,
+  today,
   onStart,
   onOpen,
 }: {
@@ -585,11 +605,30 @@ function WorkoutToday({
   rest: boolean;
   training: TrainingSettings;
   workouts: Workout[];
+  today: string;
   onStart: (program: Program, day: ProgramDay) => void;
   onOpen: () => void;
 }) {
   const program = training.programs.find((p) => p.id === training.activeProgramId) ?? training.programs[0] ?? null;
-  const next = program ? nextProgramDay(program, workouts) : null;
+  // A program on a calendar: the planned workout for today, or the next one.
+  const plan = program ? planToday(program, workouts, today) : null;
+  const planned =
+    plan?.kind === "today"
+      ? plan.session.day
+      : plan?.kind === "rest" || plan?.kind === "done-today"
+        ? (plan.next?.day ?? null)
+        : plan?.kind === "not-started"
+          ? plan.next.day
+          : null;
+  const next = planned ?? (program ? nextProgramDay(program, workouts) : null);
+  const heading =
+    plan?.kind === "today"
+      ? "Today in your plan"
+      : plan?.kind === "rest" && plan.next
+        ? `Rest day · next on ${formatShort(plan.next.date)}`
+        : plan?.kind === "not-started"
+          ? `Plan starts ${formatShort(plan.next.date)}`
+          : `Next up · ${program?.name ?? ""}`;
 
   let body: React.ReactNode;
   if (live) {
@@ -640,7 +679,7 @@ function WorkoutToday({
     body = (
       <div className="space-y-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-wide text-primary">Next up · {program.name}</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-primary">{heading}</p>
           <p className="font-semibold">{next.name}</p>
         </div>
         {next.exercises.length > 0 ? (
@@ -656,9 +695,9 @@ function WorkoutToday({
             ) : null}
           </ul>
         ) : null}
-        <Button className="w-full" onClick={() => onStart(program, next)}>
+        <Button className="w-full" variant={plan?.kind === "rest" ? "outline" : "default"} onClick={() => onStart(program, next)}>
           <Play />
-          Start {next.name}
+          {plan?.kind === "rest" ? `Do ${next.name} today` : `Start ${next.name}`}
         </Button>
       </div>
     );

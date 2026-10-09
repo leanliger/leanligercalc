@@ -78,7 +78,7 @@ interface RunCounts {
 export async function sendWhop(
   env: ReminderEnv,
   experienceId: string,
-  userId: string,
+  userId: string | readonly string[],
   msg: Message,
 ): Promise<{ ok: boolean; status: number; reason?: string }> {
   try {
@@ -91,7 +91,7 @@ export async function sendWhop(
         // Workers send no User-Agent by default, and some APIs refuse that.
         "user-agent": "LeanLigerCalc/1.0 (+https://leanligercalc.lean-liger-fitness.workers.dev)",
       },
-      body: JSON.stringify({ experience_id: experienceId, user_ids: [userId], title: msg.title, content: msg.content }),
+      body: JSON.stringify({ experience_id: experienceId, user_ids: typeof userId === "string" ? [userId] : userId, title: msg.title, content: msg.content }),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
     if (res.ok) return { ok: true, status: res.status };

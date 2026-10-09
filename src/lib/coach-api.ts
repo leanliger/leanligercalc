@@ -7,6 +7,7 @@
 import type { HabitEntries } from "./habits";
 import type { Measurement } from "./measurements";
 import type { PhotoMeta } from "./photos";
+import type { MemberSharing } from "./sharing";
 import type { WeighIn } from "./tracking";
 
 export const COMPANY_ID_PATTERN = /^biz_[A-Za-z0-9]{1,40}$/;
@@ -39,13 +40,15 @@ export interface CoachMemberData {
   /** When they last opened anything in your whop (from Whop). */
   lastAccessedAt: string | null;
   joinedAt: string | null;
+  /** Whether they share their progress with you. Everything below stays empty unless they do. */
+  sharing: MemberSharing;
   /** Their saved plan document, as stored (re-sanitised by the browser). */
   plan: unknown | null;
   weighIns: WeighIn[];
   habitLogs: { date: string; entries: HabitEntries }[];
   foodDays: FoodDay[];
   measurements: Measurement[];
-  /** Their progress photos — null unless they've chosen to share them with you. */
+  /** Their progress photos — null unless they share their progress AND their photos with you. */
   photos: PhotoMeta[] | null;
 }
 

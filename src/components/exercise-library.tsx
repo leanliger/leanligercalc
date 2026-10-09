@@ -91,6 +91,7 @@ export function ExercisePicker({
   exclude = [],
   initialMuscle = "all",
   footer,
+  allowCustom = true,
 }: {
   custom: readonly Exercise[];
   onPick: (e: Exercise) => void;
@@ -104,6 +105,8 @@ export function ExercisePicker({
   initialMuscle?: MuscleFilter;
   /** Extra controls under the list. */
   footer?: React.ReactNode;
+  /** Offer "Add your own" (off when a coach builds a program for many members). */
+  allowCustom?: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   const [muscle, setMuscle] = React.useState<MuscleFilter>(initialMuscle);
@@ -155,10 +158,12 @@ export function ExercisePicker({
             )}
           </ul>
           {footer}
-          <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setAdding(true)}>
-            <Plus />
-            Can&apos;t find it? Add your own
-          </Button>
+          {allowCustom ? (
+            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setAdding(true)}>
+              <Plus />
+              Can&apos;t find it? Add your own
+            </Button>
+          ) : null}
         </>
       )}
     </div>

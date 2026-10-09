@@ -30,6 +30,16 @@
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
  *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
+ *   GET    /api/sharing?experience=exp_…      my coach-access choice and any pending request
+ *   PUT    /api/sharing                       share with my coach, stop, or "Not now"
+ *   POST   /api/coach/sharing/request         coaches: ask a member to share { company, member }
+ *   POST   /api/coach/sharing/stop            coaches: stop viewing a member { company, member }
+ *   GET    /api/coach/assignments?company=…   coaches: programs / habit sets sent, and saved groups
+ *   POST   /api/coach/assignments             coaches: send one to everyone, a group or a member
+ *   DELETE /api/coach/assignments/:id?company  coaches: cancel one
+ *   POST   /api/coach/groups                  coaches: save a group; PUT/DELETE /api/coach/groups/:id
+ *   GET    /api/assignments                   members: assignments waiting for me
+ *   PUT    /api/assignments/:id               members: { accept } used it, or Not now
  *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
  *   PUT    /api/leaderboard        join it        DELETE /api/leaderboard?experience=…  leave it
  *   GET    /api/lift-board?experience=exp_…  lift leaderboard, my submissions, review queue (admins)
@@ -90,6 +100,17 @@ import {
 import { validateReminderRequest } from "../src/lib/fasting";
 import { validateRemindersRequest } from "../src/lib/reminders";
 import { coachOverview, coachPhoto, type CoachEnv } from "./coach";
+import { getMySharing, requestSharing, setMySharing, stopSharing } from "./sharing";
+import {
+  ASSIGNMENT_ID_PATTERN,
+  answerAssignment,
+  cancelAssignment,
+  createAssignment,
+  deleteGroup,
+  listAssignments,
+  myAssignments,
+  saveGroup,
+} from "./assignments";
 import { deleteAllPhotos, deletePhoto, listPhotos, setSharing, streamPhoto, uploadPhoto } from "./photos";
 import { MAX_MEASUREMENTS, validateMeasurement, type Measurement } from "../src/lib/measurements";
 import { MAX_WORKOUTS, WORKOUT_ID_PATTERN, validateWorkout, type Workout } from "../src/lib/training";
@@ -529,6 +550,84 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return json({ ok: true });
   }
 
+  /* ------------------------------ coach access ------------------------------ */
+
+  if (path === "/api/sharing") {
+    if (method === "GET") return json(await getMySharing(env, userId, url.searchParams.get("experience")));
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await setMySharing(env, userId, body.value);
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  if (path === "/api/coach/sharing/request" || path === "/api/coach/sharing/stop") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result =
+      path.endsWith("/request") ? await requestSharing(env, userId, body.value) : await stopSharing(env, userId, body.value);
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  /* ------------------------------ assignments ------------------------------ */
+
+  if (path === "/api/coach/assignments") {
+    if (method === "GET") {
+      const result = await listAssignments(env, userId, url.searchParams.get("company") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "POST") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await createAssignment(env, userId, body.value);
+      return result.ok ? json(result.body, 201) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  const assignMatch = /^\/api\/coach\/assignments\/([^/]+)$/.exec(path);
+  if (assignMatch) {
+    if (!ASSIGNMENT_ID_PATTERN.test(assignMatch[1]!)) return error(404, "Not found.");
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    const result = await cancelAssignment(env, userId, assignMatch[1]!, url.searchParams.get("company") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
+  const groupMatch = /^\/api\/coach\/groups(?:\/([^/]+))?$/.exec(path);
+  if (groupMatch) {
+    const groupId = groupMatch[1] ?? null;
+    if (groupId !== null && !ASSIGNMENT_ID_PATTERN.test(groupId)) return error(404, "Not found.");
+    if (method === "DELETE" && groupId) {
+      const result = await deleteGroup(env, userId, groupId, url.searchParams.get("company") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if ((method === "POST" && !groupId) || (method === "PUT" && groupId)) {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await saveGroup(env, userId, body.value, groupId);
+      return result.ok ? json(result.body, groupId ? 200 : 201) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  if (path === "/api/assignments") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return json({ assignments: await myAssignments(env, userId) });
+  }
+
+  const myAssignMatch = /^\/api\/assignments\/([^/]+)$/.exec(path);
+  if (myAssignMatch) {
+    if (!ASSIGNMENT_ID_PATTERN.test(myAssignMatch[1]!)) return error(404, "Not found.");
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = await answerAssignment(env, userId, myAssignMatch[1]!, body.value);
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
   /* ---------------------------- coach dashboard ---------------------------- */
 
   if (path === "/api/coach/overview") {
@@ -825,6 +924,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM leaderboard WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM lift_submissions WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM form_checks WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_sharing WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM assignment_targets WHERE user_id = ?").bind(userId),
     ]);
     return noContent();
   }

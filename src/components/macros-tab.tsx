@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   Bookmark,
+  BookmarkPlus,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
   HardDrive,
   ListChecks,
   Pencil,
+  Plus,
   Target,
   Trash2,
   Undo2,
@@ -25,6 +27,17 @@ import { Input } from "@/components/ui/input";
 import { ConfirmButton } from "@/components/confirm-button";
 import { AddFoodCard, MacroLine, type AddMode } from "@/components/add-food-card";
 import { FastingCard, type NotificationStatus } from "@/components/fasting-card";
+import { WaterCard } from "@/components/water-card";
+import {
+  MAX_SAVED_MEALS,
+  MAX_SAVED_MEAL_ITEMS,
+  SAVED_MEAL_NAME_MAX,
+  addSavedMeal,
+  entriesFromMeal,
+  mealFromEntries,
+  mealTotals,
+  type SavedMeal,
+} from "@/lib/saved-meals";
 import type { FastingSettings } from "@/lib/fasting";
 import type { SessionInfo } from "@/lib/checkin-store";
 import { DAY_LABELS } from "@/lib/carb-cycling";
@@ -52,7 +65,7 @@ import {
 } from "@/lib/food";
 import type { HabitDef, HabitLog } from "@/lib/habits";
 import type { CalorieAdjustment } from "@/lib/tracking";
-import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs } from "@/lib/types";
+import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs, WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const DAY_PILL: Record<DayType, string> = {
@@ -90,12 +103,16 @@ interface MacrosTabProps {
   onFastingChange: (fasting: FastingSettings) => void;
   notifications: NotificationStatus;
   onNavigate: (tab: "timeline" | "checkin") => void;
-  /** Which sub-section is open: what you eat, or when (the fasting timer). */
+  /** Which sub-section is open: what you eat, water, or when (the fasting timer). */
   section: NutritionSection;
   onSectionChange: (section: NutritionSection) => void;
+  unit: WeightUnit;
+  /** "My usual breakfast": groups of foods logged in one tap. */
+  savedMeals: SavedMeal[];
+  onSavedMealsChange: (meals: SavedMeal[]) => void;
 }
 
-export type NutritionSection = "food" | "fasting";
+export type NutritionSection = "food" | "water" | "fasting";
 
 export function MacrosTab({
   profile,
@@ -119,12 +136,18 @@ export function MacrosTab({
   onNavigate,
   section,
   onSectionChange: setSection,
+  unit,
+  savedMeals,
+  onSavedMealsChange,
 }: MacrosTabProps) {
   const [date, setDate] = React.useState(today);
   const [meal, setMeal] = React.useState<MealId>(() => defaultMeal(new Date().getHours()));
   const [mode, setMode] = React.useState<AddMode>({ kind: "menu" });
   const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [undo, setUndo] = React.useState<{ date: string; entries: FoodEntry[]; name: string } | null>(null);
+  // The last removal or saved-meal add, for Undo.
+  const [undo, setUndo] = React.useState<{ date: string; entries: FoodEntry[]; message: string } | null>(null);
+  // Which meal in the day's log is being saved as a saved meal.
+  const [savingMeal, setSavingMeal] = React.useState<MealId | null>(null);
   const addRef = React.useRef<HTMLDivElement>(null);
 
   /* -------------------------------- targets -------------------------------- */
@@ -196,7 +219,7 @@ export function MacrosTab({
     const before = logFor(date);
     const gone = before.find((e) => e.id === id);
     if (!gone) return;
-    setUndo({ date, entries: before, name: gone.name });
+    setUndo({ date, entries: before, message: `Removed ${gone.name}.` });
     void commit(date, before.filter((e) => e.id !== id)).catch(() => setUndo(null));
   };
 
@@ -208,6 +231,22 @@ export function MacrosTab({
         : e,
     );
     void commit(date, next).catch(() => {});
+  };
+
+  /** Log a saved meal into the meal picked in "Add food". */
+  const logSavedMeal = (sm: SavedMeal) => {
+    const before = logFor(date);
+    const added = entriesFromMeal(sm, meal, newId);
+    void commit(date, [...before, ...added])
+      .then(() => setUndo({ date, entries: before, message: `Added ${sm.name} to ${MEALS.find((m) => m.id === meal)?.label ?? "your log"}.` }))
+      .catch(() => {});
+  };
+
+  const saveAsMeal = (slot: MealId, name: string) => {
+    const items = entries.filter((e) => e.meal === slot);
+    if (items.length === 0 || !name.trim()) return;
+    onSavedMealsChange(addSavedMeal(savedMeals, mealFromEntries(newId(), name, items)));
+    setSavingMeal(null);
   };
 
   const copyYesterday = () => {
@@ -223,6 +262,7 @@ export function MacrosTab({
   const changeDate = (next: string) => {
     setDate(next);
     setUndo(null);
+    setSavingMeal(null);
     setSaveError(null);
     onEnsureLoaded(next);
   };
@@ -245,11 +285,23 @@ export function MacrosTab({
       onValueChange={setSection}
       options={[
         { value: "food" as const, label: "Food log" },
+        { value: "water" as const, label: "Water" },
         { value: "fasting" as const, label: "Fasting" },
       ]}
-      className="max-w-xs"
+      className="max-w-sm"
     />
   );
+
+  if (section === "water") {
+    return (
+      <div className="space-y-5">
+        {nav}
+        <div className="lg:max-w-xl">
+          <WaterCard today={today} unit={unit} habits={habits} habitLogs={habitLogs} onSaveHabits={onSaveHabits} />
+        </div>
+      </div>
+    );
+  }
 
   if (section === "fasting") {
     return (
@@ -372,6 +424,13 @@ export function MacrosTab({
             onAdd={addEntry}
             onSaveMyFood={onSaveMyFood}
           />
+
+          <SavedMealsCard
+            meals={savedMeals}
+            slotLabel={MEALS.find((m) => m.id === meal)?.label ?? "your log"}
+            onLog={logSavedMeal}
+            onRemove={(id) => onSavedMealsChange(savedMeals.filter((m) => m.id !== id))}
+          />
         </div>
 
         <div className="space-y-5">
@@ -389,7 +448,7 @@ export function MacrosTab({
             <CardContent className="space-y-4">
               {undo && undo.date === date ? (
                 <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                  <span className="min-w-0 truncate">Removed {undo.name}.</span>
+                  <span className="min-w-0 truncate">{undo.message}</span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -431,10 +490,32 @@ export function MacrosTab({
                   if (items.length === 0) return null;
                   return (
                     <section key={m.id} aria-label={m.label} className="space-y-1.5">
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-border pb-1">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-border pb-1">
                         <h3 className="text-sm font-semibold">{m.label}</h3>
-                        <MacroLine m={sumMacros(items)} />
+                        <span className="flex items-center gap-1">
+                          <MacroLine m={sumMacros(items)} />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            aria-label={`Save ${m.label.toLowerCase()} as a meal`}
+                            title="Save as a meal"
+                            aria-expanded={savingMeal === m.id}
+                            onClick={() => setSavingMeal(savingMeal === m.id ? null : m.id)}
+                          >
+                            <BookmarkPlus />
+                          </Button>
+                        </span>
                       </div>
+                      {savingMeal === m.id ? (
+                        <SaveMealForm
+                          defaultName={`My usual ${m.label.toLowerCase()}`}
+                          count={items.length}
+                          full={savedMeals.length >= MAX_SAVED_MEALS}
+                          onSave={(name) => saveAsMeal(m.id, name)}
+                          onCancel={() => setSavingMeal(null)}
+                        />
+                      ) : null}
                       <ul className="divide-y divide-border/60">
                         {items.map((e) => (
                           <EntryRow
@@ -471,6 +552,114 @@ export function MacrosTab({
         </div>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------- saved meals ------------------------------- */
+
+function SaveMealForm({
+  defaultName,
+  count,
+  full,
+  onSave,
+  onCancel,
+}: {
+  defaultName: string;
+  count: number;
+  full: boolean;
+  onSave: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = React.useState(defaultName);
+  const id = React.useId();
+  return (
+    <form
+      className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(name);
+      }}
+    >
+      <label htmlFor={id} className="text-xs font-medium">
+        {count > MAX_SAVED_MEAL_ITEMS
+          ? `Save the first ${MAX_SAVED_MEAL_ITEMS} of these ${count} foods as a meal`
+          : `Save ${count === 1 ? "this food" : `these ${count} foods`} as a meal`}
+      </label>
+      <div className="flex gap-2">
+        <Input id={id} value={name} maxLength={SAVED_MEAL_NAME_MAX} onChange={(e) => setName(e.target.value)} className="h-8" autoFocus />
+        <Button type="submit" size="sm" className="h-8 shrink-0" disabled={!name.trim()}>
+          Save
+        </Button>
+        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {full
+          ? `You have ${MAX_SAVED_MEALS} saved meals; saving this one replaces the oldest.`
+          : "Log it again in one tap from Saved meals. Saving with the same name updates it."}
+      </p>
+    </form>
+  );
+}
+
+function SavedMealsCard({
+  meals,
+  slotLabel,
+  onLog,
+  onRemove,
+}: {
+  meals: SavedMeal[];
+  slotLabel: string;
+  onLog: (meal: SavedMeal) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Bookmark className="h-4 w-4 text-primary" />
+          Saved meals
+        </CardTitle>
+        <CardDescription>
+          {meals.length === 0
+            ? "Log a meal, then tap the bookmark next to it to save it here, e.g. “My usual breakfast”."
+            : `Tap + to add a whole meal to ${slotLabel} (pick the meal in Add food).`}
+        </CardDescription>
+      </CardHeader>
+      {meals.length > 0 ? (
+        <CardContent>
+          <ul className="divide-y divide-border/60">
+            {meals.map((m) => {
+              const t = mealTotals(m);
+              return (
+                <li key={m.id} className="flex items-center gap-2 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{m.name}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {m.items.length} {m.items.length === 1 ? "food" : "foods"} · {Math.round(t.kcal)} kcal · P{Math.round(t.protein)} C
+                      {Math.round(t.carbs)} F{Math.round(t.fat)}
+                    </p>
+                  </div>
+                  <ConfirmButton
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    label={<span className="sr-only">Delete {m.name}</span>}
+                    icon={<Trash2 />}
+                    confirmLabel="Delete"
+                    onConfirm={() => onRemove(m.id)}
+                  />
+                  <Button size="sm" className="h-8 shrink-0" onClick={() => onLog(m)} aria-label={`Add ${m.name} to ${slotLabel}`}>
+                    <Plus />
+                    Add
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </CardContent>
+      ) : null}
+    </Card>
   );
 }
 

@@ -40,7 +40,7 @@ export const NOTE_MAX_LENGTH = 280;
  * Ceiling on a stored plan document, in bytes of JSON. Training programs and a
  * member's own exercises live in it too; at their limits they take ~170 kB.
  */
-export const PLAN_MAX_BYTES = 256 * 1024;
+export const PLAN_MAX_BYTES = 512 * 1024;
 /** Ceiling on how many weigh-ins one user can store (~5 years of dailies). */
 export const MAX_WEIGH_INS = 2000;
 
