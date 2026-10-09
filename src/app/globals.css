@@ -187,6 +187,19 @@
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
+
+  /* Exercise drawings (src/lib/exercise-art.ts) are white-line masks: the
+     element's background colour shows through the lines, so a drawing takes
+     whatever colour the element is given and follows the theme. The image
+     itself is set inline as mask-image. */
+  .exercise-art {
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+  }
 }
 
 /* Recharts responds to the CSS variables above so the charts re-theme with

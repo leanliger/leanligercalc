@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ExercisePicker } from "@/components/exercise-library";
+import { ExerciseThumb } from "@/components/exercise-art";
 import type { Exercise } from "@/lib/exercises";
 import {
   DAY_NAME_MAX,
@@ -279,6 +280,7 @@ function ExerciseRow({
   return (
     <li className="space-y-2 rounded-md border border-border p-2.5">
       <div className="flex items-center gap-1">
+        <ExerciseThumb exerciseId={pe.exerciseId} className="mr-1.5 h-8 w-8" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
         <Button variant="ghost" size="icon" className="h-7 w-7" disabled={first} onClick={() => onMove(-1)} aria-label={`Move ${name} up`}>
           <ArrowUp />

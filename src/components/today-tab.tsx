@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BadgeIcon, BadgesCard } from "@/components/badges-card";
 import { stepFor } from "@/components/habits-card";
+import { ExerciseThumb } from "@/components/exercise-art";
 import { computeBadges, type Badge } from "@/lib/badges";
 import { dayTargetFinder } from "@/lib/day-targets";
 import { clock12, fastingStatus, sortedMeals, type FastingSettings } from "@/lib/fasting";
@@ -685,8 +686,9 @@ function WorkoutToday({
         {next.exercises.length > 0 ? (
           <ul className="space-y-0.5 text-xs">
             {next.exercises.slice(0, 4).map((pe, i) => (
-              <li key={`${pe.exerciseId}-${i}`} className="flex justify-between gap-2">
-                <span className="truncate">{findExercise(pe.exerciseId, training.customExercises)?.name ?? "Exercise"}</span>
+              <li key={`${pe.exerciseId}-${i}`} className="flex items-center gap-2">
+                <ExerciseThumb exerciseId={pe.exerciseId} className="h-6 w-6 rounded" />
+                <span className="min-w-0 flex-1 truncate">{findExercise(pe.exerciseId, training.customExercises)?.name ?? "Exercise"}</span>
                 <span className="tabular shrink-0 text-muted-foreground">{formatTarget(pe)}</span>
               </li>
             ))}

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ExercisePicker } from "@/components/exercise-library";
+import { ExerciseThumb } from "@/components/exercise-art";
 import { formatLong } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
 import {
@@ -380,6 +381,7 @@ function ExerciseBlock({
     <Card className={cn(exercise.sets.length > 0 && doneCount === exercise.sets.length && "border-success/40")}>
       <CardHeader className="space-y-1.5 p-4 pb-2 sm:p-6 sm:pb-2">
         <div className="flex items-start gap-2">
+          <ExerciseThumb exerciseId={exercise.exerciseId} className="h-11 w-11" />
           <div className="min-w-0 flex-1">
             <button
               type="button"

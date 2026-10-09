@@ -5,6 +5,7 @@ import { ArrowLeftRight, CalendarDays, Check, ChevronLeft, ChevronRight, Play, S
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ExerciseThumb } from "@/components/exercise-art";
 import { addMonths, formatLong, formatMonthYear, formatShort, monthGrid, monthKeyOf } from "@/lib/dates";
 import {
   planToday,
@@ -418,8 +419,9 @@ function SessionDetail({
       <CardContent className="space-y-3">
         <ul className="space-y-1 text-sm">
           {s.day.exercises.map((pe, i) => (
-            <li key={`${pe.exerciseId}-${i}`} className="flex justify-between gap-3">
-              <span className="min-w-0 truncate">{findExercise(pe.exerciseId, settings.customExercises)?.name ?? "Exercise"}</span>
+            <li key={`${pe.exerciseId}-${i}`} className="flex items-center gap-2.5">
+              <ExerciseThumb exerciseId={pe.exerciseId} className="h-7 w-7" />
+              <span className="min-w-0 flex-1 truncate">{findExercise(pe.exerciseId, settings.customExercises)?.name ?? "Exercise"}</span>
               <span className="tabular shrink-0 text-muted-foreground">{formatTarget(pe)}</span>
             </li>
           ))}

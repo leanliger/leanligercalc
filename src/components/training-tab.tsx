@@ -29,6 +29,7 @@ import { ExerciseLibraryCard } from "@/components/exercise-library";
 import { FormChecksCard } from "@/components/form-checks";
 import { PlateCalculatorCard } from "@/components/plate-calculator";
 import { ProgramCalendar } from "@/components/program-calendar";
+import { ExerciseThumb } from "@/components/exercise-art";
 import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
@@ -614,8 +615,9 @@ function TodayCard({
                 {next.exercises.length > 0 ? (
                   <ul className="space-y-1 text-sm">
                     {next.exercises.map((pe, i) => (
-                      <li key={`${pe.exerciseId}-${i}`} className="flex justify-between gap-3">
-                        <span className="min-w-0 truncate">{findExercise(pe.exerciseId, custom)?.name ?? "Deleted exercise"}</span>
+                      <li key={`${pe.exerciseId}-${i}`} className="flex items-center gap-2.5">
+                        <ExerciseThumb exerciseId={pe.exerciseId} className="h-7 w-7" />
+                        <span className="min-w-0 flex-1 truncate">{findExercise(pe.exerciseId, custom)?.name ?? "Deleted exercise"}</span>
                         <span className="tabular shrink-0 text-muted-foreground">{formatTarget(pe)}</span>
                       </li>
                     ))}
@@ -923,10 +925,13 @@ function RecentWorkoutsCard({
                     <div className="space-y-2 border-t border-border bg-muted/20 px-3 py-2.5">
                       <ul className="space-y-1.5">
                         {w.exercises.map((e, i) => (
-                          <li key={`${e.exerciseId}-${i}`} className="text-sm">
-                            <span className="font-medium">{e.name}</span>
-                            <span className="tabular block text-xs text-muted-foreground">
-                              {doneSets(e).map((x) => formatSetEffort(x, unit, e.bodyweight)).join(" · ") || "no completed sets"}
+                          <li key={`${e.exerciseId}-${i}`} className="flex items-center gap-2.5 text-sm">
+                            <ExerciseThumb exerciseId={e.exerciseId} className="h-8 w-8" />
+                            <span className="min-w-0 flex-1">
+                              <span className="font-medium">{e.name}</span>
+                              <span className="tabular block text-xs text-muted-foreground">
+                                {doneSets(e).map((x) => formatSetEffort(x, unit, e.bodyweight)).join(" · ") || "no completed sets"}
+                              </span>
                             </span>
                           </li>
                         ))}

@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CustomExerciseForm } from "@/components/exercise-library";
+import { ExerciseDrawings } from "@/components/exercise-art";
 import { formatShort } from "@/lib/dates";
 import { EQUIPMENT_LABELS, MUSCLE_LABELS, demoUrl, type Exercise } from "@/lib/exercises";
 import {
@@ -135,6 +136,7 @@ export function ExerciseProgress({
               />
             ) : (
               <>
+                <ExerciseDrawings exerciseId={exercise.id} name={exercise.name} />
                 {exercise.cues.length > 0 ? (
                   <div className="space-y-1.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Form cues</p>

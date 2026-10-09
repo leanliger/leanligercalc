@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ExerciseThumb } from "@/components/exercise-art";
 import { formatShort } from "@/lib/dates";
 import { EQUIPMENT, EQUIPMENT_LABELS, MUSCLES, MUSCLE_LABELS, type Equipment, type Exercise, type Muscle } from "@/lib/exercises";
 import {
@@ -146,6 +147,7 @@ export function ExercisePicker({
                       onClick={() => onPick(e)}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
                     >
+                      <ExerciseThumb exerciseId={e.id} className="h-9 w-9" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{e.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">{meta(e)}</span>
@@ -411,6 +413,7 @@ export function ExerciseLibraryCard({
                         onClick={() => onOpen(e.id)}
                         className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
                       >
+                        <ExerciseThumb exerciseId={e.id} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{e.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">{meta(e)}</span>

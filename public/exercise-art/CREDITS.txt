@@ -1,0 +1,15 @@
+Exercise drawings in this folder
+
+Source:  Workout Guide by Bryl Lim
+         https://github.com/bryllim/workout-guide
+Based on artwork by Everkinetic
+         https://github.com/everkinetic/data
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+         https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: the original SVG drawings were rasterized to WebP and resized
+(128 px thumbnails, 384 px drawings), and two of the three drawings per
+exercise were selected. Files are renamed to the app's exercise ids.
+
+These drawings, as changed here, are shared under the same CC BY-SA 4.0
+license. The rest of this project is not covered by this notice.
