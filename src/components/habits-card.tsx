@@ -28,7 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DAY_LABELS } from "@/lib/carb-cycling";
+import { DAY_LABELS, STEADY_DAY_LABEL } from "@/lib/carb-cycling";
 import { addDays, formatShort } from "@/lib/dates";
 import {
   DEFAULT_HABITS,
@@ -280,7 +280,7 @@ export function HabitsCard({
 
             {plan && !plan.isGoalDay ? (
               <p className="tabular rounded-md bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
-                {DAY_LABELS[plan.type]} day · {plan.calories.toLocaleString()} kcal · P{plan.protein} C{plan.carbs} F{plan.fat}
+                {plan.steady ? STEADY_DAY_LABEL : `${DAY_LABELS[plan.type]} day`} · {plan.calories.toLocaleString()} kcal · P{plan.protein} C{plan.carbs} F{plan.fat}
               </p>
             ) : null}
           </>

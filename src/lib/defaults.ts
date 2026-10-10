@@ -56,6 +56,8 @@ export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
   // Null = place high/medium/low days automatically from the counts above.
   weekdayPattern: null,
   followTimeline: true,
+  // Same calories every day; carb cycling is the opt-in.
+  cycleCarbs: false,
 };
 
 export const DEFAULT_UNIT: WeightUnit = "lb";

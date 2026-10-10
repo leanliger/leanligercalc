@@ -47,7 +47,7 @@ export type TimelineMode =
 export type GoalType = "weight" | "bodyFat";
 
 /** Preset weekly loss rates, as a fraction of current body weight per week. */
-export type RatePreset = "conservative" | "moderate" | "aggressive" | "custom";
+export type RatePreset = "gentle" | "conservative" | "moderate" | "aggressive" | "custom";
 
 export type ActivityLevel =
   | "sedentary"
@@ -226,6 +226,11 @@ export interface CarbCyclingInputs {
    * either number on Carb cycle turns it off.
    */
   followTimeline: boolean;
+  /**
+   * Eating pattern. false (the default) = the same calories and macros every
+   * day; true = carb cycling with the high / medium / low days above.
+   */
+  cycleCarbs: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -249,6 +254,8 @@ export interface RoadmapDay {
   calories: number;
   /** True on the day the goal is reached (the day after the last diet day). */
   isGoalDay: boolean;
+  /** The plan isn't carb cycling: every day has the same numbers, so no high / medium / low. */
+  steady: boolean;
 }
 
 /** One diet week — the unit the calorie target changes on. */

@@ -14,7 +14,7 @@
  * week therefore still averages exactly to that week's timeline target.
  */
 
-import { calculateCarbCycling, DAY_DESCRIPTIONS, DAY_LABELS } from "./carb-cycling";
+import { calculateCarbCycling, DAY_DESCRIPTIONS, DAY_LABELS, STEADY_DAY_DESCRIPTION, STEADY_DAY_LABEL } from "./carb-cycling";
 import { addDays, formatLong } from "./dates";
 import type {
   BiometricProfile,
@@ -82,7 +82,7 @@ export function buildRoadmap(
     warnings.push({
       level: "info",
       title: `Carb cycling schedule covers ${total} days — adjusted to 7`,
-      detail: `The roadmap is using ${counts.high} high, ${counts.medium} medium and ${counts.low} low. Fix the counts in Plan → Carb cycle to choose your own split.`,
+      detail: `The roadmap is using ${counts.high} high, ${counts.medium} medium and ${counts.low} low. Fix the counts in Plan → Macros to choose your own split.`,
     });
   }
 
@@ -155,6 +155,7 @@ export function buildRoadmap(
         type,
         ...plans[type],
         isGoalDay: false,
+        steady: !carbInputs.cycleCarbs,
       });
     }
   }
@@ -173,6 +174,7 @@ export function buildRoadmap(
       type,
       ...lastWeek.plans[type],
       isGoalDay: true,
+      steady: !carbInputs.cycleCarbs,
     });
   }
 
@@ -239,11 +241,11 @@ export function describeRanges(values: number[]): string {
 
 export function formatDayText(day: RoadmapDay): string {
   return [
-    `${formatLong(day.date)} — ${DAY_LABELS[day.type]} day${day.isGoalDay ? " (GOAL DAY)" : ""}`,
+    `${formatLong(day.date)} — ${day.steady ? STEADY_DAY_LABEL : `${DAY_LABELS[day.type]} day`}${day.isGoalDay ? " (GOAL DAY)" : ""}`,
     `Week ${day.week + 1}, day ${day.index + 1}`,
     `${day.calories} kcal`,
     `  Protein ${day.protein}g | Carbs ${day.carbs}g | Fat ${day.fat}g`,
-    DAY_DESCRIPTIONS[day.type],
+    day.steady ? STEADY_DAY_DESCRIPTION : DAY_DESCRIPTIONS[day.type],
   ].join("\n");
 }
 
@@ -261,7 +263,7 @@ export function formatWeekText(
   ];
   for (const day of days) {
     lines.push(
-      `${formatLong(day.date).padEnd(18)} ${DAY_LABELS[day.type].padEnd(12)} ${String(day.calories).padStart(5)} kcal   P ${day.protein}g  C ${day.carbs}g  F ${day.fat}g`,
+      `${formatLong(day.date).padEnd(18)} ${(day.steady ? "" : DAY_LABELS[day.type]).padEnd(12)} ${String(day.calories).padStart(5)} kcal   P ${day.protein}g  C ${day.carbs}g  F ${day.fat}g`,
     );
   }
   if (week.note) lines.push("", `Note: ${week.note}`);

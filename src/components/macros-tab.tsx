@@ -346,7 +346,7 @@ export function MacrosTab({
                     </Button>
                   ) : null}
                 </div>
-                {target ? (
+                {target && !target.steady ? (
                   <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
                     {DAY_LABELS[target.type]}
                   </span>
@@ -365,7 +365,7 @@ export function MacrosTab({
                   <p className="text-[11px] text-muted-foreground">
                     {target.source === "roadmap"
                       ? "Targets from your Roadmap for this day."
-                      : "This day is outside your Roadmap, so targets come from your weekly carb cycle in Plan."}
+                      : "This day is outside your Roadmap, so targets come from Plan → Macros."}
                   </p>
                   {linked.length > 0 ? (
                     <div className="space-y-1.5 rounded-md border border-border px-3 py-2">

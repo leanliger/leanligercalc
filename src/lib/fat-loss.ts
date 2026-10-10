@@ -36,12 +36,13 @@ import {
 const MAX_WEEKS = 156;
 
 export const RATE_PRESETS = {
+  gentle: 0.0025,
   conservative: 0.005,
   moderate: 0.0075,
   aggressive: 0.01,
 } as const;
 
-export const MIN_RATE = 0.005;
+export const MIN_RATE = 0.0025;
 export const MAX_RATE = 0.01;
 
 /**
@@ -81,7 +82,8 @@ const ADAPTATION_HALF_LIFE_WEEKS = 12;
  */
 export function fatLossFraction(weeklyRate: number, bodyFatPercent: number): number {
   const rate = clamp(weeklyRate, 0.002, 0.02);
-  // 0.5%/wk → 0.95, 0.75%/wk → 0.875, 1.0%/wk → 0.80, extrapolating beyond.
+  // 0.5%/wk → 0.95, 0.75%/wk → 0.875, 1.0%/wk → 0.80, extrapolating beyond
+  // (0.25%/wk reaches the 0.98 cap below).
   const rateComponent = 0.95 - ((rate - 0.005) / 0.005) * 0.15;
   // Body fat 20% is the neutral pivot; ±20 points shifts the split ±0.15.
   const leannessComponent = ((clamp(bodyFatPercent, 3, 60) - 20) / 20) * 0.15;
@@ -415,7 +417,19 @@ function buildWarnings(
     });
   }
 
-  if (result.weeksRequired > 52) {
+  // A slow rate on a big goal can run past the simulation's cap without arriving.
+  const last = result.projection[result.projection.length - 1];
+  const shortOfGoal =
+    last !== undefined &&
+    last.week >= MAX_WEEKS &&
+    (inputs.goalType === "weight" ? last.weight > inputs.targetWeight + 0.1 : last.bodyFat > inputs.targetBodyFat + 0.1);
+  if (shortOfGoal) {
+    warnings.push({
+      level: "warning",
+      title: `Goal not reached within ${Math.round(MAX_WEEKS / 52)} years`,
+      detail: `At ${(rate * 100).toFixed(2)}% a week the plan stops at week ${MAX_WEEKS}, still short of your goal. Pick a faster rate or a nearer goal.`,
+    });
+  } else if (result.weeksRequired > 52) {
     warnings.push({
       level: "info",
       title: "Prep runs longer than a year",

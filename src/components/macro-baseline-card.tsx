@@ -173,7 +173,7 @@ export function MacroBaselineCard({
           </CardTitle>
           <CardDescription>
             {following
-              ? "An alternative to the Timeline's target. Using it switches Carb cycle off following the Timeline."
+              ? "An alternative to the Timeline's target. Using it switches Macros off following the Timeline."
               : "Protein from body weight, fat as a share of calories, carbs from what remains."}
           </CardDescription>
         </div>

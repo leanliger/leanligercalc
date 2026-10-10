@@ -8,6 +8,9 @@
  * Typing either number on Carb cycle switches following off and keeps the
  * member's own; "Use Timeline's numbers" switches it back on.
  *
+ * Not carb cycling (cycleCarbs off, the default) is a plan of seven identical
+ * days: every day is the daily target, with no high or low days.
+ *
  * Everything that reads the carb plan (Carb cycle, Roadmap, Food log targets,
  * Today) is given the effective inputs from effectiveCarbInputs(), so they
  * always agree. The member's own numbers stay saved underneath.
@@ -36,7 +39,12 @@ export function maintenanceSource(profile: BiometricProfile, fatLoss: FatLossInp
 
 /** The carb plan as every screen should use it: following the Timeline when that's on and it has a plan. */
 export function effectiveCarbInputs(profile: BiometricProfile, fatLoss: FatLossInputs, carbs: CarbCyclingInputs): CarbCyclingInputs {
-  if (!carbs.followTimeline) return carbs;
-  const t = timelineCalories(profile, fatLoss);
-  return t ? { ...carbs, tdee: t.tdee, dailyCalorieTarget: t.dailyCalories } : carbs;
+  let out = carbs;
+  if (carbs.followTimeline) {
+    const t = timelineCalories(profile, fatLoss);
+    if (t) out = { ...out, tdee: t.tdee, dailyCalorieTarget: t.dailyCalories };
+  }
+  // Same every day: seven "medium" days, each exactly the daily target.
+  if (!carbs.cycleCarbs) out = { ...out, highDays: 0, mediumDays: 7, lowDays: 0, weekdayPattern: null };
+  return out;
 }

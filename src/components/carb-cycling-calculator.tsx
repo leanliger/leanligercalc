@@ -43,6 +43,7 @@ import { fromLb, round } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { WeekdayPatternEditor } from "@/components/weekday-pattern-editor";
 import { countsFromPattern, resolveWeekdayPattern } from "@/lib/weekday-pattern";
+import { STEADY_DAY_DESCRIPTION, STEADY_DAY_LABEL } from "@/lib/carb-cycling";
 
 interface CarbCyclingCalculatorProps {
   profile: BiometricProfile;
@@ -71,12 +72,29 @@ const DAY_NAME = { high: "High", medium: "Medium", low: "Low" } as const;
  * One sentence relating the days to maintenance, because "why is a high day
  * still under maintenance?" is the question this page raises most.
  */
-function MaintenanceLine({ maintenance, average, highest }: { maintenance: number; average: number; highest: number }) {
+function MaintenanceLine({
+  maintenance,
+  average,
+  highest,
+  steady = false,
+}: {
+  maintenance: number;
+  average: number;
+  highest: number;
+  steady?: boolean;
+}) {
   if (!(maintenance > 0) || !(average > 0)) return null;
   const gap = Math.round(maintenance - average);
   const kcal = (v: number) => `${Math.round(Math.abs(v)).toLocaleString()} kcal`;
   let text: string;
-  if (gap > 25) {
+  if (steady) {
+    text =
+      gap > 25
+        ? `You eat ${kcal(average)} every day, ${kcal(gap)} below your maintenance of ${kcal(maintenance)}. Your steps and training are already counted in that maintenance.`
+        : gap < -25
+          ? `You eat ${kcal(average)} every day, ${kcal(gap)} above your maintenance of ${kcal(maintenance)}.`
+          : `You eat about your maintenance of ${kcal(maintenance)} every day.`;
+  } else if (gap > 25) {
     text =
       highest < maintenance
         ? `Every day is below your maintenance of ${kcal(maintenance)}. High days are high compared with your other days, not with maintenance. The week averages a ${kcal(gap)}/day deficit.`
@@ -104,14 +122,14 @@ function FoodLogNote({
   planCalories: number | null;
   onOpenRoadmap?: () => void;
 }) {
-  const day = `${DAY_NAME[target.type]} day`;
+  const day = target.steady ? null : `${DAY_NAME[target.type]} day`;
   const same = planCalories !== null && Math.abs(planCalories - target.calories) <= 5;
   return (
     <p className="flex gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs leading-relaxed">
       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
       {target.source === "roadmap" ? (
         <span>
-          Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today ({day}, from the
+          Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today ({day ? `${day}, ` : ""}from the
           Roadmap){same ? (
             <>, the same as here.</>
           ) : (
@@ -135,7 +153,8 @@ function FoodLogNote({
         </span>
       ) : (
         <span>
-          Your Food log is using these numbers today: <strong className="tabular">{formatCalories(target.calories)}</strong> ({day}).
+          Your Food log is using these numbers today: <strong className="tabular">{formatCalories(target.calories)}</strong>
+          {day ? ` (${day})` : ""}.
         </span>
       )}
     </p>
@@ -253,8 +272,24 @@ export function CarbCyclingCalculator({
             Plan setup
           </CardTitle>
           <CardDescription>
-            Protein and fat hold steady; carbohydrate does the cycling.
+            {inputs.cycleCarbs
+              ? "Protein and fat hold steady; carbohydrate does the cycling."
+              : "The same calories and macros every day. Protein from body weight, fat at a healthy level, carbs fill the rest."}
           </CardDescription>
+          <div className="pt-2">
+          <Field label="Eating pattern">
+            <SegmentedControl
+              ariaLabel="Eating pattern"
+              size="sm"
+              value={inputs.cycleCarbs ? "cycle" : "steady"}
+              onValueChange={(v) => onChange({ cycleCarbs: v === "cycle" })}
+              options={[
+                { value: "steady" as const, label: "Same every day" },
+                { value: "cycle" as const, label: "Carb cycling" },
+              ]}
+            />
+          </Field>
+          </div>
           {profileSlot}
           {foodLogToday ? (
             <FoodLogNote
@@ -410,6 +445,8 @@ export function CarbCyclingCalculator({
             />
           </div>
 
+          {inputs.cycleCarbs ? (
+          <>
           {/* ---------------------------- Schedule ------------------------ */}
           <div className="space-y-3 border-t border-border pt-4">
             <div className="flex items-center justify-between">
@@ -530,7 +567,9 @@ export function CarbCyclingCalculator({
               </p>
             </div>
           </div>
-        </CardContent>
+
+          </>
+          ) : null}        </CardContent>
         </Card>
       </div>
 
@@ -562,8 +601,14 @@ export function CarbCyclingCalculator({
                 Daily targets
               </CardTitle>
               <CardDescription>
-                {activeDays.map((d) => `${d.count} ${d.type}`).join(" · ")} — averaging{" "}
-                {formatCalories(result.weekly.averageDailyCalories)} per day
+                {inputs.cycleCarbs ? (
+                  <>
+                    {activeDays.map((d) => `${d.count} ${d.type}`).join(" · ")} — averaging{" "}
+                    {formatCalories(result.weekly.averageDailyCalories)} per day
+                  </>
+                ) : (
+                  <>The same every day: {formatCalories(result.weekly.averageDailyCalories)}</>
+                )}
               </CardDescription>
             </div>
             <CopyButton getText={() => summary} label="Copy plan" />
@@ -572,13 +617,20 @@ export function CarbCyclingCalculator({
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {activeDays.map((day) => (
-                <MacroCard key={day.type} day={day} maintenance={inputs.tdee} />
+                <MacroCard
+                  key={day.type}
+                  day={day}
+                  maintenance={inputs.tdee}
+                  label={inputs.cycleCarbs ? undefined : STEADY_DAY_LABEL}
+                  description={inputs.cycleCarbs ? undefined : STEADY_DAY_DESCRIPTION}
+                />
               ))}
             </div>
             <MaintenanceLine
               maintenance={inputs.tdee}
               average={result.weekly.averageDailyCalories}
               highest={Math.max(...activeDays.map((d) => d.calories))}
+              steady={!inputs.cycleCarbs}
             />
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -617,6 +669,8 @@ export function CarbCyclingCalculator({
               />
             </div>
 
+            {inputs.cycleCarbs ? (
+            <>
             <div>
               <div className="mb-2 flex items-baseline justify-between">
                 <h3 className="text-sm font-medium">Week at a glance</h3>
@@ -626,9 +680,13 @@ export function CarbCyclingCalculator({
               </div>
               <WeeklyMacroChart result={result} pattern={pattern} maintenance={inputs.tdee} />
             </div>
+            </>
+            ) : null}
           </CardContent>
         </Card>
 
+        {inputs.cycleCarbs ? (
+        <>
         <Card>
           <CardHeader>
             <CardTitle>How this plan balances</CardTitle>
@@ -704,6 +762,8 @@ export function CarbCyclingCalculator({
             </div>
           </CardContent>
         </Card>
+        </>
+        ) : null}
       </div>
     </div>
   );

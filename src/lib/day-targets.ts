@@ -18,6 +18,8 @@ export interface DayTarget {
   carbs: number;
   fat: number;
   source: "roadmap" | "carbs";
+  /** Not carb cycling: every day the same, so no day type to show. */
+  steady: boolean;
 }
 
 /** Build a lookup from date to that day's targets. */
@@ -33,10 +35,10 @@ export function dayTargetFinder(
   const pattern = resolveWeekdayPattern(carbs);
   return (date) => {
     const day = roadmapDays.get(date);
-    if (day) return { type: day.type, calories: day.calories, protein: day.protein, carbs: day.carbs, fat: day.fat, source: "roadmap" };
+    if (day) return { type: day.type, calories: day.calories, protein: day.protein, carbs: day.carbs, fat: day.fat, source: "roadmap", steady: day.steady };
     if (!carbPlan.feasible) return null;
     const type = pattern[weekdayIndex(date)] ?? "medium";
     const plan = carbPlan.days.find((p) => p.type === type && p.calories > 0);
-    return plan ? { type, calories: plan.calories, protein: plan.protein, carbs: plan.carbs, fat: plan.fat, source: "carbs" } : null;
+    return plan ? { type, calories: plan.calories, protein: plan.protein, carbs: plan.carbs, fat: plan.fat, source: "carbs", steady: !carbs.cycleCarbs } : null;
   };
 }

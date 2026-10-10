@@ -51,6 +51,10 @@ export const DAY_LABELS: Record<DayType, string> = {
   low: "Low carb",
 };
 
+/** How a day is named when the plan isn't carb cycling (every day the same). */
+export const STEADY_DAY_LABEL = "Daily target";
+export const STEADY_DAY_DESCRIPTION = "The same calories and macros every day";
+
 export const DAY_DESCRIPTIONS: Record<DayType, string> = {
   high: "Hard training — heavy compounds, high volume, or a weak-point session",
   medium: "Standard training day at about your daily target",

@@ -131,7 +131,7 @@ export function ProfileCard({ profile, onChange, unit, className }: ProfileCardP
           About you
         </CardTitle>
         <CardDescription>
-          Used by the Timeline and Carb cycle. Everything recalculates as you type.
+          Used by the Timeline and Macros. Everything recalculates as you type.
         </CardDescription>
       </CardHeader>
 

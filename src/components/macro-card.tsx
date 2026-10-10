@@ -40,7 +40,18 @@ function vsMaintenance(calories: number, maintenance: number): string {
   return `${Math.abs(diff).toLocaleString()} ${diff > 0 ? "under" : "over"} maintenance`;
 }
 
-export function MacroCard({ day, maintenance }: { day: DayPlan; maintenance?: number }) {
+export function MacroCard({
+  day,
+  maintenance,
+  label,
+  description,
+}: {
+  day: DayPlan;
+  maintenance?: number;
+  /** Replaces "High carb" etc., e.g. when the plan isn't carb cycling. */
+  label?: string;
+  description?: string;
+}) {
   const accent = DAY_ACCENTS[day.type];
 
   // Calorie share per macro drives the stacked bar, so the visual proportions
@@ -53,7 +64,7 @@ export function MacroCard({ day, maintenance }: { day: DayPlan; maintenance?: nu
   const total = kcal.protein + kcal.carbs + kcal.fat || 1;
 
   const copyText = [
-    `${DAY_LABELS[day.type]} day — ${day.calories} kcal`,
+    `${label ?? `${DAY_LABELS[day.type]} day`} — ${day.calories} kcal`,
     `Protein ${day.protein}g · Carbs ${day.carbs}g · Fat ${day.fat}g`,
     `${day.count} day${day.count === 1 ? "" : "s"} per week`,
   ].join("\n");
@@ -64,10 +75,10 @@ export function MacroCard({ day, maintenance }: { day: DayPlan; maintenance?: nu
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", accent.bar)} />
-            <h3 className="truncate text-sm font-semibold">{DAY_LABELS[day.type]}</h3>
+            <h3 className="truncate text-sm font-semibold">{label ?? DAY_LABELS[day.type]}</h3>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            {DAY_DESCRIPTIONS[day.type]}
+            {description ?? DAY_DESCRIPTIONS[day.type]}
           </p>
         </div>
         <Badge variant="outline" className="shrink-0 tabular">

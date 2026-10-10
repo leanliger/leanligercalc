@@ -85,6 +85,7 @@ const ACTIVITY_SOURCE_OPTIONS: readonly { value: ActivitySource; label: string }
 ];
 
 const RATE_PRESET_OPTIONS = [
+  { value: "gentle", label: "Gentle", rate: RATE_PRESETS.gentle },
   { value: "conservative", label: "Conservative", rate: RATE_PRESETS.conservative },
   { value: "moderate", label: "Moderate", rate: RATE_PRESETS.moderate },
   { value: "aggressive", label: "Aggressive", rate: RATE_PRESETS.aggressive },
@@ -250,11 +251,11 @@ export function FatLossCalculator({
             />
 
             <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>0.50% · safest</span>
+              <span>0.25% · slowest</span>
               <span>1.00% · ceiling</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {RATE_PRESET_OPTIONS.map((preset) => (
                 <Button
                   key={preset.value}

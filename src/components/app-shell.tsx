@@ -158,7 +158,7 @@ const WORKOUT_SAVE_DEBOUNCE_MS = 600;
  */
 const PLAN_SECTIONS = [
   { value: "timeline", label: "Timeline" },
-  { value: "carbs", label: "Carb cycle" },
+  { value: "carbs", label: "Macros" },
   { value: "roadmap", label: "Roadmap" },
 ] as const;
 type PlanSection = (typeof PLAN_SECTIONS)[number]["value"];

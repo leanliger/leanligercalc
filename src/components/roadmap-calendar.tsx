@@ -31,7 +31,7 @@ import { WarningList } from "@/components/warnings";
 import { WeekdayPatternEditor } from "@/components/weekday-pattern-editor";
 import { predictedWeightOn } from "@/lib/adaptive";
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
-import { DAY_DESCRIPTIONS, DAY_LABELS } from "@/lib/carb-cycling";
+import { DAY_DESCRIPTIONS, DAY_LABELS, STEADY_DAY_DESCRIPTION, STEADY_DAY_LABEL } from "@/lib/carb-cycling";
 import {
   addDays,
   addMonths,
@@ -267,8 +267,10 @@ export function RoadmapCalendar({
             </CardTitle>
             <CardDescription className="max-w-2xl">
               Calories come from your Timeline and step down each week as your
-              maintenance falls. The high / medium / low split comes from your Carb
-              Cycling settings — every week still averages exactly to its target.
+              maintenance falls.{" "}
+              {carbs.cycleCarbs
+                ? "The high / medium / low split comes from Plan → Macros — every week still averages exactly to its target."
+                : "You eat the same calories and macros every day (Plan → Macros)."}
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -339,9 +341,8 @@ export function RoadmapCalendar({
           <WarningList warnings={roadmap.warnings} />
 
           <p className="text-xs text-muted-foreground">
-            The daily target and carb deficit on Carb cycle aren&apos;t used
-            here — the timeline sets calories week by week so you arrive on{" "}
-            {formatLong(goalDate)}.
+            Calories step down week by week from your Timeline so you arrive on{" "}
+            {formatLong(goalDate)}. Plan → Macros shows the first week&apos;s numbers.
           </p>
         </CardContent>
       </Card>
@@ -452,7 +453,7 @@ export function RoadmapCalendar({
               ))}
             </div>
 
-            <Legend />
+            <Legend steady={!carbs.cycleCarbs} />
           </CardContent>
         </Card>
 
@@ -498,14 +499,16 @@ export function RoadmapCalendar({
                       <span className="w-9 text-xs text-muted-foreground">
                         {WEEKDAY_SHORT[d.weekday]}
                       </span>
-                      <span
-                        className={cn(
-                          "w-5 rounded text-center text-[10px] font-bold leading-4",
-                          TYPE_BADGE[d.type],
-                        )}
-                      >
-                        {TYPE_LETTER[d.type]}
-                      </span>
+                      {d.steady ? null : (
+                        <span
+                          className={cn(
+                            "w-5 rounded text-center text-[10px] font-bold leading-4",
+                            TYPE_BADGE[d.type],
+                          )}
+                        >
+                          {TYPE_LETTER[d.type]}
+                        </span>
+                      )}
                       <span className="tabular ml-auto font-medium">
                         {d.calories.toLocaleString()}
                       </span>
@@ -577,7 +580,7 @@ function DayCell({
 }) {
   const label = [
     formatLong(day.date),
-    day.isGoalDay ? "Goal day" : `${DAY_LABELS[day.type]}, week ${day.week + 1}`,
+    day.isGoalDay ? "Goal day" : day.steady ? `week ${day.week + 1}` : `${DAY_LABELS[day.type]}, week ${day.week + 1}`,
     `${day.calories} calories`,
     `protein ${day.protein} grams, carbs ${day.carbs} grams, fat ${day.fat} grams`,
     isToday ? "today" : null,
@@ -597,7 +600,7 @@ function DayCell({
       className={cn(
         "relative flex min-h-16 w-full flex-col rounded-md border p-1 text-left transition-colors sm:min-h-24 sm:p-1.5",
         "hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-        CELL_TINT[day.type],
+        day.steady ? "border-border bg-muted/20" : CELL_TINT[day.type],
         day.isGoalDay && "border-primary bg-primary/15",
         isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-background",
       )}
@@ -624,7 +627,7 @@ function DayCell({
         </span>
         {day.isGoalDay ? (
           <Flag className="h-3.5 w-3.5 text-primary" aria-hidden />
-        ) : (
+        ) : day.steady ? null : (
           <span
             aria-hidden
             className={cn(
@@ -667,11 +670,15 @@ function DayCell({
   );
 }
 
-function Legend() {
+function Legend({ steady = false }: { steady?: boolean }) {
   const items: { label: string; swatch: React.ReactNode }[] = [
-    { label: "High carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.high)} /> },
-    { label: "Medium carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.medium)} /> },
-    { label: "Low carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.low)} /> },
+    ...(steady
+      ? []
+      : [
+          { label: "High carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.high)} /> },
+          { label: "Medium carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.medium)} /> },
+          { label: "Low carb", swatch: <span className={cn("h-3 w-3 rounded-sm", TYPE_BADGE.low)} /> },
+        ]),
     { label: "Goal day", swatch: <Flag className="h-3 w-3 text-primary" /> },
     { label: "Week needs attention", swatch: <AlertTriangle className="h-3 w-3 text-foreground/80" /> },
   ];
@@ -745,10 +752,10 @@ function DayDetail({
             <span
               className={cn(
                 "rounded px-2 py-0.5 text-xs font-semibold",
-                TYPE_BADGE[day.type],
+                day.steady ? "bg-muted text-foreground" : TYPE_BADGE[day.type],
               )}
             >
-              {DAY_LABELS[day.type]}
+              {day.steady ? STEADY_DAY_LABEL : DAY_LABELS[day.type]}
             </span>
           )}
           <span className="text-xs text-muted-foreground">
@@ -761,7 +768,9 @@ function DayDetail({
         <CardDescription>
           {day.isGoalDay
             ? `Projected ${formatWeight(goalWeight, unit)} at ${goalBodyFat}% body fat. Hold these numbers today, then begin adding calories back gradually.`
-            : DAY_DESCRIPTIONS[day.type]}
+            : day.steady
+              ? STEADY_DAY_DESCRIPTION
+              : DAY_DESCRIPTIONS[day.type]}
         </CardDescription>
       </CardHeader>
 
