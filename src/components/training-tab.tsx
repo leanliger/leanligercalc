@@ -395,14 +395,12 @@ export function TrainingTab({
             onRestChange={(restSec) => onSettingsChange((s) => ({ ...s, restSec }))}
             onTrackRirChange={(trackRir) => onSettingsChange((s) => ({ ...s, trackRir }))}
           />
-          {settings.programs.length > 0 ? (
-            <ProgramsCard
-              settings={settings}
-              onEdit={(id) => setView({ kind: "program", id })}
-              onMakeActive={setActiveProgram}
-              onAdd={addProgram}
-            />
-          ) : null}
+          <ProgramsCard
+            settings={settings}
+            onEdit={(id) => setView({ kind: "program", id })}
+            onMakeActive={setActiveProgram}
+            onAdd={addProgram}
+          />
           <PlateCalculatorCard unit={unit} />
           <FormChecksCard
             availability={formCheckAvailability}
@@ -566,10 +564,6 @@ function TodayCard({
               ))}
             </ul>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => onAddProgram(null)}>
-                <Pencil />
-                Build my own
-              </Button>
               <Button variant="ghost" size="sm" onClick={() => onStart(null, null)}>
                 <Play />
                 Empty workout
@@ -713,37 +707,43 @@ function ProgramsCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {settings.programs.map((p) => {
-            const isActive = p.id === settings.activeProgramId;
-            return (
-              <li key={p.id} className="flex items-center gap-2 px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 truncate text-sm font-medium">
-                    {p.name}
-                    {isActive ? (
-                      <Badge variant="success" className="px-1.5 py-0 text-[10px]">
-                        Active
-                      </Badge>
-                    ) : null}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {p.days.length} day{p.days.length === 1 ? "" : "s"} · {p.days.map((d) => d.name).join(", ")}
-                  </p>
-                </div>
-                {!isActive ? (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onMakeActive(p.id)} aria-label={`Make ${p.name} active`} title="Make active">
-                    <Star />
+        {settings.programs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No programs yet. Start from a template in Today&apos;s workout, or build your own.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {settings.programs.map((p) => {
+              const isActive = p.id === settings.activeProgramId;
+              return (
+                <li key={p.id} className="flex items-center gap-2 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium">
+                      {p.name}
+                      {isActive ? (
+                        <Badge variant="success" className="px-1.5 py-0 text-[10px]">
+                          Active
+                        </Badge>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.days.length} day{p.days.length === 1 ? "" : "s"} · {p.days.map((d) => d.name).join(", ")}
+                    </p>
+                  </div>
+                  {!isActive ? (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onMakeActive(p.id)} aria-label={`Make ${p.name} active`} title="Make active">
+                      <Star />
+                    </Button>
+                  ) : null}
+                  <Button variant="outline" size="sm" className="h-8" onClick={() => onEdit(p.id)}>
+                    <Pencil />
+                    Edit
                   </Button>
-                ) : null}
-                <Button variant="outline" size="sm" className="h-8" onClick={() => onEdit(p.id)}>
-                  <Pencil />
-                  Edit
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         {adding ? (
           <div className="space-y-2 rounded-lg border border-border p-3">
             <div className="flex items-center justify-between">
@@ -769,16 +769,23 @@ function ProgramsCard({
                 </span>
               </Button>
             ))}
-            <Button variant="ghost" size="sm" onClick={() => onAdd(null)}>
-              <Pencil />
-              Build my own from scratch
-            </Button>
           </div>
+        ) : full ? (
+          <p className="text-xs text-muted-foreground">Up to {MAX_PROGRAMS} programs. Delete one to add another.</p>
         ) : (
-          <Button variant="ghost" size="sm" className="-ml-2" disabled={full} onClick={() => setAdding(true)}>
-            <Plus />
-            {full ? `Up to ${MAX_PROGRAMS} programs` : "Add a program"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => onAdd(null)}>
+              <Pencil />
+              Build my own
+            </Button>
+            {/* With no programs yet, the templates are already in Today's workout. */}
+            {settings.programs.length > 0 ? (
+              <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+                <Plus />
+                From a template
+              </Button>
+            ) : null}
+          </div>
         )}
       </CardContent>
     </Card>
