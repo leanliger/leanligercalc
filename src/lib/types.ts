@@ -220,6 +220,12 @@ export interface CarbCyclingInputs {
    * match highDays/mediumDays/lowDays is treated as stale and ignored.
    */
   weekdayPattern: DayType[] | null;
+  /**
+   * Take maintenance and the daily target from the Timeline (src/lib/plan-link.ts)
+   * instead of `tdee` and `dailyCalorieTarget` above. On by default; typing
+   * either number on Carb cycle turns it off.
+   */
+  followTimeline: boolean;
 }
 
 /* ------------------------------------------------------------------ */

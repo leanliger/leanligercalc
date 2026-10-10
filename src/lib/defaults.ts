@@ -35,6 +35,7 @@ export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
 };
 
 export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
+  // Only used once Carb cycle stops following the Timeline (followTimeline).
   tdee: 2900,
   goal: "fatLoss",
   dailyCalorieTarget: null,
@@ -54,6 +55,7 @@ export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
   carbDeficitGrams: 100,
   // Null = place high/medium/low days automatically from the counts above.
   weekdayPattern: null,
+  followTimeline: true,
 };
 
 export const DEFAULT_UNIT: WeightUnit = "lb";

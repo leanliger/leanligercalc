@@ -193,6 +193,8 @@ export function sanitizeCarbs(
     lowCarbCut: num(raw.lowCarbCut, d.lowCarbCut, 0, 0.9),
     carbDeficitGrams: num(raw.carbDeficitGrams, d.carbDeficitGrams, 0, 300),
     weekdayPattern: patternFromString(raw.weekdayPattern),
+    // Missing (older plans) means on. From the URL it arrives as "true"/"false".
+    followTimeline: !(raw.followTimeline === false || raw.followTimeline === "false" || raw.followTimeline === "0"),
   };
 }
 
@@ -295,6 +297,7 @@ const URL_KEYS = {
   lcc: "lowCarbCut",
   cdg: "carbDeficitGrams",
   wp: "weekdayPattern",
+  ft: "followTimeline",
 } as const;
 
 type UrlKey = keyof typeof URL_KEYS;
@@ -304,7 +307,7 @@ const FAT_LOSS_KEYS: UrlKey[] = [
   "gt", "tw", "tbf", "r", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
 ];
 const CARB_KEYS: UrlKey[] = [
-  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "cdg", "wp",
+  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "cdg", "wp", "ft",
 ];
 
 export function encodeStateToQuery(state: AppState): string {

@@ -33,7 +33,14 @@ const MACROS = [
   { key: "fat", label: "Fat", icon: Droplet, color: "bg-macro-fat", text: "text-macro-fat" },
 ] as const;
 
-export function MacroCard({ day }: { day: DayPlan }) {
+/** "613 under maintenance", "120 over maintenance", or "at maintenance". */
+function vsMaintenance(calories: number, maintenance: number): string {
+  const diff = Math.round(maintenance - calories);
+  if (Math.abs(diff) < 10) return "at maintenance";
+  return `${Math.abs(diff).toLocaleString()} ${diff > 0 ? "under" : "over"} maintenance`;
+}
+
+export function MacroCard({ day, maintenance }: { day: DayPlan; maintenance?: number }) {
   const accent = DAY_ACCENTS[day.type];
 
   // Calorie share per macro drives the stacked bar, so the visual proportions
@@ -81,10 +88,14 @@ export function MacroCard({ day }: { day: DayPlan }) {
             )}
           >
             {day.caloriePercentOfBaseline > 0 ? "+" : ""}
-            {day.caloriePercentOfBaseline}% vs baseline
+            {day.caloriePercentOfBaseline}% vs target
           </span>
         ) : null}
       </div>
+
+      {maintenance ? (
+        <p className="tabular mt-1 text-xs text-muted-foreground">{vsMaintenance(day.calories, maintenance)}</p>
+      ) : null}
 
       <div
         className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted"

@@ -53,7 +53,7 @@ export const DAY_LABELS: Record<DayType, string> = {
 
 export const DAY_DESCRIPTIONS: Record<DayType, string> = {
   high: "Hard training — heavy compounds, high volume, or a weak-point session",
-  medium: "Standard training day at roughly baseline intake",
+  medium: "Standard training day at about your daily target",
   low: "Rest or light conditioning — more fat, fewer carbs for recovery",
 };
 

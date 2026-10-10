@@ -49,9 +49,12 @@ interface CarbCyclingCalculatorProps {
   inputs: CarbCyclingInputs;
   onChange: (patch: Partial<CarbCyclingInputs>) => void;
   unit: WeightUnit;
-  /** True when the current target came from the timeline tab. */
-  linkedToTimeline: boolean;
-  onClearLink: () => void;
+  /** Maintenance and the daily target are the Timeline's right now (src/lib/plan-link.ts). */
+  following: boolean;
+  /** The Timeline has a plan this page can follow. */
+  canFollow: boolean;
+  /** What the Timeline's maintenance is made of, e.g. "2,248 base + 254 steps + 156 training". */
+  maintenanceNote?: string;
   /** The shared biometrics panel, rendered above these inputs. */
   profileSlot: React.ReactNode;
   /**
@@ -65,20 +68,58 @@ interface CarbCyclingCalculatorProps {
 const DAY_NAME = { high: "High", medium: "Medium", low: "Low" } as const;
 
 /**
+ * One sentence relating the days to maintenance, because "why is a high day
+ * still under maintenance?" is the question this page raises most.
+ */
+function MaintenanceLine({ maintenance, average, highest }: { maintenance: number; average: number; highest: number }) {
+  if (!(maintenance > 0) || !(average > 0)) return null;
+  const gap = Math.round(maintenance - average);
+  const kcal = (v: number) => `${Math.round(Math.abs(v)).toLocaleString()} kcal`;
+  let text: string;
+  if (gap > 25) {
+    text =
+      highest < maintenance
+        ? `Every day is below your maintenance of ${kcal(maintenance)}. High days are high compared with your other days, not with maintenance. The week averages a ${kcal(gap)}/day deficit.`
+        : `The week averages a ${kcal(gap)}/day deficit below your maintenance of ${kcal(maintenance)}; only your highest days reach it.`;
+  } else if (gap < -25) {
+    text = `The week averages ${kcal(gap)}/day above your maintenance of ${kcal(maintenance)}.`;
+  } else {
+    text = `The week averages about your maintenance of ${kcal(maintenance)}: high days sit above it and low days below.`;
+  }
+  return <p className="text-xs leading-relaxed text-muted-foreground">{text}</p>;
+}
+
+/**
  * Says which calories the Food log is using today. They usually differ from
  * this page: the Roadmap starts from the Timeline's calories and lowers them
  * each week as weight drops, while these stay fixed.
  */
-function FoodLogNote({ target, onOpenRoadmap }: { target: DayTarget; onOpenRoadmap?: () => void }) {
+function FoodLogNote({
+  target,
+  planCalories,
+  onOpenRoadmap,
+}: {
+  target: DayTarget;
+  /** This page's calories for the same kind of day. */
+  planCalories: number | null;
+  onOpenRoadmap?: () => void;
+}) {
   const day = `${DAY_NAME[target.type]} day`;
+  const same = planCalories !== null && Math.abs(planCalories - target.calories) <= 5;
   return (
     <p className="flex gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs leading-relaxed">
       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
       {target.source === "roadmap" ? (
         <span>
           Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today ({day}, from the
-          Roadmap). The Roadmap starts from your Timeline&apos;s calories and lowers them each week as your weight drops, so it
-          differs from the numbers here.
+          Roadmap){same ? (
+            <>, the same as here.</>
+          ) : (
+            <>
+              . The Roadmap lowers the Timeline&apos;s calories each week as your weight drops and includes any check-in
+              changes, so it differs from the numbers here.
+            </>
+          )}
           {onOpenRoadmap ? (
             <>
               {" "}
@@ -173,8 +214,9 @@ export function CarbCyclingCalculator({
   inputs,
   onChange,
   unit,
-  linkedToTimeline,
-  onClearLink,
+  following,
+  canFollow,
+  maintenanceNote,
   profileSlot,
   foodLogToday,
   onOpenRoadmap,
@@ -214,43 +256,66 @@ export function CarbCyclingCalculator({
             Protein and fat hold steady; carbohydrate does the cycling.
           </CardDescription>
           {profileSlot}
-          {foodLogToday ? <FoodLogNote target={foodLogToday} onOpenRoadmap={onOpenRoadmap} /> : null}
+          {foodLogToday ? (
+            <FoodLogNote
+              target={foodLogToday}
+              planCalories={result.days.find((d) => d.type === foodLogToday.type)?.calories ?? null}
+              onOpenRoadmap={onOpenRoadmap}
+            />
+          ) : null}
         </CardHeader>
 
         <CardContent className="space-y-5">
           <NumberField
             label="Maintenance calories (TDEE)"
             value={inputs.tdee}
-            onValueChange={(value) => onChange({ tdee: value })}
-            suffix="kcal"
-            min={800}
-            step={25}
-            decimals={0}
-          />
-
-          <Field label="Goal">
-            <SegmentedControl
-              ariaLabel="Goal"
-              value={inputs.goal}
-              onValueChange={(value) => onChange({ goal: value })}
-              options={GOAL_OPTIONS}
-              size="sm"
-            />
-          </Field>
-
-          <NumberField
-            label="Daily calorie target"
-            value={inputs.dailyCalorieTarget ?? derivedTarget}
             onValueChange={(value) =>
-              onChange({ dailyCalorieTarget: value > 0 ? value : null })
+              // Typing a number means using your own from here on; the target then comes from it and the goal.
+              onChange(following ? { tdee: value, dailyCalorieTarget: null, followTimeline: false } : { tdee: value })
             }
             suffix="kcal"
             min={800}
             step={25}
             decimals={0}
             hint={
-              linkedToTimeline
-                ? "Imported from your fat loss timeline."
+              following
+                ? `From your Timeline: ${maintenanceNote ?? "its maintenance"}. Type a number to use your own.`
+                : canFollow
+                  ? undefined
+                  : "Set a goal on the Timeline and this can follow it."
+            }
+          />
+
+          {/* While following, the Timeline sets the deficit, so the goal percentage doesn't apply. */}
+          {following ? null : (
+            <Field label="Goal">
+              <SegmentedControl
+                ariaLabel="Goal"
+                value={inputs.goal}
+                onValueChange={(value) => onChange({ goal: value })}
+                options={GOAL_OPTIONS}
+                size="sm"
+              />
+            </Field>
+          )}
+
+          <NumberField
+            label="Daily calorie target"
+            value={inputs.dailyCalorieTarget ?? derivedTarget}
+            onValueChange={(value) =>
+              onChange(
+                following
+                  ? { dailyCalorieTarget: value > 0 ? value : null, tdee: inputs.tdee, followTimeline: false }
+                  : { dailyCalorieTarget: value > 0 ? value : null },
+              )
+            }
+            suffix="kcal"
+            min={800}
+            step={25}
+            decimals={0}
+            hint={
+              following
+                ? "From your Timeline: the intake that reaches your goal by your date."
                 : inputs.dailyCalorieTarget === null
                   ? `Derived from TDEE and goal (${derivedTarget} kcal).`
                   : "Manual override — clear to derive from TDEE and goal."
@@ -258,19 +323,21 @@ export function CarbCyclingCalculator({
             help="This is the average day. High and low days move around it, and the week still averages here exactly."
           />
 
-          {(linkedToTimeline || inputs.dailyCalorieTarget !== null) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full"
-              onClick={() => {
-                onChange({ dailyCalorieTarget: null });
-                onClearLink();
-              }}
-            >
+          {!following && inputs.dailyCalorieTarget !== null && (
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => onChange({ dailyCalorieTarget: null })}>
               Reset to goal-derived target
             </Button>
           )}
+          {!following && canFollow ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => onChange({ followTimeline: true, dailyCalorieTarget: null })}
+            >
+              Use Timeline&apos;s numbers
+            </Button>
+          ) : null}
 
           {/* --------------------------- Protein -------------------------- */}
           <div className="space-y-3 border-t border-border pt-4">
@@ -438,7 +505,7 @@ export function CarbCyclingCalculator({
               />
               <p className="text-[11px] text-muted-foreground">
                 Recommended {Math.round(HIGH_BOOST_RANGE.min * 100)}–
-                {Math.round(HIGH_BOOST_RANGE.max * 100)}% over baseline carbs
+                {Math.round(HIGH_BOOST_RANGE.max * 100)}% more carbs than an average day
               </p>
             </div>
 
@@ -459,7 +526,7 @@ export function CarbCyclingCalculator({
               />
               <p className="text-[11px] text-muted-foreground">
                 Recommended {Math.round(LOW_CUT_RANGE.min * 100)}–
-                {Math.round(LOW_CUT_RANGE.max * 100)}% under baseline carbs
+                {Math.round(LOW_CUT_RANGE.max * 100)}% fewer carbs than an average day
               </p>
             </div>
           </div>
@@ -481,10 +548,8 @@ export function CarbCyclingCalculator({
           onProteinChange={(v) => onChange({ proteinPerLb: v })}
           onFatPercentChange={(v) => onChange({ fatFloorPercent: v })}
           onDeficitChange={(v) => onChange({ carbDeficitGrams: v })}
-          onApplyToPlan={(kcal) => {
-            onChange({ dailyCalorieTarget: kcal });
-            onClearLink();
-          }}
+          onApplyToPlan={(kcal) => onChange({ dailyCalorieTarget: kcal, tdee: inputs.tdee, followTimeline: false })}
+          following={following}
         />
 
         <WarningList warnings={result.warnings} />
@@ -507,9 +572,14 @@ export function CarbCyclingCalculator({
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {activeDays.map((day) => (
-                <MacroCard key={day.type} day={day} />
+                <MacroCard key={day.type} day={day} maintenance={inputs.tdee} />
               ))}
             </div>
+            <MaintenanceLine
+              maintenance={inputs.tdee}
+              average={result.weekly.averageDailyCalories}
+              highest={Math.max(...activeDays.map((d) => d.calories))}
+            />
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Stat
@@ -543,7 +613,7 @@ export function CarbCyclingCalculator({
                 label="Weekly carbs"
                 icon={<CalendarRange className="h-3.5 w-3.5" />}
                 value={`${result.weekly.carbs.toLocaleString()}g`}
-                sub={`${result.baseline.carbs}g baseline day`}
+                sub={`${result.baseline.carbs}g on an average day`}
               />
             </div>
 
@@ -554,7 +624,7 @@ export function CarbCyclingCalculator({
                   Arrange high days around your hardest sessions
                 </p>
               </div>
-              <WeeklyMacroChart result={result} pattern={pattern} />
+              <WeeklyMacroChart result={result} pattern={pattern} maintenance={inputs.tdee} />
             </div>
           </CardContent>
         </Card>

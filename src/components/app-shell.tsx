@@ -6,7 +6,6 @@ import {
   CloudOff,
   Dumbbell,
   House,
-  Link2,
   RotateCcw,
   Target,
   TrendingUp,
@@ -67,6 +66,7 @@ import { answerAssignment, loadAssignments, loadProgramEdits, markProgramEditApp
 import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
 import { applyProgramEdit } from "@/lib/program-edits";
 import { dayTargetFinder } from "@/lib/day-targets";
+import { effectiveCarbInputs, maintenanceSource, timelineCalories } from "@/lib/plan-link";
 import { sanitizeHabitDefs } from "@/lib/habits";
 import {
   dropEntry,
@@ -371,7 +371,6 @@ async function bootstrap(): Promise<{
 
 export function AppShell() {
   const [state, setState] = React.useState<AppState>(DEFAULT_APP_STATE);
-  const [linkedToTimeline, setLinkedToTimeline] = React.useState(false);
   // Nothing date- or storage-dependent renders until the client is ready —
   // this is a static export, so build-time HTML would carry the build date.
   const [ready, setReady] = React.useState(false);
@@ -611,10 +610,18 @@ export function AppShell() {
     [navigateFor, setTab],
   );
 
+  // The carb plan as every screen uses it: Carb cycle's maintenance and daily
+  // target follow the Timeline unless the member set their own (src/lib/plan-link.ts).
+  const timelineHasPlan = React.useMemo(() => timelineCalories(state.profile, state.fatLoss) !== null, [state.profile, state.fatLoss]);
+  const carbPlan = React.useMemo(
+    () => effectiveCarbInputs(state.profile, state.fatLoss, state.carbs),
+    [state.profile, state.fatLoss, state.carbs],
+  );
+
   // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
   const foodLogToday = React.useMemo(
-    () => (today ? dayTargetFinder(state.profile, state.fatLoss, state.carbs, state.tracking.adjustments)(today) : null),
-    [today, state.profile, state.fatLoss, state.carbs, state.tracking.adjustments],
+    () => (today ? dayTargetFinder(state.profile, state.fatLoss, carbPlan, state.tracking.adjustments)(today) : null),
+    [today, state.profile, state.fatLoss, carbPlan, state.tracking.adjustments],
   );
 
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
@@ -629,28 +636,11 @@ export function AppShell() {
     setState((prev) => ({ ...prev, carbs: { ...prev.carbs, ...patch } }));
   }, []);
 
-  const handleSendToCarbCycling = React.useCallback(
-    (payload: { dailyCalories: number; tdee: number }) => {
-      setState((prev) => ({
-        ...prev,
-        activeTab: "carbs",
-        carbs: {
-          ...prev.carbs,
-          tdee: Math.round(payload.tdee),
-          dailyCalorieTarget: Math.round(payload.dailyCalories),
-        },
-      }));
-      setLinkedToTimeline(true);
-    },
-    [],
-  );
-
   // Resets the calculator inputs. Applied adjustments are progress history, not
   // inputs, so they survive; only "delete all my data" removes them.
   const handleReset = React.useCallback(() => {
     clearStorage();
     setState((prev) => ({ ...DEFAULT_APP_STATE, activeTab: prev.activeTab, tracking: prev.tracking }));
-    setLinkedToTimeline(false);
   }, []);
 
   /* ------------------------------ check-ins ------------------------------ */
@@ -1420,12 +1410,6 @@ export function AppShell() {
                   </TabsTrigger>
                 </TabsList>
 
-                {linkedToTimeline ? (
-                  <Badge variant="success">
-                    <Link2 />
-                    Carb plan linked to timeline
-                  </Badge>
-                ) : null}
                 {offlineWaiting > 0 && uploadStalled ? (
                   <Badge variant="secondary" role="status" title="Saved on this phone; uploads as soon as you're back online, even if you close the app.">
                     <CloudOff />
@@ -1469,7 +1453,7 @@ export function AppShell() {
                   unit={state.unit}
                   profile={state.profile}
                   fatLoss={state.fatLoss}
-                  carbs={state.carbs}
+                  carbs={carbPlan}
                   adjustments={state.tracking.adjustments}
                   habits={state.tracking.habits}
                   habitLogs={habitLogs}
@@ -1505,7 +1489,7 @@ export function AppShell() {
                   <RoadmapCalendar
                     profile={state.profile}
                     fatLoss={state.fatLoss}
-                    carbs={state.carbs}
+                    carbs={carbPlan}
                     unit={state.unit}
                     weighIns={weighIns}
                     adjustments={state.tracking.adjustments}
@@ -1515,11 +1499,12 @@ export function AppShell() {
                 ) : state.activeTab === "carbs" ? (
                   <CarbCyclingCalculator
                     profile={state.profile}
-                    inputs={state.carbs}
+                    inputs={carbPlan}
                     onChange={updateCarbs}
                     unit={state.unit}
-                    linkedToTimeline={linkedToTimeline}
-                    onClearLink={() => setLinkedToTimeline(false)}
+                    following={state.carbs.followTimeline && timelineHasPlan}
+                    maintenanceNote={maintenanceSource(state.profile, state.fatLoss)}
+                    canFollow={timelineHasPlan}
                     // "About you" is shared with the Timeline and edited there.
                     profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
                     foodLogToday={foodLogToday}
@@ -1531,7 +1516,6 @@ export function AppShell() {
                     inputs={state.fatLoss}
                     onChange={updateFatLoss}
                     unit={state.unit}
-                    onSendToCarbCycling={handleSendToCarbCycling}
                     profileSlot={
                       <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
                     }
@@ -1544,7 +1528,7 @@ export function AppShell() {
                 <MacrosTab
                   profile={state.profile}
                   fatLoss={state.fatLoss}
-                  carbs={state.carbs}
+                  carbs={carbPlan}
                   adjustments={state.tracking.adjustments}
                   today={today}
                   session={session}
@@ -1606,7 +1590,7 @@ export function AppShell() {
                   session={session}
                   weighIns={weighIns}
                   adjustments={state.tracking.adjustments}
-                  carbs={state.carbs}
+                  carbs={carbPlan}
                   habits={state.tracking.habits}
                   habitLogs={habitLogs}
                   pauses={state.tracking.pauses}

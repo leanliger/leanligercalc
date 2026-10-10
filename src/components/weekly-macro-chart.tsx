@@ -55,9 +55,12 @@ function buildWeek(result: CarbCyclingResult, pattern: readonly DayType[]): Week
 export function WeeklyMacroChart({
   result,
   pattern,
+  maintenance,
 }: {
   result: CarbCyclingResult;
   pattern: readonly DayType[];
+  /** Maintenance calories, drawn as a line so it's clear where every day sits against it. */
+  maintenance?: number;
 }) {
   const data = React.useMemo(() => buildWeek(result, pattern), [result, pattern]);
 
@@ -69,12 +72,17 @@ export function WeeklyMacroChart({
     );
   }
 
-  const max = Math.max(...data.map((d) => d.calories));
+  const max = Math.max(...data.map((d) => d.calories), maintenance ?? 0);
+  // Round steps on the calorie axis (0, 1,000, 2,000, 3,000), with room above the maintenance line.
+  const step = max * 1.1 <= 2000 ? 500 : 1000;
+  const top = Math.ceil((max * 1.1) / step) * step;
+  const yTicks = Array.from({ length: top / step + 1 }, (_, i) => i * step);
 
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+        {/* Right margin leaves room for the "target" label beside its line. */}
+        <BarChart data={data} margin={{ top: 8, right: 40, bottom: 0, left: -12 }}>
           <XAxis
             dataKey="day"
             tickLine={false}
@@ -82,7 +90,8 @@ export function WeeklyMacroChart({
             tick={{ fontSize: 11 }}
           />
           <YAxis
-            domain={[0, Math.ceil((max * 1.15) / 100) * 100]}
+            domain={[0, top]}
+            ticks={yTicks}
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 11 }}
@@ -93,12 +102,24 @@ export function WeeklyMacroChart({
             stroke="hsl(var(--muted-foreground))"
             strokeDasharray="4 4"
             label={{
-              value: "baseline",
+              value: "target",
               position: "right",
               fontSize: 10,
               fill: "hsl(var(--muted-foreground))",
             }}
           />
+          {maintenance ? (
+            <ReferenceLine
+              y={maintenance}
+              stroke="hsl(var(--success))"
+              label={{
+                value: "maintenance",
+                position: "insideTopRight",
+                fontSize: 10,
+                fill: "hsl(var(--success))",
+              }}
+            />
+          ) : null}
           <Tooltip
             cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
             content={({ active, payload }) => {

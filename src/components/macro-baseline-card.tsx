@@ -38,6 +38,12 @@ interface MacroBaselineCardProps {
   onDeficitChange: (value: number) => void;
   /** Pushes the computed target calories into the weekly cycling plan. */
   onApplyToPlan: (targetCalories: number) => void;
+  /**
+   * Carb cycle is following the Timeline, so this card is an alternative way
+   * to set the target, not the target in use. Labelled that way so the page
+   * doesn't show two different "daily targets".
+   */
+  following?: boolean;
 }
 
 const MACROS = [
@@ -135,6 +141,7 @@ export function MacroBaselineCard({
   onFatPercentChange,
   onDeficitChange,
   onApplyToPlan,
+  following = false,
 }: MacroBaselineCardProps) {
   const result = React.useMemo(
     () =>
@@ -162,11 +169,12 @@ export function MacroBaselineCard({
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2">
             <Calculator className="h-4 w-4 text-primary" />
-            Daily macro targets
+            {following ? "Or: set your deficit by cutting carbs" : "Daily macro targets"}
           </CardTitle>
           <CardDescription>
-            Protein from body weight, fat as a share of calories, carbs from what
-            remains.
+            {following
+              ? "An alternative to the Timeline's target. Using it switches Carb cycle off following the Timeline."
+              : "Protein from body weight, fat as a share of calories, carbs from what remains."}
           </CardDescription>
         </div>
         <CopyButton getText={() => summary} label="Copy" />
@@ -286,7 +294,7 @@ export function MacroBaselineCard({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <ArrowDown className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">Your daily target</span>
+                <span className="text-sm font-semibold">{following ? "Target by cutting carbs" : "Your daily target"}</span>
               </div>
               <Badge variant="default" className="tabular">
                 −{result.dailyDeficit.toLocaleString()} kcal/day
@@ -316,7 +324,9 @@ export function MacroBaselineCard({
               disabled={!result.feasible}
               onClick={() => onApplyToPlan(target.totalCalories)}
             >
-              Use {target.totalCalories.toLocaleString()} kcal for the weekly plan
+              {following
+                ? `Use ${target.totalCalories.toLocaleString()} kcal instead`
+                : `Use ${target.totalCalories.toLocaleString()} kcal for the weekly plan`}
             </Button>
           </div>
         ) : (

@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  ArrowRightLeft,
   CalendarDays,
   Flame,
   Gauge,
@@ -64,8 +63,6 @@ interface FatLossCalculatorProps {
   inputs: FatLossInputs;
   onChange: (patch: Partial<FatLossInputs>) => void;
   unit: WeightUnit;
-  /** Hands the derived calorie target over to the carb cycling tab. */
-  onSendToCarbCycling: (payload: { dailyCalories: number; tdee: number }) => void;
   /** The shared biometrics panel, rendered above these inputs. */
   profileSlot: React.ReactNode;
   /** Logged weigh-ins, drawn as dots on the projected curve. */
@@ -98,7 +95,6 @@ export function FatLossCalculator({
   inputs,
   onChange,
   unit,
-  onSendToCarbCycling,
   profileSlot,
   weighIns,
 }: FatLossCalculatorProps) {
@@ -442,20 +438,6 @@ export function FatLossCalculator({
             </div>
             <div className="flex flex-wrap gap-2">
               <CopyButton getText={() => summary} label="Copy plan" />
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!result.feasible}
-                onClick={() =>
-                  onSendToCarbCycling({
-                    dailyCalories: firstWeek?.targetCalories ?? 0,
-                    tdee: firstWeek?.tdee ?? 0,
-                  })
-                }
-              >
-                <ArrowRightLeft />
-                Send to carb cycling
-              </Button>
             </div>
           </CardHeader>
 
