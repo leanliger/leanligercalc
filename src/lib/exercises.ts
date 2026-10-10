@@ -10,6 +10,9 @@
  *
  * `video` is an optional demo link (https). Without one, "Watch a demo" opens a
  * YouTube search for the exercise.
+ *
+ * `aka` holds other names an exercise goes by, so searching "overhead press
+ * machine" finds Machine shoulder press.
  */
 
 export const MUSCLES = [
@@ -75,6 +78,8 @@ export interface Exercise {
   bodyweight: boolean;
   /** Optional demo video (https). */
   video: string | null;
+  /** Other names it goes by, matched by search. */
+  aka?: string;
   /** True for exercises a member added themselves. */
   custom: boolean;
 }
@@ -88,7 +93,8 @@ const ROWS: Row[] = [
   ["db-bench-press", "Dumbbell bench press", "chest", "dumbbell", "Lower to a deep stretch at the chest", "Press up and slightly in"],
   ["incline-db-press", "Incline dumbbell press", "chest", "dumbbell", "Bench at about 30°", "Elbows slightly tucked, not flared"],
   ["machine-chest-press", "Machine chest press", "chest", "machine", "Handles level with mid-chest", "Shoulder blades stay back on the pad"],
-  ["smith-incline-press", "Smith machine incline press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
+  ["smith-bench-press", "Smith machine bench press", "chest", "smith", "Set the bench so the bar meets mid-chest", "Shoulder blades pinched, control the lowering"],
+  ["smith-incline-press", "Smith machine incline bench press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
   ["cable-fly", "Cable fly", "chest", "cable", "Slight bend in the elbows, fixed throughout", "Squeeze hands together in front of the chest"],
   ["pec-deck", "Pec deck", "chest", "machine", "Elbows level with shoulders", "Pause at the squeeze"],
   ["db-fly", "Dumbbell fly", "chest", "dumbbell", "Wide arc with soft elbows", "Stop at a comfortable stretch"],
@@ -106,6 +112,7 @@ const ROWS: Row[] = [
   ["t-bar-row", "T-bar row", "back", "barbell", "Hinge with a flat back", "Pull to the chest without jerking"],
   ["straight-arm-pulldown", "Straight-arm pulldown", "back", "cable", "Arms nearly straight", "Sweep the bar down to your thighs"],
   ["rack-pull", "Rack pull", "back", "barbell", "Bar starts just below the knees", "Lock out with the hips, don't lean back"],
+  ["smith-deadlift", "Smith machine deadlift", "back", "smith", "Bar over mid-foot, back flat", "Stand up tall, lower under control"],
   ["back-extension", "Back extension", "back", "bodyweight", "Hinge at the hips", "Stop when your body is in a straight line"],
   ["db-shrug", "Dumbbell shrug", "back", "dumbbell", "Shoulders straight up toward your ears", "Pause at the top, no rolling"],
   // Shoulders
@@ -134,10 +141,12 @@ const ROWS: Row[] = [
   ["skull-crusher", "Skull crusher", "triceps", "ez-bar", "Lower the bar toward your forehead", "Elbows point at the ceiling"],
   ["db-overhead-extension", "Dumbbell overhead extension", "triceps", "dumbbell", "Hold one dumbbell with both hands", "Elbows close to your head"],
   ["triceps-dip", "Triceps dip", "triceps", "bodyweight", "Body upright", "Lower to about 90° at the elbow"],
+  ["triceps-dip-machine", "Triceps dip machine", "triceps", "machine", "Sit tall, elbows pointing back", "Press down to straight arms, slow on the way up"],
   // Quads
   ["back-squat", "Barbell back squat", "quads", "barbell", "Brace, then sit down between your hips", "Knees track over your toes"],
   ["front-squat", "Front squat", "quads", "barbell", "Elbows high", "Stay upright through the lift"],
   ["hack-squat", "Hack squat", "quads", "machine", "Feet shoulder-width, mid-platform", "Go as deep as you can control"],
+  ["pendulum-squat", "Pendulum squat", "quads", "machine", "Back flat on the pad, feet mid-platform", "Sink deep, drive through the whole foot"],
   ["leg-press", "Leg press", "quads", "machine", "Lower back stays on the pad", "Don't lock your knees at the top"],
   ["smith-squat", "Smith machine squat", "quads", "smith", "Feet slightly in front of the bar", "Control the lowering"],
   ["leg-extension", "Leg extension", "quads", "machine", "Pad just above the ankles", "Squeeze at the top"],
@@ -177,6 +186,16 @@ const ROWS: Row[] = [
 /** Optional demo videos for built-in exercises, by id (https links). */
 const VIDEOS: Partial<Record<string, string>> = {};
 
+/** Other names built-in exercises go by, for search. */
+const ALIASES: Partial<Record<string, string>> = {
+  "machine-shoulder-press": "overhead press machine",
+  "chest-supported-row": "chest supported row machine",
+  "t-bar-row": "tbar",
+  "smith-incline-press": "incline smith press",
+  "triceps-dip-machine": "seated dip machine",
+  "leg-press-calf-raise": "calf press",
+};
+
 export const LIBRARY: readonly Exercise[] = ROWS.map(([id, name, muscle, equipment, cue1, cue2]) => ({
   id,
   name,
@@ -185,6 +204,7 @@ export const LIBRARY: readonly Exercise[] = ROWS.map(([id, name, muscle, equipme
   cues: [cue1, cue2],
   bodyweight: equipment === "bodyweight",
   video: VIDEOS[id] ?? null,
+  aka: ALIASES[id],
   custom: false,
 }));
 

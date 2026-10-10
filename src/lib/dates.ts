@@ -78,6 +78,19 @@ export function formatShort(iso: string): string {
   return SHORT_FORMAT.format(parseISODate(iso));
 }
 
+const MEDIUM_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Feb 13, 2027": no weekday, for tight spaces. */
+export function formatMedium(iso: string): string {
+  if (!isValidISODate(iso)) return "—";
+  return MEDIUM_FORMAT.format(parseISODate(iso));
+}
+
 const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",

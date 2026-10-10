@@ -46,7 +46,7 @@ import {
   weightAtBodyFat,
 } from "@/lib/fat-loss";
 import { ACTIVITY_LABELS, resolveBodyFat } from "@/lib/body-composition";
-import { describeDuration, formatLong, isValidISODate } from "@/lib/dates";
+import { describeDuration, formatLong, formatMedium, isValidISODate } from "@/lib/dates";
 import { formatCalories, formatWeight } from "@/lib/format";
 import type {
   ActivityLevel,
@@ -474,56 +474,62 @@ export function FatLossCalculator({
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               <Stat
-                className="sm:col-span-2"
+                compact
+                className="col-span-2"
                 label="Prep duration"
                 emphasis
                 icon={<Timer className="h-3.5 w-3.5" />}
                 value={`${result.weeksRequired} wk`}
-                sub={describeDuration(result.preciseWeeks)}
+                // "~4 months, 1 wk": the exact weeks are already in the card's description.
+                sub={describeDuration(result.preciseWeeks).match(/\((.*)\)/)?.[1] ?? describeDuration(result.preciseWeeks)}
               />
               <Stat
+                compact
                 label={inputs.mode === "eventDate" ? "Required start" : "Finish date"}
                 icon={<CalendarDays className="h-3.5 w-3.5" />}
-                value={formatLong(
+                value={formatMedium(
                   inputs.mode === "eventDate"
                     ? result.requiredStartDate
                     : result.finishDate,
                 )}
                 sub={
                   inputs.mode === "eventDate"
-                    ? `Show: ${formatLong(result.finishDate)}`
-                    : `Started: ${formatLong(result.requiredStartDate)}`
+                    ? `Show ${formatMedium(result.finishDate)}`
+                    : `Started ${formatMedium(result.requiredStartDate)}`
                 }
               />
               <Stat
+                compact
                 label="Total loss"
                 icon={<Target className="h-3.5 w-3.5" />}
                 value={formatWeight(result.totalLoss, unit)}
-                sub={`${formatWeight(result.fatLoss, unit)} fat · ${formatWeight(result.leanLoss, unit)} lean`}
+                sub={`${formatWeight(result.fatLoss, unit)} fat · ${formatWeight(result.leanLoss, unit, 1, false)} lean`}
               />
               <Stat
-                label="Average intake"
+                compact
+                label="Avg intake"
                 icon={<Flame className="h-3.5 w-3.5" />}
                 value={formatCalories(result.averageTargetCalories)}
                 sub={`${result.averageDailyDeficit} kcal/day deficit`}
               />
               <Stat
+                compact
                 label="Loss per week"
                 icon={<Scale className="h-3.5 w-3.5" />}
                 value={weeklyLoss.average > 0 ? formatWeight(weeklyLoss.average, unit, 2) : "—"}
                 sub={
                   weeklyLoss.first > 0 && weeklyLoss.last > 0
-                    ? `On average. ${formatWeight(weeklyLoss.first, unit, 2)} in week 1, ${formatWeight(weeklyLoss.last, unit, 2)} by the end`
-                    : "On average"
+                    ? `avg · ${formatWeight(weeklyLoss.first, unit, 2, false)} → ${formatWeight(weeklyLoss.last, unit, 2)}`
+                    : "on average"
                 }
               />
             </div>
 
             {result.requiredRate !== null && Number.isFinite(result.requiredRate) ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                <Gauge className="h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 p-2.5 text-xs">
+                <Gauge className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-muted-foreground">
                   Starting today with {result.weeksAvailable} weeks until the show needs
                 </span>

@@ -286,31 +286,39 @@ export function RoadmapCalendar({
         </CardHeader>
 
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
             <Stat
+              compact
               label="Start"
               icon={<CalendarDays className="h-3.5 w-3.5" />}
               value={formatShort(startDate)}
               sub={`${formatWeight(profile.weight, unit)} today`}
             />
             <Stat
+              compact
               label="Goal"
               emphasis
               icon={<Flag className="h-3.5 w-3.5" />}
               value={formatShort(goalDate)}
-              sub={`${formatWeight(roadmap.goalWeight, unit)} · ${roadmap.goalBodyFat}% body fat`}
+              sub={`${formatWeight(roadmap.goalWeight, unit)} · ${roadmap.goalBodyFat}% fat`}
             />
             <Stat
+              compact
               label="Length"
               icon={<Target className="h-3.5 w-3.5" />}
               value={`${roadmap.weeks.length} weeks`}
-              sub={`${roadmap.totalDays} days · ${counts.high}H / ${counts.medium}M / ${counts.low}L`}
+              sub={
+                carbs.cycleCarbs
+                  ? `${roadmap.totalDays} days · ${counts.high}H / ${counts.medium}M / ${counts.low}L`
+                  : `${roadmap.totalDays} days`
+              }
             />
             <Stat
+              compact
               label="Daily intake"
               icon={<TrendingDown className="h-3.5 w-3.5" />}
               value={`${firstWeek.targetCalories.toLocaleString()} → ${lastWeek.targetCalories.toLocaleString()}`}
-              sub="kcal/day average, week 1 → final week"
+              sub="kcal/day, week 1 → last"
             />
           </div>
 
@@ -342,7 +350,7 @@ export function RoadmapCalendar({
 
           <p className="text-xs text-muted-foreground">
             Calories step down week by week from your Timeline so you arrive on{" "}
-            {formatLong(goalDate)}. Plan → Macros shows the first week&apos;s numbers.
+            {formatLong(goalDate)}. Plan → Macros shows this week&apos;s numbers.
           </p>
         </CardContent>
       </Card>

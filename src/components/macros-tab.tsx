@@ -28,6 +28,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { AddFoodCard, MacroLine, type AddMode } from "@/components/add-food-card";
 import { FastingCard, type NotificationStatus } from "@/components/fasting-card";
 import { WaterCard } from "@/components/water-card";
+import { MacroDonut } from "@/components/macro-donut";
 import {
   MAX_SAVED_MEALS,
   MAX_SAVED_MEAL_ITEMS,
@@ -357,6 +358,7 @@ export function MacrosTab({
               {target ? (
                 <>
                   <CalorieSummary eaten={totals.kcal} target={target.calories} />
+                  <MacroDonut eaten={totals} kcal={totals.kcal} target={target} />
                   <div className="space-y-3">
                     <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
                     <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
@@ -399,6 +401,7 @@ export function MacrosTab({
               ) : (
                 <div className="space-y-3">
                   <CalorieSummary eaten={totals.kcal} target={null} />
+                  {entries.length > 0 ? <MacroDonut eaten={totals} kcal={totals.kcal} /> : null}
                   <p className="flex gap-2 text-sm text-muted-foreground">
                     <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     Set up your plan to see daily targets here.

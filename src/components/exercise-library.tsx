@@ -28,11 +28,13 @@ type MuscleFilter = Muscle | "all";
 
 function matches(e: Exercise, query: string, muscle: MuscleFilter): boolean {
   if (muscle !== "all" && e.muscle !== muscle) return false;
-  const q = query.trim().toLowerCase();
+  // Hyphens count as spaces, so "t bar" finds "T-bar row" and "chest supported" finds "Chest-supported row".
+  const q = query.trim().toLowerCase().replace(/-/g, " ");
   if (!q) return true;
-  return q.split(/\s+/).every((word) =>
-    `${e.name} ${MUSCLE_LABELS[e.muscle]} ${EQUIPMENT_LABELS[e.equipment]}`.toLowerCase().includes(word),
-  );
+  const text = `${e.name} ${e.aka ?? ""} ${MUSCLE_LABELS[e.muscle]} ${EQUIPMENT_LABELS[e.equipment]}`
+    .toLowerCase()
+    .replace(/-/g, " ");
+  return q.split(/\s+/).every((word) => text.includes(word));
 }
 
 function SearchRow({
