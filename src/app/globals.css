@@ -79,6 +79,24 @@
     --roadmap-low: 142 70% 28%;
     --roadmap-low-foreground: 0 0% 100%;
 
+    /* Plate calculator: weight plates in gym colours (src/lib/plates.ts).
+       They're physical objects, so they keep the same colours in dark mode.
+       Blue, green and red take white text; yellow, white and silver take
+       near-black. The white plate carries a hairline edge so it shows on a
+       white card. */
+    --plate-blue: 217 78% 45%;
+    --plate-blue-foreground: 0 0% 100%;
+    --plate-green: 145 63% 32%;
+    --plate-green-foreground: 0 0% 100%;
+    --plate-red: 0 74% 46%;
+    --plate-red-foreground: 0 0% 100%;
+    --plate-yellow: 48 96% 53%;
+    --plate-yellow-foreground: 40 15% 11%;
+    --plate-white: 40 20% 96%;
+    --plate-white-foreground: 40 15% 11%;
+    --plate-silver: 220 8% 70%;
+    --plate-silver-foreground: 40 15% 11%;
+
     --radius: 0.75rem;
   }
 

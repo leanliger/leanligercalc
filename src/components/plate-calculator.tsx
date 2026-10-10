@@ -5,7 +5,7 @@ import { Disc3 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented";
-import { BARS, PLATES, describePlates, platesFor } from "@/lib/plates";
+import { BARS, PLATES, describePlates, plateColor, platesFor, type PlateColor } from "@/lib/plates";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -44,24 +44,61 @@ function plateHeight(p: number, unit: WeightUnit): number {
   return Math.max(30, Math.round(Math.sqrt(p / biggest) * 100));
 }
 
-/** One side of the bar, drawn: the sleeve with plates stacked from the collar out. */
-function BarDiagram({ perSide, unit }: { perSide: readonly number[]; unit: WeightUnit }) {
+/** Plate thickness in px: heavier plates are thicker, and every one still fits its label. */
+function plateWidth(p: number, unit: WeightUnit): number {
+  const rank = PLATES[unit].indexOf(p);
+  return [18, 17, 15, 13, 11, 10, 10][rank] ?? 10;
+}
+
+// Full class names, so Tailwind keeps them.
+const PLATE_CLASS: Record<PlateColor, string> = {
+  blue: "bg-plate-blue text-plate-blue-foreground",
+  green: "bg-plate-green text-plate-green-foreground",
+  red: "bg-plate-red text-plate-red-foreground",
+  yellow: "bg-plate-yellow text-plate-yellow-foreground",
+  white: "bg-plate-white text-plate-white-foreground",
+  silver: "bg-plate-silver text-plate-silver-foreground",
+};
+
+function Plates({ plates, unit }: { plates: readonly number[]; unit: WeightUnit }) {
+  if (plates.length === 0) return null;
   return (
-    <div className="flex h-24 items-center" aria-hidden>
-      <div className="h-2 w-6 rounded-l bg-muted-foreground/40" />
-      <div className="h-6 w-1.5 bg-muted-foreground/60" />
-      <div className="flex h-full items-center gap-[3px] px-[3px]">
-        {perSide.map((p, i) => (
-          <div
-            key={i}
-            className="flex w-5 items-center justify-center rounded-sm bg-primary text-[9px] font-bold text-primary-foreground"
-            style={{ height: `${plateHeight(p, unit)}%` }}
-          >
-            <span className="-rotate-90 whitespace-nowrap">{p}</span>
-          </div>
-        ))}
+    <div className="flex h-full shrink-0 items-center gap-[2px] px-[2px]">
+      {plates.map((p, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-[3px] text-[9px] font-bold leading-none ring-1 ring-inset ring-black/15",
+            PLATE_CLASS[plateColor(p, unit)],
+          )}
+          style={{ height: `${plateHeight(p, unit)}%`, width: plateWidth(p, unit) }}
+        >
+          <span className="-rotate-90 whitespace-nowrap">{p}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The whole bar, drawn: sleeve, plates, collar, the shaft in the middle, then
+ * the same on the other side. Heaviest plates sit against the collars. A very
+ * heavy load scrolls sideways rather than squashing the plates.
+ */
+function BarDiagram({ perSide, unit }: { perSide: readonly number[]; unit: WeightUnit }) {
+  const sleeve = "h-2.5 min-w-3 flex-1 bg-muted-foreground/45";
+  const collar = <div className="h-6 w-1.5 shrink-0 rounded-sm bg-muted-foreground/70" />;
+  return (
+    <div className="scrollbar-thin overflow-x-auto" aria-hidden>
+      <div className="flex h-28 w-full min-w-max items-center">
+        <div className={cn(sleeve, "rounded-l")} />
+        <Plates plates={[...perSide].reverse()} unit={unit} />
+        {collar}
+        <div className="h-1.5 w-12 shrink-0 bg-muted-foreground/35 sm:w-24" />
+        {collar}
+        <Plates plates={perSide} unit={unit} />
+        <div className={cn(sleeve, "rounded-r")} />
       </div>
-      <div className="h-2 flex-1 rounded-r bg-muted-foreground/40" />
     </div>
   );
 }
@@ -73,7 +110,12 @@ export function PlateResult({ total, bar, unit }: { total: number; bar: number; 
     return <p className="text-xs text-muted-foreground">That&apos;s less than the {bar} {unit} bar on its own.</p>;
   }
   if (load.perSide.length === 0) {
-    return <p className="text-xs text-muted-foreground">Just the empty bar ({bar} {unit}).</p>;
+    return (
+      <div className="space-y-1.5">
+        <BarDiagram perSide={[]} unit={unit} />
+        <p className="text-xs text-muted-foreground">Just the empty bar ({bar} {unit}).</p>
+      </div>
+    );
   }
   return (
     <div className="space-y-1.5">

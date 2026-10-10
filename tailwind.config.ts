@@ -72,6 +72,15 @@ const config: Config = {
             foreground: "hsl(var(--roadmap-low-foreground))",
           },
         },
+        // Plate calculator only: weight plates in gym colours.
+        plate: {
+          blue: { DEFAULT: "hsl(var(--plate-blue))", foreground: "hsl(var(--plate-blue-foreground))" },
+          green: { DEFAULT: "hsl(var(--plate-green))", foreground: "hsl(var(--plate-green-foreground))" },
+          red: { DEFAULT: "hsl(var(--plate-red))", foreground: "hsl(var(--plate-red-foreground))" },
+          yellow: { DEFAULT: "hsl(var(--plate-yellow))", foreground: "hsl(var(--plate-yellow-foreground))" },
+          white: { DEFAULT: "hsl(var(--plate-white))", foreground: "hsl(var(--plate-white-foreground))" },
+          silver: { DEFAULT: "hsl(var(--plate-silver))", foreground: "hsl(var(--plate-silver-foreground))" },
+        },
         success: {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",
