@@ -39,6 +39,8 @@
  *   DELETE /api/coach/assignments/:id?company  coaches: cancel one
  *   POST   /api/coach/groups                  coaches: save a group; PUT/DELETE /api/coach/groups/:id
  *   GET    /api/coach/programs?company=…      coaches: saved programs; POST to save, PUT/DELETE /api/coach/programs/:id
+ *   GET    /api/coach/member-training?company=…&member=…  coaches: a member's programs; PUT to save an edit
+ *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
  *   GET    /api/assignments                   members: assignments waiting for me
  *   PUT    /api/assignments/:id               members: { accept } used it, or Not now
  *   GET    /api/leaderboard?experience=exp_…  community streak leaderboard (members only)
@@ -69,7 +71,9 @@
  * Whop (see reminders.ts).
  */
 
-import { authenticate, type AuthEnv } from "./auth";
+import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
+import { coachMemberTraining, markProgramEditApplied, myProgramEdits, saveMemberProgram } from "./program-edits";
+import { PROGRAM_EDIT_ID_PATTERN } from "../src/lib/program-edits";
 import {
   MAX_WEIGH_INS,
   PLAN_MAX_BYTES,
@@ -576,6 +580,35 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
+  /* ------------------------- coach program edits ------------------------- */
+
+  if (path === "/api/coach/member-training") {
+    if (method === "GET") {
+      const result = await coachMemberTraining(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      const result = await saveMemberProgram(env, userId, body.value);
+      return result.ok ? json(result.body) : error(result.status, result.error);
+    }
+    return error(405, "Method not allowed.");
+  }
+
+  if (path === "/api/program-edits") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return json({ edits: await myProgramEdits(env, userId) });
+  }
+
+  const editApplied = /^\/api\/program-edits\/([^/]+)\/applied$/.exec(path);
+  if (editApplied) {
+    if (!PROGRAM_EDIT_ID_PATTERN.test(editApplied[1]!)) return error(404, "Not found.");
+    if (method !== "POST") return error(405, "Method not allowed.");
+    await markProgramEditApplied(env, userId, editApplied[1]!);
+    return noContent();
+  }
+
   /* ------------------------------ assignments ------------------------------ */
 
   if (path === "/api/coach/assignments") {
@@ -940,6 +973,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),
@@ -971,7 +1005,7 @@ export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (WHOP_VIEW_PATH.test(url.pathname)) {
-      return env.ASSETS.fetch(new Request(new URL("/", url), request));
+      return servePageWithToken(request, env, env.ASSETS, new URL("/", url));
     }
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     try {

@@ -5,6 +5,7 @@ import { Dumbbell, ListChecks } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { MemberAssignment } from "@/lib/assignments";
+import type { ProgramEdit } from "@/lib/program-edits";
 import { findExercise } from "@/lib/training";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -21,6 +22,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const loadAssignments = () => call<{ assignments: MemberAssignment[] }>("/api/assignments").then((r) => r.assignments);
 export const answerAssignment = (id: string, accept: boolean) =>
   call(`/api/assignments/${id}`, { method: "PUT", body: JSON.stringify({ accept }) });
+
+/** Coach edits to my programs, waiting for this app (src/lib/program-edits.ts). */
+export const loadProgramEdits = () => call<{ edits: ProgramEdit[] }>("/api/program-edits").then((r) => r.edits);
+export const markProgramEditApplied = async (id: string) => {
+  const res = await fetch(`/api/program-edits/${id}/applied`, { method: "POST", credentials: "same-origin" });
+  if (!res.ok) throw new Error(`Request failed (${res.status}).`);
+};
 
 /** One card per assignment waiting: what it is, and Use it / Not now. */
 export function AssignmentCards({

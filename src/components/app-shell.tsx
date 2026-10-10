@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Trophy,
   Utensils,
+  X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -62,8 +63,9 @@ import { endPause, type PausePeriod } from "@/lib/pause";
 import type { MySharing } from "@/lib/sharing";
 import type { SavedMeal } from "@/lib/saved-meals";
 import { loadSharing, saveSharing } from "@/components/coach-access";
-import { answerAssignment, loadAssignments } from "@/components/assignment-cards";
+import { answerAssignment, loadAssignments, loadProgramEdits, markProgramEditApplied } from "@/components/assignment-cards";
 import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
+import { applyProgramEdit } from "@/lib/program-edits";
 import { sanitizeHabitDefs } from "@/lib/habits";
 import {
   dropEntry,
@@ -502,12 +504,14 @@ export function AppShell() {
     if (session.mode !== "cloud") return;
     const doc = cloudDoc(state);
     if (doc === lastSynced.current) return;
+    const scheduledAt = Date.now();
     const timer = setTimeout(() => {
       storeRef.current
         ?.savePlan(state)
         .then(() => {
           lastSynced.current = doc;
           setSyncError(false);
+          confirmProgramEdits(scheduledAt);
         })
         .catch(() => setSyncError(true));
     }, PLAN_SAVE_DEBOUNCE_MS);
@@ -1130,6 +1134,56 @@ export function AppShell() {
     };
   }, [ready, session.mode]);
 
+  // Coach edits to my programs (coach dashboard → Training program). Applied
+  // here, by this app, so nothing the coach changed can be overwritten by this
+  // app's next save. Each edit is confirmed to the server only after a plan
+  // save that includes it, so closing the app straight away can't lose it: an
+  // unconfirmed edit is simply applied again next open.
+  const [coachUpdated, setCoachUpdated] = React.useState<string[]>([]);
+  const trainingRef = React.useRef(state.tracking.training);
+  trainingRef.current = state.tracking.training;
+  const editsToConfirm = React.useRef<{ ids: string[]; since: number } | null>(null);
+  const confirmProgramEdits = React.useCallback((savedFrom: number) => {
+    const pending = editsToConfirm.current;
+    if (!pending || savedFrom < pending.since) return;
+    editsToConfirm.current = null;
+    for (const id of pending.ids) void markProgramEditApplied(id).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud") return;
+    let cancelled = false;
+    loadProgramEdits()
+      .then((edits) => {
+        if (cancelled || edits.length === 0) return;
+        const before = trainingRef.current;
+        let training = before;
+        const names: string[] = [];
+        for (const e of edits) {
+          const next = applyProgramEdit(training, e);
+          if (next) {
+            training = next;
+            names.push(e.program.name);
+          }
+        }
+        const ids = edits.map((e) => e.id);
+        if (JSON.stringify(training) === JSON.stringify(before)) {
+          // Nothing changes here (the program is gone, or already matches): nothing to save first.
+          for (const id of ids) void markProgramEditApplied(id).catch(() => {});
+          return;
+        }
+        editsToConfirm.current = { ids, since: Date.now() };
+        setState((prev) => ({ ...prev, tracking: { ...prev.tracking, training } }));
+        setCoachUpdated([...new Set(names)]);
+      })
+      .catch(() => {
+        /* nothing applied; tried again next open */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, session.mode]);
+
   /** Use a coach's assignment: add the program (made active) or switch to the habits. */
   const useAssignment = React.useCallback(
     async (a: MemberAssignment): Promise<string | null> => {
@@ -1378,6 +1432,29 @@ export function AppShell() {
                   </Badge>
                 ) : null}
               </div>
+
+              {coachUpdated.length > 0 ? (
+                <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+                  <Dumbbell className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <p className="min-w-0 flex-1">
+                    Your coach updated your {coachUpdated.length === 1 ? "program" : "programs"}{" "}
+                    {coachUpdated.map((n) => `“${n}”`).join(" and ")}.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                      onClick={() => {
+                        setTab("training");
+                        setCoachUpdated([]);
+                      }}
+                    >
+                      See it in Training
+                    </button>
+                  </p>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Dismiss" onClick={() => setCoachUpdated([])}>
+                    <X />
+                  </Button>
+                </div>
+              ) : null}
 
               <TabsContent value="today">
                 <TodayTab

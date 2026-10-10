@@ -102,7 +102,8 @@ export async function setMySharing(env: SharingEnv, userId: string, raw: unknown
 
 /* ---------------------------------- coach ---------------------------------- */
 
-async function coachCheck(env: SharingEnv, viewerId: string, raw: unknown): Promise<{ memberId: string } | { error: SharingResult }> {
+/** The viewer is an admin of the whop and the member belongs to it. Also used for coach edits to a member's program. */
+export async function coachCheck(env: SharingEnv, viewerId: string, raw: unknown): Promise<{ memberId: string } | { error: SharingResult }> {
   const b = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const companyId = typeof b.company === "string" ? b.company : "";
   const memberId = typeof b.member === "string" ? b.member : "";

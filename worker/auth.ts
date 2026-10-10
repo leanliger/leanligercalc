@@ -19,6 +19,19 @@
 import { decodeProtectedHeader, importJWK, jwtVerify, type JWK } from "jose";
 
 export const USER_TOKEN_HEADER = "x-whop-user-token";
+
+/**
+ * The page's own copy of the token. The Whop iPhone app attaches
+ * x-whop-user-token to the page load but not to the page's own fetch() calls,
+ * so without this the API sees a signed-out member there and everything they
+ * log stays on the phone. servePageWithToken() puts the verified token in the
+ * page (a <meta name="app-user-token">); src/lib/whop-token.ts sends it back on
+ * /api/ calls in this header. It is the same Whop-signed JWT, verified the same
+ * way, so it grants nothing a request through Whop's proxy doesn't; when both
+ * headers are present the proxy's wins.
+ */
+export const FORWARDED_TOKEN_HEADER = "x-app-user-token";
+export const PAGE_TOKEN_META = "app-user-token";
 export const WHOP_ISSUER = "urn:whopcom:exp-proxy";
 export const WHOP_JWKS_URL = "https://api.whop.com/.well-known/jwks.json";
 
@@ -148,7 +161,41 @@ export async function authenticate(request: Request, env: AuthEnv): Promise<Veri
   if (env.DEV_USER_ID && isLocalRequest(request)) {
     return { userId: env.DEV_USER_ID, appId: env.WHOP_APP_ID ?? "dev" };
   }
-  const token = request.headers.get(USER_TOKEN_HEADER);
+  const token = request.headers.get(USER_TOKEN_HEADER) || request.headers.get(FORWARDED_TOKEN_HEADER);
   if (!token || !env.WHOP_APP_ID) return null;
   return verifyWhopToken(token, env.WHOP_APP_ID, await loadWhopKeys());
+}
+
+const escapeAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+/**
+ * Serve the app page for a Whop view path, handing the page its verified user
+ * token (see FORWARDED_TOKEN_HEADER). Only a token that verifies is written
+ * into the page, and that page is never cached: always a fresh 200, so a phone
+ * can't keep showing a copy with an old token. Without a token it's the plain
+ * page, exactly as before.
+ *
+ * On localhost with DEV_USER_ID set, a placeholder is handed over so the
+ * plumbing can be tried locally (authenticate() ignores it there anyway).
+ */
+export async function servePageWithToken(request: Request, env: AuthEnv, assets: Fetcher, pageUrl: URL): Promise<Response> {
+  const token = request.headers.get(USER_TOKEN_HEADER);
+  const verified = token && env.WHOP_APP_ID ? await verifyWhopToken(token, env.WHOP_APP_ID, await loadWhopKeys()) : null;
+  const handoff = verified ? token : env.DEV_USER_ID && isLocalRequest(request) ? "dev-token" : null;
+  if (!handoff) return assets.fetch(new Request(pageUrl, request));
+
+  const page = await assets.fetch(new Request(pageUrl, { headers: { accept: "text/html" } }));
+  if (!page.ok || !(page.headers.get("content-type") ?? "").includes("text/html")) return page;
+  const withToken = new HTMLRewriter()
+    .on("head", {
+      element(head) {
+        head.append(`<meta name="${PAGE_TOKEN_META}" content="${escapeAttr(handoff)}">`, { html: true });
+      },
+    })
+    .transform(page);
+  const res = new Response(withToken.body, withToken);
+  res.headers.set("cache-control", "private, no-store");
+  res.headers.delete("etag");
+  res.headers.delete("last-modified");
+  return res;
 }

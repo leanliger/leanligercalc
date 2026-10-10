@@ -4,6 +4,7 @@ import * as React from "react";
 import { AppShell } from "@/components/app-shell";
 import { CoachDashboard } from "@/components/coach-dashboard";
 import { companyIdFromPath } from "@/lib/coach-api";
+import { forwardWhopToken } from "@/lib/whop-token";
 
 /**
  * Whop opens an app at one of two views:
@@ -20,6 +21,8 @@ export function AppRoot() {
   });
 
   React.useEffect(() => {
+    // Before either view mounts and makes its first API call.
+    forwardWhopToken();
     const companyId = companyIdFromPath(window.location.pathname);
     setView(companyId ? { kind: "coach", companyId } : { kind: "member" });
   }, []);
