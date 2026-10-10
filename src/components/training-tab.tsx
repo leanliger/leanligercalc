@@ -323,19 +323,28 @@ export function TrainingTab({
 
   if (!body && section === "program") {
     body = (
-      <ProgramCalendar
-        settings={settings}
-        workouts={workouts}
-        today={today}
-        live={active}
-        onStart={(p, d) => {
-          setSection("workouts");
-          start(p, d);
-        }}
-        onMakeActive={setActiveProgram}
-        onResume={() => setSection("workouts")}
-        onShowWorkouts={() => setSection("workouts")}
-      />
+      <div className="space-y-5">
+        <ProgramCalendar
+          settings={settings}
+          workouts={workouts}
+          today={today}
+          live={active}
+          onStart={(p, d) => {
+            setSection("workouts");
+            start(p, d);
+          }}
+          onMakeActive={setActiveProgram}
+          onResume={() => setSection("workouts")}
+        />
+        <div className="lg:max-w-xl">
+          <ProgramsCard
+            settings={settings}
+            onEdit={(id) => setView({ kind: "program", id })}
+            onMakeActive={setActiveProgram}
+            onAdd={addProgram}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -395,12 +404,6 @@ export function TrainingTab({
             onRestChange={(restSec) => onSettingsChange((s) => ({ ...s, restSec }))}
             onTrackRirChange={(trackRir) => onSettingsChange((s) => ({ ...s, trackRir }))}
           />
-          <ProgramsCard
-            settings={settings}
-            onEdit={(id) => setView({ kind: "program", id })}
-            onMakeActive={setActiveProgram}
-            onAdd={addProgram}
-          />
           <PlateCalculatorCard unit={unit} />
           <FormChecksCard
             availability={formCheckAvailability}
@@ -439,7 +442,7 @@ export function TrainingTab({
           onValueChange={setSection}
           options={[
             { value: "workouts" as const, label: "Workouts" },
-            { value: "program" as const, label: "Program" },
+            { value: "program" as const, label: "Programs" },
           ]}
           className="mb-5 max-w-xs"
         />
@@ -709,7 +712,7 @@ function ProgramsCard({
       <CardContent className="space-y-3">
         {settings.programs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No programs yet. Start from a template in Today&apos;s workout, or build your own.
+            No programs yet. Build your own, or start from a template.
           </p>
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border">
@@ -778,13 +781,10 @@ function ProgramsCard({
               <Pencil />
               Build my own
             </Button>
-            {/* With no programs yet, the templates are already in Today's workout. */}
-            {settings.programs.length > 0 ? (
-              <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
-                <Plus />
-                From a template
-              </Button>
-            ) : null}
+            <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+              <Plus />
+              From a template
+            </Button>
           </div>
         )}
       </CardContent>

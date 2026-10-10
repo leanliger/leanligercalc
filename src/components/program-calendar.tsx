@@ -37,7 +37,7 @@ const STATUS_TEXT: Record<SessionState["status"], string> = {
 const weekdaysText = (days: readonly number[]) => days.map((d) => WEEKDAY_SHORT[d]).join(" · ");
 const isCoachProgram = (p: Program) => p.id.startsWith("coach_");
 
-/** Training → Program: the coach's plan on a calendar. */
+/** Training → Programs: the coach's plan on a calendar (the member's programs are listed under it). */
 export function ProgramCalendar({
   settings,
   workouts,
@@ -46,7 +46,6 @@ export function ProgramCalendar({
   onStart,
   onMakeActive,
   onResume,
-  onShowWorkouts,
 }: {
   settings: TrainingSettings;
   workouts: readonly Workout[];
@@ -56,7 +55,6 @@ export function ProgramCalendar({
   onStart: (program: Program, day: ProgramDay) => void;
   onMakeActive: (id: string) => void;
   onResume: () => void;
-  onShowWorkouts: () => void;
 }) {
   const scheduled = settings.programs.filter((p) => p.schedule);
   const [chosenId, setChosenId] = React.useState<string | null>(null);
@@ -72,12 +70,9 @@ export function ProgramCalendar({
             <p className="font-semibold">No program on your calendar yet</p>
             <p className="text-sm text-muted-foreground">
               When your coach assigns you a program with a schedule, every workout shows up here by date, so you know exactly
-              what to do each day. Your own programs are under Workouts.
+              what to do each day. Your own programs are listed below.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={onShowWorkouts}>
-            Go to Workouts
-          </Button>
         </CardContent>
       </Card>
     );

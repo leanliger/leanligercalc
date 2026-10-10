@@ -309,7 +309,7 @@ The **Today** tab (`today-tab.tsx`) is the screen a member opens each morning. A
 
 ## Training
 
-The **Training** tab (`training-tab.tsx`) has two sections. **Workouts** is the workout log with an exercise library, programs, a rest timer and progress charts. **Program** is the coach's plan on a calendar (below).
+The **Training** tab (`training-tab.tsx`) has two sections. **Workouts** is the workout log with an exercise library, a rest timer and progress charts. **Programs** is the coach's plan on a calendar (below) and, under it, every program the member has, with **Build my own** and **From a template** (internally the section is still `program`).
 
 - **Program calendar** (`program-calendar.tsx`, `src/lib/program-schedule.ts`): a program the coach sends with a schedule (start date, training weekdays, 1–26 weeks) becomes a month calendar — each training day is a session, taking the program's days in turn (Upper A, Lower A, Upper B, Lower B, Upper A…). Sessions show **done**, **done on another day** (a workout from the program within 3 days of its date counts for it, preferring the same program day), **today**, **planned** or **missed**; tap one for its exercises and **Start** (today or a missed one). The header has the coach's note, progress ("5 of 24 done · 1 missed") and today's line: "Today in your plan · Lower B", "Rest day · Next: Thu · Upper B" (with **Do it today**), "Done for today", or "Plan finished". The Workouts section's next-up card and the Today screen follow the same plan when the active program has one; without a schedule they keep the plain rotation. The schedule is kept with the program in the plan (`Program.schedule`); members can't change it.
 
