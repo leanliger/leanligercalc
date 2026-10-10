@@ -115,6 +115,7 @@ const ROWS: Row[] = [
   ["arnold-press", "Arnold press", "shoulders", "dumbbell", "Start with palms facing you", "Rotate the palms out as you press"],
   ["lateral-raise", "Dumbbell lateral raise", "shoulders", "dumbbell", "Lead with the elbows", "Raise to shoulder height, no swinging"],
   ["cable-lateral-raise", "Cable lateral raise", "shoulders", "cable", "Stand side-on to a low pulley", "Slow on the way down"],
+  ["machine-lateral-raise", "Machine lateral raise", "shoulders", "machine", "Pads just above the elbows", "Raise to shoulder height, slow on the way down"],
   ["rear-delt-fly", "Rear delt fly", "shoulders", "dumbbell", "Hinge forward with soft elbows", "Move your arms out wide, not back"],
   ["reverse-pec-deck", "Reverse pec deck", "shoulders", "machine", "Handles at shoulder height", "Push out wide and pause"],
   ["face-pull", "Face pull", "shoulders", "cable", "Rope at face height", "Pull toward your forehead, elbows high"],
@@ -155,6 +156,7 @@ const ROWS: Row[] = [
   ["glute-bridge", "Glute bridge", "glutes", "bodyweight", "Feet flat, close to your glutes", "Drive through your heels"],
   ["cable-kickback", "Cable glute kickback", "glutes", "cable", "Slight forward lean", "Kick back without arching your lower back"],
   ["hip-abduction", "Hip abduction machine", "glutes", "machine", "Sit tall or lean slightly forward", "Pause at the widest point"],
+  ["hip-adduction", "Hip adduction machine", "glutes", "machine", "Sit tall, back against the pad", "Squeeze the knees together and pause"],
   ["sumo-deadlift", "Sumo deadlift", "glutes", "barbell", "Wide stance, toes out", "Push your knees out as you stand"],
   ["kettlebell-swing", "Kettlebell swing", "glutes", "kettlebell", "Hinge, don't squat", "Snap your hips forward"],
   // Calves

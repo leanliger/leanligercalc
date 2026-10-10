@@ -68,6 +68,8 @@ interface FatLossCalculatorProps {
   onSendToCarbCycling: (payload: { dailyCalories: number; tdee: number }) => void;
   /** The shared biometrics panel, rendered above these inputs. */
   profileSlot: React.ReactNode;
+  /** Logged weigh-ins, drawn as dots on the projected curve. */
+  weighIns?: readonly { date: string; weightLb: number }[];
 }
 
 const MODE_OPTIONS: readonly { value: TimelineMode; label: string; hint: string }[] = [
@@ -98,6 +100,7 @@ export function FatLossCalculator({
   unit,
   onSendToCarbCycling,
   profileSlot,
+  weighIns,
 }: FatLossCalculatorProps) {
   // Recalculated on every keystroke — the whole simulation is well under a
   // millisecond, so there is nothing to debounce or memoise beyond this.
@@ -525,6 +528,7 @@ export function FatLossCalculator({
                 projection={result.projection}
                 unit={unit}
                 goalWeight={result.feasible ? goalWeight : null}
+                weighIns={weighIns}
               />
             </div>
           </CardContent>

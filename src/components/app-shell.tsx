@@ -66,6 +66,7 @@ import { loadSharing, saveSharing } from "@/components/coach-access";
 import { answerAssignment, loadAssignments, loadProgramEdits, markProgramEditApplied } from "@/components/assignment-cards";
 import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
 import { applyProgramEdit } from "@/lib/program-edits";
+import { dayTargetFinder } from "@/lib/day-targets";
 import { sanitizeHabitDefs } from "@/lib/habits";
 import {
   dropEntry,
@@ -608,6 +609,12 @@ export function AppShell() {
       window.scrollTo({ top: 0 });
     },
     [navigateFor, setTab],
+  );
+
+  // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
+  const foodLogToday = React.useMemo(
+    () => (today ? dayTargetFinder(state.profile, state.fatLoss, state.carbs, state.tracking.adjustments)(today) : null),
+    [today, state.profile, state.fatLoss, state.carbs, state.tracking.adjustments],
   );
 
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
@@ -1515,6 +1522,8 @@ export function AppShell() {
                     onClearLink={() => setLinkedToTimeline(false)}
                     // "About you" is shared with the Timeline and edited there.
                     profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
+                    foodLogToday={foodLogToday}
+                    onOpenRoadmap={() => setTab("roadmap")}
                   />
                 ) : (
                   <FatLossCalculator
@@ -1526,6 +1535,7 @@ export function AppShell() {
                     profileSlot={
                       <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
                     }
+                    weighIns={weighIns}
                   />
                 )}
               </TabsContent>

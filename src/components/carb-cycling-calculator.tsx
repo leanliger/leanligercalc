@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CalendarRange, Flame, Percent, Sparkles, Utensils } from "lucide-react";
+import { CalendarRange, Flame, Info, Percent, Sparkles, Utensils } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -30,6 +30,7 @@ import {
   resolveProtein,
 } from "@/lib/carb-cycling";
 import { SCHEDULE_PRESETS } from "@/lib/defaults";
+import type { DayTarget } from "@/lib/day-targets";
 import { formatCalories, formatWeight } from "@/lib/format";
 import type {
   BiometricProfile,
@@ -53,6 +54,51 @@ interface CarbCyclingCalculatorProps {
   onClearLink: () => void;
   /** The shared biometrics panel, rendered above these inputs. */
   profileSlot: React.ReactNode;
+  /**
+   * What the Food log is aiming at today (src/lib/day-targets.ts): the
+   * Roadmap's numbers when today is inside it, otherwise this plan's.
+   */
+  foodLogToday?: DayTarget | null;
+  onOpenRoadmap?: () => void;
+}
+
+const DAY_NAME = { high: "High", medium: "Medium", low: "Low" } as const;
+
+/**
+ * Says which calories the Food log is using today. They usually differ from
+ * this page: the Roadmap starts from the Timeline's calories and lowers them
+ * each week as weight drops, while these stay fixed.
+ */
+function FoodLogNote({ target, onOpenRoadmap }: { target: DayTarget; onOpenRoadmap?: () => void }) {
+  const day = `${DAY_NAME[target.type]} day`;
+  return (
+    <p className="flex gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs leading-relaxed">
+      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+      {target.source === "roadmap" ? (
+        <span>
+          Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today ({day}, from the
+          Roadmap). The Roadmap starts from your Timeline&apos;s calories and lowers them each week as your weight drops, so it
+          differs from the numbers here.
+          {onOpenRoadmap ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={onOpenRoadmap}
+                className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+              >
+                Open the Roadmap
+              </button>
+            </>
+          ) : null}
+        </span>
+      ) : (
+        <span>
+          Your Food log is using these numbers today: <strong className="tabular">{formatCalories(target.calories)}</strong> ({day}).
+        </span>
+      )}
+    </p>
+  );
 }
 
 const GOAL_OPTIONS: readonly { value: CarbGoal; label: string; hint: string }[] = [
@@ -130,6 +176,8 @@ export function CarbCyclingCalculator({
   linkedToTimeline,
   onClearLink,
   profileSlot,
+  foodLogToday,
+  onOpenRoadmap,
 }: CarbCyclingCalculatorProps) {
   const result = React.useMemo(
     () => calculateCarbCycling(profile, inputs),
@@ -166,6 +214,7 @@ export function CarbCyclingCalculator({
             Protein and fat hold steady; carbohydrate does the cycling.
           </CardDescription>
           {profileSlot}
+          {foodLogToday ? <FoodLogNote target={foodLogToday} onOpenRoadmap={onOpenRoadmap} /> : null}
         </CardHeader>
 
         <CardContent className="space-y-5">
