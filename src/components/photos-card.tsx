@@ -11,7 +11,7 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { ConfirmButton } from "@/components/confirm-button";
 import { loadPhoto } from "@/lib/barcode-reader";
 import { formatShort } from "@/lib/dates";
-import { PHOTO_MAX_DIMENSION, POSES, POSE_LABELS, type PhotoMeta, type Pose } from "@/lib/photos";
+import { MAX_PHOTO_UPLOADS_PER_DAY, PHOTO_MAX_DIMENSION, POSES, POSE_LABELS, type PhotoMeta, type Pose } from "@/lib/photos";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------ image loading ------------------------------ */
@@ -199,7 +199,15 @@ async function prepareForUpload(file: File): Promise<Blob> {
 }
 
 export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) {
-  const [state, setState] = React.useState<{ available: boolean; shareWithCoach: boolean; photos: PhotoMeta[] } | null>(null);
+  const [state, setState] = React.useState<{
+    available: boolean;
+    shareWithCoach: boolean;
+    photos: PhotoMeta[];
+    /** Uploads left today under the daily limit. */
+    uploadsLeftToday?: number;
+    /** The app-wide photo storage cap is reached. */
+    storageFull?: boolean;
+  } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [date, setDate] = React.useState(today);
   const [pose, setPose] = React.useState<Pose>("front");
@@ -233,9 +241,12 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
         headers: { "content-type": "image/jpeg", accept: "application/json" },
         body: blob,
       });
-      const body = (await res.json().catch(() => null)) as { photo?: PhotoMeta; error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { photo?: PhotoMeta; uploadsLeftToday?: number; error?: string } | null;
+      // Out of uploads today (429) or storage full (507): turn "Add photo" off until things change.
+      if (res.status === 429) setState((prev) => (prev ? { ...prev, uploadsLeftToday: 0 } : prev));
+      if (res.status === 507) setState((prev) => (prev ? { ...prev, storageFull: true } : prev));
       if (!res.ok || !body?.photo) throw new Error(body?.error ?? "Upload failed. Try again.");
-      setState((prev) => (prev ? { ...prev, photos: [body.photo!, ...prev.photos] } : prev));
+      setState((prev) => (prev ? { ...prev, photos: [body.photo!, ...prev.photos], uploadsLeftToday: body.uploadsLeftToday ?? prev.uploadsLeftToday } : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed. Try again.");
     } finally {
@@ -289,6 +300,16 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
           <p className="text-sm text-muted-foreground">Coming soon — progress photos aren&apos;t switched on for this app yet.</p>
         ) : state ? (
           <>
+            {(() => {
+              const blocked = state.storageFull ? "full" : state.uploadsLeftToday === 0 ? "daily" : null;
+              return blocked ? (
+                <p role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+                  {blocked === "full"
+                    ? "Photo storage for this app is full, so new photos can't be added right now. Your photos are safe, and you can still view and delete them."
+                    : `You've added ${MAX_PHOTO_UPLOADS_PER_DAY} photos today, the daily limit. You can add more tomorrow.`}
+                </p>
+              ) : null;
+            })()}
             <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2.5">
               <Users className={cn("mt-0.5 h-4 w-4 shrink-0", state.shareWithCoach ? "text-primary" : "text-muted-foreground")} />
               <div className="min-w-0 flex-1">
@@ -319,7 +340,7 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 options={POSES.map((p) => ({ value: p, label: POSE_LABELS[p] }))}
                 className="w-auto min-w-[12rem] flex-1"
               />
-              <Button type="button" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+              <Button type="button" size="sm" disabled={busy || state.storageFull || state.uploadsLeftToday === 0} onClick={() => fileRef.current?.click()}>
                 {busy ? <Loader2 className="animate-spin" /> : <Camera />}
                 {busy ? "Uploading…" : "Add photo"}
               </Button>
@@ -340,6 +361,9 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
             <p className="text-[11px] text-muted-foreground">
               Tip: same spot, same lighting, morning, relaxed. Photos are shrunk and re-saved on your phone before upload,
               which also strips location data.
+              {state.uploadsLeftToday !== undefined && state.uploadsLeftToday > 0 && state.uploadsLeftToday <= 3
+                ? ` ${state.uploadsLeftToday} more today.`
+                : ""}
             </p>
 
             {state.photos.length > 0 ? (

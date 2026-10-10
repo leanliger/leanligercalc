@@ -292,6 +292,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 icon={<Flame className="h-3.5 w-3.5" />}
               />
             </div>
+            {overview.photoStorage ? <PhotoStorageLine {...overview.photoStorage} /> : null}
 
             <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
               {/* ------------------------------ list ------------------------------ */}
@@ -406,6 +407,23 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         )}
       </main>
     </div>
+  );
+}
+
+/**
+ * How much of the app-wide progress photo storage is used. Uploads stop at the
+ * cap (PHOTO_STORAGE_CAP_BYTES), so this tells the coach before members hit it.
+ */
+function PhotoStorageLine({ usedBytes, capBytes }: { usedBytes: number; capBytes: number }) {
+  const gb = (b: number) => (b / 1024 ** 3).toFixed(b < 1024 ** 3 ? 2 : 1);
+  const share = capBytes > 0 ? usedBytes / capBytes : 0;
+  const full = share >= 1;
+  const nearly = share >= 0.8;
+  return (
+    <p className={cn("text-xs", nearly ? "text-warning" : "text-muted-foreground")}>
+      Progress photo storage: {gb(usedBytes)} of {gb(capBytes)} GB used, across everyone using the app.
+      {full ? " Full: members can't add new photos until space is freed or the cap is raised." : nearly ? " Nearly full." : ""}
+    </p>
   );
 }
 

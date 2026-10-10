@@ -56,4 +56,6 @@ export interface CoachOverview {
   companyId: string;
   generatedAt: string;
   members: CoachMemberData[];
+  /** Progress photo storage for the whole app against its cap; null while photos are off. */
+  photoStorage?: { usedBytes: number; capBytes: number } | null;
 }

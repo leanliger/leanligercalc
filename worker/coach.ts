@@ -22,9 +22,9 @@ import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay }
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
 import { accessLevel, hasWhopKey, whopGet, whopReason, type WhopEnv } from "./whop";
-import { isSharingWithCoach, streamPhoto, type PhotoEnv } from "./photos";
+import { isSharingWithCoach, photoStorageUsed, streamPhoto, type PhotoEnv } from "./photos";
 import { isSharingProgress, sharingFor } from "./sharing";
-import type { Pose } from "../src/lib/photos";
+import { PHOTO_STORAGE_CAP_BYTES, type Pose } from "../src/lib/photos";
 
 export interface CoachEnv extends WhopEnv, PhotoEnv {
   DB: D1Database;
@@ -213,7 +213,12 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
 
   return {
     ok: true,
-    body: { companyId, generatedAt: now.toISOString(), members: [...members.values()] },
+    body: {
+      companyId,
+      generatedAt: now.toISOString(),
+      members: [...members.values()],
+      photoStorage: env.PHOTOS ? { usedBytes: await photoStorageUsed(env), capBytes: PHOTO_STORAGE_CAP_BYTES } : null,
+    },
   };
 }
 

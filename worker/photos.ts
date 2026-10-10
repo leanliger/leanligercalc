@@ -14,9 +14,25 @@
  *
  * Until R2 is enabled and the bucket bound, every route answers "not
  * available" and the app says so.
+ *
+ * Two limits keep storage (and the bill) in check: each member can upload
+ * MAX_PHOTO_UPLOADS_PER_DAY a day (photo_uploads counts them, deleted ones
+ * included), and uploads stop once all photos together reach
+ * PHOTO_STORAGE_CAP_BYTES. Both are checked here, since every upload passes
+ * through the Worker.
  */
 
-import { MAX_PHOTOS, MAX_PHOTO_BYTES, PHOTO_ID_PATTERN, looksLikeJpeg, validatePhotoMeta, type PhotoMeta, type Pose } from "../src/lib/photos";
+import {
+  MAX_PHOTOS,
+  MAX_PHOTO_BYTES,
+  MAX_PHOTO_UPLOADS_PER_DAY,
+  PHOTO_ID_PATTERN,
+  PHOTO_STORAGE_CAP_BYTES,
+  looksLikeJpeg,
+  validatePhotoMeta,
+  type PhotoMeta,
+  type Pose,
+} from "../src/lib/photos";
 
 export interface PhotoEnv {
   DB: D1Database;
@@ -28,6 +44,20 @@ export type PhotoResult = { ok: true; body: unknown } | { ok: false; status: num
 
 const objectKey = (userId: string, id: string) => `u/${userId}/${id}.jpg`;
 const NOT_AVAILABLE: PhotoResult = { ok: false, status: 503, error: "Progress photos aren't switched on for this app yet." };
+const STORAGE_FULL = "Photo storage for this app is full, so new photos can't be added right now. Your photos are safe. Let your coach know.";
+
+const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
+
+async function uploadsToday(env: PhotoEnv, userId: string): Promise<number> {
+  const row = await env.DB.prepare("SELECT n FROM photo_uploads WHERE user_id = ? AND day = ?").bind(userId, utcDay()).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Bytes of every member's photos together, for the app-wide cap. */
+export async function photoStorageUsed(env: PhotoEnv): Promise<number> {
+  const row = await env.DB.prepare("SELECT COALESCE(SUM(bytes), 0) AS total FROM progress_photos").first<{ total: number }>();
+  return row?.total ?? 0;
+}
 
 export async function isSharingWithCoach(env: PhotoEnv, userId: string): Promise<boolean> {
   const row = await env.DB.prepare("SELECT share_with_coach FROM photo_settings WHERE user_id = ?").bind(userId).first<{ share_with_coach: number }>();
@@ -50,6 +80,8 @@ export async function listPhotos(env: PhotoEnv, userId: string): Promise<PhotoRe
       available: Boolean(env.PHOTOS),
       shareWithCoach: await isSharingWithCoach(env, userId),
       photos: env.PHOTOS ? await photoList(env, userId) : [],
+      uploadsLeftToday: Math.max(0, MAX_PHOTO_UPLOADS_PER_DAY - (await uploadsToday(env, userId))),
+      storageFull: env.PHOTOS ? (await photoStorageUsed(env)) >= PHOTO_STORAGE_CAP_BYTES : false,
     },
   };
 }
@@ -71,14 +103,30 @@ export async function uploadPhoto(env: PhotoEnv, userId: string, request: Reques
 
   const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM progress_photos WHERE user_id = ?").bind(userId).first<{ n: number }>();
   if ((count?.n ?? 0) >= MAX_PHOTOS) return { ok: false, status: 409, error: `You can keep up to ${MAX_PHOTOS} photos. Delete some older ones first.` };
+  const usedToday = await uploadsToday(env, userId);
+  if (usedToday >= MAX_PHOTO_UPLOADS_PER_DAY) {
+    return { ok: false, status: 429, error: `You've added ${MAX_PHOTO_UPLOADS_PER_DAY} photos today, the daily limit. You can add more tomorrow.` };
+  }
+  if ((await photoStorageUsed(env)) + bytes.length > PHOTO_STORAGE_CAP_BYTES) return { ok: false, status: 507, error: STORAGE_FULL };
 
   const id = crypto.randomUUID();
   await env.PHOTOS.put(objectKey(userId, id), bytes, { httpMetadata: { contentType: "image/jpeg" } });
-  await env.DB.prepare("INSERT INTO progress_photos (user_id, id, date, pose, bytes) VALUES (?, ?, ?, ?, ?)")
-    .bind(userId, id, meta.value.date, meta.value.pose, bytes.length)
-    .run();
+  const today = utcDay();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO progress_photos (user_id, id, date, pose, bytes) VALUES (?, ?, ?, ?, ?)").bind(
+      userId,
+      id,
+      meta.value.date,
+      meta.value.pose,
+      bytes.length,
+    ),
+    env.DB.prepare(
+      "INSERT INTO photo_uploads (user_id, day, n) VALUES (?, ?, 1) ON CONFLICT (user_id, day) DO UPDATE SET n = n + 1",
+    ).bind(userId, today),
+    env.DB.prepare("DELETE FROM photo_uploads WHERE user_id = ? AND day < ?").bind(userId, today),
+  ]);
   const photo: PhotoMeta = { id, date: meta.value.date, pose: meta.value.pose };
-  return { ok: true, body: { photo } };
+  return { ok: true, body: { photo, uploadsLeftToday: Math.max(0, MAX_PHOTO_UPLOADS_PER_DAY - usedToday - 1) } };
 }
 
 /** Stream one photo belonging to `ownerId`, or null if there's no such photo. */
@@ -128,5 +176,6 @@ export async function deleteAllPhotos(env: PhotoEnv, userId: string): Promise<vo
   await env.DB.batch([
     env.DB.prepare("DELETE FROM progress_photos WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM photo_settings WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM photo_uploads WHERE user_id = ?").bind(userId),
   ]);
 }

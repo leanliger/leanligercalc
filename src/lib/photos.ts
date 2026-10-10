@@ -27,6 +27,14 @@ export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 /** Longest side, in pixels, photos are resized to before upload. */
 export const PHOTO_MAX_DIMENSION = 1440;
 export const MAX_PHOTOS = 400;
+/** Uploads a member can make in one day (UTC), counting photos they delete afterwards. */
+export const MAX_PHOTO_UPLOADS_PER_DAY = 12;
+/**
+ * Total photo storage for the whole app, across every member. Uploads stop
+ * here, which keeps R2 inside Cloudflare's free 10 GB. Raise it to allow more:
+ * beyond the free tier R2 costs about $0.015 per GB a month.
+ */
+export const PHOTO_STORAGE_CAP_BYTES = 9 * 1024 ** 3;
 
 export const PHOTO_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
