@@ -29,8 +29,7 @@ import { CopyButton } from "@/components/copy-button";
 import { Stat } from "@/components/stat";
 import { WarningList } from "@/components/warnings";
 import { WeekdayPatternEditor } from "@/components/weekday-pattern-editor";
-import { ProgressChart } from "@/components/progress-chart";
-import { predictedWeightOn, trendSeries } from "@/lib/adaptive";
+import { predictedWeightOn } from "@/lib/adaptive";
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
 import { DAY_DESCRIPTIONS, DAY_LABELS } from "@/lib/carb-cycling";
 import {
@@ -69,7 +68,7 @@ interface RoadmapCalendarProps {
   /** Calorie changes accepted at check-ins. */
   adjustments: CalorieAdjustment[];
   onCarbsChange: (patch: Partial<CarbCyclingInputs>) => void;
-  onNavigate: (tab: "timeline" | "carbs" | "checkin") => void;
+  onNavigate: (tab: "timeline" | "carbs") => void;
 }
 
 /**
@@ -136,10 +135,6 @@ export function RoadmapCalendar({
     () => new Map(weighIns.map((w) => [w.date, w.weightLb])),
     [weighIns],
   );
-  const latestTrend = React.useMemo(() => {
-    const t = trendSeries(weighIns.filter((w) => w.date >= addDays(timeline.requiredStartDate, -7)));
-    return t[t.length - 1] ?? null;
-  }, [weighIns, timeline.requiredStartDate]);
 
   const dayByDate = React.useMemo(
     () => new Map(roadmap.days.map((d) => [d.date, d])),
@@ -257,18 +252,6 @@ export function RoadmapCalendar({
   );
   const tabStop = visiblePlanDays.includes(selected) ? selected : visiblePlanDays[0];
 
-  const progressLine = (() => {
-    if (!latestTrend) {
-      return "Log weigh-ins on Today or in Progress and they'll be plotted against the plan here.";
-    }
-    const planned = predictedWeightOn(timeline, latestTrend.date);
-    const head = "Trend " + formatWeight(latestTrend.trend, unit) + " on " + formatShort(latestTrend.date);
-    if (planned === null) return head + ".";
-    const diff = latestTrend.trend - planned;
-    if (Math.abs(diff) < 0.3) return head + " — right on the plan.";
-    return head + " — " + formatWeight(Math.abs(diff), unit) + (diff > 0 ? " above" : " below") + " the plan.";
-  })();
-
   const weekText = () =>
     formatWeekText(selectedWeek, weekDays, (lb) => fromLb(lb, unit), unit);
 
@@ -356,27 +339,10 @@ export function RoadmapCalendar({
           <WarningList warnings={roadmap.warnings} />
 
           <p className="text-xs text-muted-foreground">
-            The daily target and carb deficit on the Weekly plan aren&apos;t used
+            The daily target and carb deficit on Carb cycle aren&apos;t used
             here — the timeline sets calories week by week so you arrive on{" "}
             {formatLong(goalDate)}.
           </p>
-        </CardContent>
-      </Card>
-
-      {/* ------------------------- Predicted vs actual ----------------------- */}
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
-          <div className="space-y-1">
-            <CardTitle className="text-base">Plan vs actual</CardTitle>
-            <CardDescription>{progressLine}</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => onNavigate("checkin")}>
-            <Scale />
-            {weighIns.length ? "Check in" : "Log a weigh-in"}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <ProgressChart timeline={timeline} weighIns={weighIns} unit={unit} today={today} range="plan" />
         </CardContent>
       </Card>
 

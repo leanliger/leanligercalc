@@ -156,8 +156,6 @@ export function CarbCyclingCalculator({
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
       {/* ----------------------------- Inputs ----------------------------- */}
       <div className="space-y-5 lg:sticky lg:top-4">
-        {profileSlot}
-
         <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -167,6 +165,7 @@ export function CarbCyclingCalculator({
           <CardDescription>
             Protein and fat hold steady; carbohydrate does the cycling.
           </CardDescription>
+          {profileSlot}
         </CardHeader>
 
         <CardContent className="space-y-5">

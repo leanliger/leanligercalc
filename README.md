@@ -155,7 +155,7 @@ Three exact weekly macro totals imply an exact weekly calorie total, so the aver
 
 ## The roadmap
 
-The roadmap is a section of the **Plan** tab (its *Timeline | Carb cycle | Roadmap* switch). Internally `roadmap` is still its own `activeTab` value, so links that open it (`?t=roadmap`, Progress's "Open the roadmap") and saved tabs keep working.
+The roadmap is a section of the **Plan** tab (its *Timeline | Carb cycle | Roadmap* switch). Internally `roadmap` is still its own `activeTab` value, so links that open it (`?t=roadmap`) and saved tabs keep working.
 
 The roadmap combines the two engines, each doing what it is best at:
 
@@ -174,13 +174,13 @@ The daily target and carb deficit on the Carb Cycling tab are deliberately *not*
 | 3 / 2 / 2 | H M H L M H L |
 | 1 / 3 / 3 | H L M M L M L |
 
-Users can click any weekday to change it, in either the Weekly plan or the Roadmap. The counts follow the pattern, and changing the counts directly discards a hand-placed pattern so it can't go stale. The pattern travels in shared links as seven letters (`wp=HMLMHLM`).
+Users can click any weekday to change it, in either Carb cycle or the Roadmap. The counts follow the pattern, and changing the counts directly discards a hand-placed pattern so it can't go stale. The pattern travels in shared links as seven letters (`wp=HMLMHLM`).
 
 **Calendar.** One month at a time, Monday-first. Each day shows its type, calories, and (on wider screens) P/C/F grams; weeks with an allocation problem carry a dot. It's a proper ARIA grid with a single tab stop — arrow keys move by day and week, Home/End jump within the week, and moving past a month edge pages the calendar. Selecting a day shows its full macros, that week's projected weight, the change in intake from the previous week, any coaching note, and copy buttons for the day or the whole week.
 
 ## Check-ins: predicted vs actual
 
-The **Progress** tab (internally `checkin`; weigh-ins can also be logged on Today) is where members log and review weigh-ins. The app compares them with the plan and recommends calorie changes; the Roadmap plots the same comparison and shows logged weights on the calendar.
+The **Progress** tab (internally `checkin`; weigh-ins can also be logged on Today) is where members log and review weigh-ins. The app compares them with the plan and recommends calorie changes. Its **Plan vs actual** chart has a *Recent / Whole plan* switch (the Roadmap no longer repeats it); the Roadmap shows logged weights on the calendar.
 
 The tab has five sub-sections (`CheckinSection` in `checkin-tab.tsx`): **Weigh-in** (log, progress vs plan, calorie changes, weigh-in history), **Daily non-negotiables** (habit checklist with streaks & consistency), **Measurements**, **Progress photos** and **Weekly scorecard**. Phones show short labels. Only Weigh-in needs a goal to be set. The step habit (`link: "steps"`) has a box for the day's step count, stored under the reserved `_steps` entry; once a count is logged the habit follows it, ticking at the plan's daily steps (10,000 when the plan uses an activity level). **Steps this week** compares the weekly average with the plan and, when the plan is step-based, says what the gap is worth in kcal and how many extra steps close it — weekly, never by adding calories back each day. The open section lives in the app shell, so links from other tabs land on the right one (Nutrition and the leaderboard open Daily non-negotiables; the roadmap's "Log a weigh-in" opens Weigh-in).
 

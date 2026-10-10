@@ -186,6 +186,8 @@ export function CheckinTab({
   const [calories, setCalories] = React.useState("");
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // Plan vs actual: the last few weeks, or the whole plan from start to goal.
+  const [chartRange, setChartRange] = React.useState<"recent" | "plan">("recent");
   const [message, setMessage] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const existing = weighIns.find((w) => w.date === date) ?? null;
 
@@ -517,13 +519,21 @@ export function CheckinTab({
               ) : null}
 
               <div>
-                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-medium">Plan vs actual</h3>
-                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onNavigate("roadmap")}>
-                    Open the roadmap
-                  </Button>
+                  <SegmentedControl
+                    ariaLabel="Chart range"
+                    size="sm"
+                    value={chartRange}
+                    onValueChange={setChartRange}
+                    options={[
+                      { value: "recent" as const, label: "Recent" },
+                      { value: "plan" as const, label: "Whole plan" },
+                    ]}
+                    className="w-auto"
+                  />
                 </div>
-                <ProgressChart timeline={timeline} weighIns={weighIns} unit={unit} today={today} range="recent" />
+                <ProgressChart timeline={timeline} weighIns={weighIns} unit={unit} today={today} range={chartRange} />
               </div>
             </CardContent>
           </Card>

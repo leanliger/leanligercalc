@@ -103,20 +103,17 @@ export function ProfileSummary({
   const height = unit === "kg" ? `${Math.round(inchesToCm(profile.heightInches))} cm` : `${feet}′${inches}″`;
   const bodyFat = `${round(resolveBodyFat(profile), 1)}% body fat${isEstimatedBodyFat(profile) ? " (est.)" : ""}`;
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <User className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">About you</p>
-          <p className="tabular text-xs text-muted-foreground">
-            {round(fromLb(profile.weight, unit), 1)} {unit} · {height} · {profile.age} · {SEX_LABELS[profile.sex]} · {bodyFat}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" className="shrink-0" onClick={onEdit}>
-          Edit
-        </Button>
-      </CardContent>
-    </Card>
+    <p className="tabular text-xs leading-relaxed text-muted-foreground">
+      <User className="mr-1 inline h-3.5 w-3.5 -translate-y-px text-primary" aria-hidden />
+      Based on {round(fromLb(profile.weight, unit), 1)} {unit} · {height} · age {profile.age} · {SEX_LABELS[profile.sex]} · {bodyFat} ·{" "}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+      >
+        Edit in Timeline
+      </button>
+    </p>
   );
 }
 
