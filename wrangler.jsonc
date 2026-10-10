@@ -50,6 +50,12 @@
     }
   ],
 
+  // Progress photos (worker/photos.ts). Private: no public access, no custom
+  // domain; images are streamed through the Worker after an identity check.
+  // Created with `npx wrangler r2 bucket create leanligercalc-photos`. Remove
+  // this block and the photos card goes back to "Coming soon".
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "leanligercalc-photos" }],
+
   "vars": {
     // Your Whop app id (app_xxxxxxxxxxxxxx) from the Whop developer dashboard.
     // It is public — not a secret. While empty, check-ins save to the user's
