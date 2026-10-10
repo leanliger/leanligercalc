@@ -22,7 +22,6 @@ import { MacroBaselineCard } from "@/components/macro-baseline-card";
 import { WeeklyMacroChart } from "@/components/weekly-macro-chart";
 import {
   GOAL_DEFICITS,
-  GOAL_LABELS,
   HIGH_BOOST_RANGE,
   LOW_CUT_RANGE,
   calculateCarbCycling,
@@ -32,10 +31,11 @@ import {
 import { SCHEDULE_PRESETS } from "@/lib/defaults";
 import type { DayTarget } from "@/lib/day-targets";
 import { formatCalories, formatWeight } from "@/lib/format";
+import { formatShort } from "@/lib/dates";
+import type { PlanWeek } from "@/lib/plan-link";
 import type {
   BiometricProfile,
   CarbCyclingInputs,
-  CarbGoal,
   ProteinBasis,
   WeightUnit,
 } from "@/lib/types";
@@ -50,12 +50,14 @@ interface CarbCyclingCalculatorProps {
   inputs: CarbCyclingInputs;
   onChange: (patch: Partial<CarbCyclingInputs>) => void;
   unit: WeightUnit;
-  /** Maintenance and the daily target are the Timeline's right now (src/lib/plan-link.ts). */
-  following: boolean;
-  /** The Timeline has a plan this page can follow. */
-  canFollow: boolean;
+  /**
+   * The week of the Timeline's plan these numbers come from; null while it has
+   * no plan, when maintenance and the target are typed here (src/lib/plan-link.ts).
+   */
+  planWeek: PlanWeek | null;
   /** What the Timeline's maintenance is made of, e.g. "2,248 base + 254 steps + 156 training". */
   maintenanceNote?: string;
+  onOpenTimeline?: () => void;
   /** The shared biometrics panel, rendered above these inputs. */
   profileSlot: React.ReactNode;
   /**
@@ -108,9 +110,8 @@ function MaintenanceLine({
 }
 
 /**
- * Says which calories the Food log is using today. They usually differ from
- * this page: the Roadmap starts from the Timeline's calories and lowers them
- * each week as weight drops, while these stay fixed.
+ * Says which calories the Food log is using today. While the Timeline has a
+ * plan they're the same as this page (both are this week of it).
  */
 function FoodLogNote({
   target,
@@ -161,11 +162,44 @@ function FoodLogNote({
   );
 }
 
-const GOAL_OPTIONS: readonly { value: CarbGoal; label: string; hint: string }[] = [
-  { value: "fatLoss", label: GOAL_LABELS.fatLoss, hint: "−20%" },
-  { value: "recomp", label: GOAL_LABELS.recomp, hint: "−10%" },
-  { value: "maintenance", label: GOAL_LABELS.maintenance, hint: "±0%" },
-];
+/** A calorie number that comes from the Timeline: shown, not typed. */
+function PlanNumber({ label, value, hint, help }: { label: string; value: number; hint?: string; help?: string }) {
+  return (
+    <Field label={label} hint={hint} help={help}>
+      <div className="tabular flex h-10 items-center justify-between rounded-md border border-border bg-muted/40 px-3 text-sm">
+        <span className="font-semibold">{Math.round(value).toLocaleString()}</span>
+        <span className="text-xs text-muted-foreground">kcal</span>
+      </div>
+    </Field>
+  );
+}
+
+/** Which week of the plan these numbers are, and the way to change them. */
+function PlanWeekLine({ week, unit, onOpenTimeline }: { week: PlanWeek; unit: WeightUnit; onOpenTimeline?: () => void }) {
+  const text =
+    week.when === "before"
+      ? `Your plan starts ${formatShort(week.startDate)}: these are its first week`
+      : week.when === "after"
+        ? `Your plan finished ${formatShort(week.goalDate)}: these are its last week`
+        : `Week ${week.index + 1} of ${week.count} of your plan`;
+  const weight = week.index > 0 ? ` · planned weight ${formatWeight(week.weight, unit)}` : "";
+  return (
+    <p className="tabular text-xs leading-relaxed text-muted-foreground">
+      <CalendarRange className="mr-1 inline h-3.5 w-3.5 -translate-y-px text-primary" aria-hidden />
+      {text}
+      {weight}.{" "}
+      {onOpenTimeline ? (
+        <button
+          type="button"
+          onClick={onOpenTimeline}
+          className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+        >
+          Change on Timeline
+        </button>
+      ) : null}
+    </p>
+  );
+}
 
 const PROTEIN_BASIS_OPTIONS: readonly { value: ProteinBasis; label: string }[] = [
   { value: "bodyWeight", label: "Body weight" },
@@ -233,12 +267,12 @@ export function CarbCyclingCalculator({
   inputs,
   onChange,
   unit,
-  following,
-  canFollow,
+  planWeek,
   maintenanceNote,
   profileSlot,
   foodLogToday,
   onOpenRoadmap,
+  onOpenTimeline,
 }: CarbCyclingCalculatorProps) {
   const result = React.useMemo(
     () => calculateCarbCycling(profile, inputs),
@@ -259,6 +293,8 @@ export function CarbCyclingCalculator({
   );
 
   const activeDays = result.days.filter((day) => day.count > 0);
+  // Only while the Timeline has no plan: a default target until the member types one.
+  const derivedPercent = Math.round(GOAL_DEFICITS[inputs.goal] * 100);
   const derivedTarget = Math.round(inputs.tdee * (1 - GOAL_DEFICITS[inputs.goal]));
 
   return (
@@ -301,78 +337,66 @@ export function CarbCyclingCalculator({
         </CardHeader>
 
         <CardContent className="space-y-5">
-          <NumberField
-            label="Maintenance calories (TDEE)"
-            value={inputs.tdee}
-            onValueChange={(value) =>
-              // Typing a number means using your own from here on; the target then comes from it and the goal.
-              onChange(following ? { tdee: value, dailyCalorieTarget: null, followTimeline: false } : { tdee: value })
-            }
-            suffix="kcal"
-            min={800}
-            step={25}
-            decimals={0}
-            hint={
-              following
-                ? `From your Timeline: ${maintenanceNote ?? "its maintenance"}. Type a number to use your own.`
-                : canFollow
-                  ? undefined
-                  : "Set a goal on the Timeline and this can follow it."
-            }
-          />
-
-          {/* While following, the Timeline sets the deficit, so the goal percentage doesn't apply. */}
-          {following ? null : (
-            <Field label="Goal">
-              <SegmentedControl
-                ariaLabel="Goal"
-                value={inputs.goal}
-                onValueChange={(value) => onChange({ goal: value })}
-                options={GOAL_OPTIONS}
-                size="sm"
+          {planWeek ? (
+            // The Timeline sets these: this week of its plan, the same as the Roadmap and Food log.
+            <>
+              <PlanWeekLine week={planWeek} unit={unit} onOpenTimeline={onOpenTimeline} />
+              <div className="grid grid-cols-2 gap-3">
+                <PlanNumber
+                  label="Maintenance (TDEE)"
+                  value={inputs.tdee}
+                  hint={
+                    planWeek.index === 0
+                      ? maintenanceNote
+                      : "Lower than at the start: it falls as your weight comes down."
+                  }
+                />
+                <PlanNumber
+                  label="Daily calorie target"
+                  value={inputs.dailyCalorieTarget ?? derivedTarget}
+                  hint={`Reaches your goal by ${formatShort(planWeek.goalDate)}${
+                    planWeek.adjustment
+                      ? `, with your check-in change of ${planWeek.adjustment > 0 ? "+" : "−"}${Math.abs(planWeek.adjustment)} kcal`
+                      : ""
+                  }.`}
+                  help="This is the average day. High and low days move around it, and the week still averages here exactly. To change it, change your rate or goal on the Timeline."
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <NumberField
+                label="Maintenance calories (TDEE)"
+                value={inputs.tdee}
+                onValueChange={(value) => onChange({ tdee: value })}
+                suffix="kcal"
+                min={800}
+                step={25}
+                decimals={0}
+                hint="Set a goal on the Timeline and these follow it."
               />
-            </Field>
+              <NumberField
+                label="Daily calorie target"
+                value={inputs.dailyCalorieTarget ?? derivedTarget}
+                onValueChange={(value) => onChange({ dailyCalorieTarget: value > 0 ? value : null })}
+                suffix="kcal"
+                min={800}
+                step={25}
+                decimals={0}
+                hint={
+                  inputs.dailyCalorieTarget === null
+                    ? `${derivedPercent}% under maintenance until you type your own.`
+                    : "Your own number."
+                }
+                help="This is the average day. High and low days move around it, and the week still averages here exactly."
+              />
+              {inputs.dailyCalorieTarget !== null && (
+                <Button variant="ghost" size="sm" className="w-full" onClick={() => onChange({ dailyCalorieTarget: null })}>
+                  Go back to {derivedPercent}% under maintenance
+                </Button>
+              )}
+            </>
           )}
-
-          <NumberField
-            label="Daily calorie target"
-            value={inputs.dailyCalorieTarget ?? derivedTarget}
-            onValueChange={(value) =>
-              onChange(
-                following
-                  ? { dailyCalorieTarget: value > 0 ? value : null, tdee: inputs.tdee, followTimeline: false }
-                  : { dailyCalorieTarget: value > 0 ? value : null },
-              )
-            }
-            suffix="kcal"
-            min={800}
-            step={25}
-            decimals={0}
-            hint={
-              following
-                ? "From your Timeline: the intake that reaches your goal by your date."
-                : inputs.dailyCalorieTarget === null
-                  ? `Derived from TDEE and goal (${derivedTarget} kcal).`
-                  : "Manual override — clear to derive from TDEE and goal."
-            }
-            help="This is the average day. High and low days move around it, and the week still averages here exactly."
-          />
-
-          {!following && inputs.dailyCalorieTarget !== null && (
-            <Button variant="ghost" size="sm" className="w-full" onClick={() => onChange({ dailyCalorieTarget: null })}>
-              Reset to goal-derived target
-            </Button>
-          )}
-          {!following && canFollow ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => onChange({ followTimeline: true, dailyCalorieTarget: null })}
-            >
-              Use Timeline&apos;s numbers
-            </Button>
-          ) : null}
 
           {/* --------------------------- Protein -------------------------- */}
           <div className="space-y-3 border-t border-border pt-4">
@@ -582,13 +606,10 @@ export function CarbCyclingCalculator({
           maintenanceCalories={inputs.tdee}
           proteinPerLb={inputs.proteinPerLb}
           fatPercent={inputs.fatFloorPercent}
-          carbDeficitGrams={inputs.carbDeficitGrams}
           unit={unit}
           onProteinChange={(v) => onChange({ proteinPerLb: v })}
           onFatPercentChange={(v) => onChange({ fatFloorPercent: v })}
-          onDeficitChange={(v) => onChange({ carbDeficitGrams: v })}
-          onApplyToPlan={(kcal) => onChange({ dailyCalorieTarget: kcal, tdee: inputs.tdee, followTimeline: false })}
-          following={following}
+          dailyTarget={result.feasible ? result.weekly.averageDailyCalories : undefined}
         />
 
         <WarningList warnings={result.warnings} />

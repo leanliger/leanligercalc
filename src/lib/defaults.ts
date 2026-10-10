@@ -35,7 +35,7 @@ export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
 };
 
 export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
-  // Only used once Carb cycle stops following the Timeline (followTimeline).
+  // Only used while the Timeline has no plan (src/lib/plan-link.ts).
   tdee: 2900,
   goal: "fatLoss",
   dailyCalorieTarget: null,
@@ -51,11 +51,8 @@ export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {
   lowDays: 2,
   highCarbBoost: 0.2,
   lowCarbCut: 0.25,
-  // 100g of carbs ≈ a 400 kcal/day deficit — the middle of the 50–125g range.
-  carbDeficitGrams: 100,
   // Null = place high/medium/low days automatically from the counts above.
   weekdayPattern: null,
-  followTimeline: true,
   // Same calories every day; carb cycling is the opt-in.
   cycleCarbs: false,
 };

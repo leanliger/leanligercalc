@@ -1,31 +1,81 @@
 /**
- * Carb cycle follows the Timeline.
+ * The Timeline sets the calories; Macros only splits them.
  *
- * While `followTimeline` is on (the default), Carb cycle's maintenance and
- * daily calorie target are the Timeline's: its estimated (or known)
- * maintenance and the intake that reaches the goal by the date, both for the
- * first week. They stay in step as the member edits their details or goal.
- * Typing either number on Carb cycle switches following off and keeps the
- * member's own; "Use Timeline's numbers" switches it back on.
+ * Whenever the Timeline has a plan, Macros' maintenance and daily calorie
+ * target are this week's numbers from it: the same week the Roadmap and the
+ * Food log are on, with its projected weight and body fat (so protein and the
+ * fat floor match too) and any check-in change. Before the plan starts that's
+ * its first week; after it ends, its last. They can't be typed on Macros; the
+ * rate, goal and maintenance are changed on the Timeline.
+ *
+ * Only while the Timeline has no plan does Macros use the member's own
+ * maintenance and target (CarbCyclingInputs.tdee / dailyCalorieTarget).
  *
  * Not carb cycling (cycleCarbs off, the default) is a plan of seven identical
  * days: every day is the daily target, with no high or low days.
  *
- * Everything that reads the carb plan (Carb cycle, Roadmap, Food log targets,
+ * Everything that reads the carb plan (Macros, Roadmap, Food log targets,
  * Today) is given the effective inputs from effectiveCarbInputs(), so they
- * always agree. The member's own numbers stay saved underneath.
+ * always agree.
  */
 
 import { maintenanceBreakdown } from "./activity";
+import { addDays, daysBetween } from "./dates";
 import { calculateFatLossTimeline } from "./fat-loss";
+import { weekCalorieTarget } from "./roadmap";
+import type { CalorieAdjustment } from "./tracking";
 import type { BiometricProfile, CarbCyclingInputs, FatLossInputs } from "./types";
 
-/** The Timeline's first-week maintenance and daily target, or null while it has no plan. */
-export function timelineCalories(profile: BiometricProfile, fatLoss: FatLossInputs): { tdee: number; dailyCalories: number } | null {
+/** The week of the Timeline that Macros shows today. */
+export interface PlanWeek {
+  /** 0-based week of the plan. */
+  index: number;
+  /** Weeks of dieting in the plan. */
+  count: number;
+  /** Where today falls against the plan's dates. */
+  when: "before" | "during" | "after";
+  startDate: string;
+  goalDate: string;
+  /** Maintenance that week, kcal/day. */
+  tdee: number;
+  /** Daily calorie target that week, including any check-in change. */
+  dailyCalories: number;
+  /** Check-in change in force that week, kcal/day (0 when none). */
+  adjustment: number;
+  /** Projected weight (lb) and body fat (%) that week. */
+  weight: number;
+  bodyFat: number;
+}
+
+/** This week of the Timeline's plan (by `today`), or null while it has no plan. */
+export function currentPlanWeek(
+  profile: BiometricProfile,
+  fatLoss: FatLossInputs,
+  adjustments: CalorieAdjustment[],
+  today: string,
+): PlanWeek | null {
   const t = calculateFatLossTimeline(profile, fatLoss);
-  const first = t.projection[0];
-  if (!t.feasible || !first || !(first.tdee > 0) || !(first.targetCalories > 0)) return null;
-  return { tdee: Math.round(first.tdee), dailyCalories: Math.round(first.targetCalories) };
+  const count = t.weeksRequired;
+  if (!t.feasible || count <= 0) return null;
+  const startDate = t.requiredStartDate;
+  const offset = today ? daysBetween(startDate, today) : 0;
+  const when = offset < 0 ? "before" : offset >= count * 7 ? "after" : "during";
+  const index = Math.min(Math.max(Math.floor(offset / 7), 0), count - 1);
+  const row = t.projection[index];
+  if (!row || !(row.tdee > 0) || !(row.targetCalories > 0)) return null;
+  const { target, adjustment } = weekCalorieTarget(row, addDays(startDate, index * 7), adjustments);
+  return {
+    index,
+    count,
+    when,
+    startDate,
+    goalDate: addDays(startDate, count * 7),
+    tdee: row.tdee,
+    dailyCalories: Math.round(target),
+    adjustment,
+    weight: row.weight,
+    bodyFat: row.bodyFat,
+  };
 }
 
 /** Where the Timeline's maintenance comes from, in words: "2,248 base + 254 steps + 156 training". */
@@ -37,13 +87,15 @@ export function maintenanceSource(profile: BiometricProfile, fatLoss: FatLossInp
   return `${n(m.base)} base + ${n(m.steps)} steps + ${n(m.training)} training`;
 }
 
-/** The carb plan as every screen should use it: following the Timeline when that's on and it has a plan. */
-export function effectiveCarbInputs(profile: BiometricProfile, fatLoss: FatLossInputs, carbs: CarbCyclingInputs): CarbCyclingInputs {
+/** The body Macros plans for: that week's projected weight and body fat, as the Roadmap uses. */
+export function planProfile(profile: BiometricProfile, week: PlanWeek | null): BiometricProfile {
+  return week ? { ...profile, weight: week.weight, bodyFatOverride: week.bodyFat } : profile;
+}
+
+/** The carb plan as every screen should use it: this week of the Timeline when it has a plan. */
+export function effectiveCarbInputs(carbs: CarbCyclingInputs, week: PlanWeek | null): CarbCyclingInputs {
   let out = carbs;
-  if (carbs.followTimeline) {
-    const t = timelineCalories(profile, fatLoss);
-    if (t) out = { ...out, tdee: t.tdee, dailyCalorieTarget: t.dailyCalories };
-  }
+  if (week) out = { ...out, tdee: week.tdee, dailyCalorieTarget: week.dailyCalories };
   // Same every day: seven "medium" days, each exactly the daily target.
   if (!carbs.cycleCarbs) out = { ...out, highDays: 0, mediumDays: 7, lowDays: 0, weekdayPattern: null };
   return out;

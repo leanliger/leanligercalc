@@ -1,7 +1,8 @@
 /**
  * A day's calorie and macro targets: the roadmap's numbers for that date, or,
- * outside the roadmap's dates, the Carb Cycling weekly plan for that weekday,
- * so there's always something to aim at. Used by Nutrition and Today.
+ * outside the roadmap's dates, its nearest week (the first before it starts,
+ * the last after it ends) for that weekday, which is what Macros shows then.
+ * Without a roadmap, the Macros weekly plan. Used by Nutrition and Today.
  */
 
 import { calculateCarbCycling } from "./carb-cycling";
@@ -30,14 +31,20 @@ export function dayTargetFinder(
   adjustments: readonly CalorieAdjustment[],
 ): (date: string) => DayTarget | null {
   const timeline = calculateFatLossTimeline(profile, fatLoss);
-  const roadmapDays = new Map(buildRoadmap(profile, carbs, timeline, [...adjustments]).days.map((d) => [d.date, d]));
+  const roadmap = buildRoadmap(profile, carbs, timeline, [...adjustments]);
+  const roadmapDays = new Map(roadmap.days.map((d) => [d.date, d]));
+  const firstWeek = roadmap.feasible ? roadmap.weeks[0] : undefined;
+  const lastWeek = roadmap.feasible ? roadmap.weeks[roadmap.weeks.length - 1] : undefined;
   const carbPlan = calculateCarbCycling(profile, carbs);
   const pattern = resolveWeekdayPattern(carbs);
   return (date) => {
     const day = roadmapDays.get(date);
     if (day) return { type: day.type, calories: day.calories, protein: day.protein, carbs: day.carbs, fat: day.fat, source: "roadmap", steady: day.steady };
-    if (!carbPlan.feasible) return null;
     const type = pattern[weekdayIndex(date)] ?? "medium";
+    const nearest = date < roadmap.startDate ? firstWeek : lastWeek;
+    const near = nearest?.plans[type];
+    if (near && near.calories > 0) return { type, ...near, source: "carbs", steady: !carbs.cycleCarbs };
+    if (!carbPlan.feasible) return null;
     const plan = carbPlan.days.find((p) => p.type === type && p.calories > 0);
     return plan ? { type, calories: plan.calories, protein: plan.protein, carbs: plan.carbs, fat: plan.fat, source: "carbs", steady: !carbs.cycleCarbs } : null;
   };

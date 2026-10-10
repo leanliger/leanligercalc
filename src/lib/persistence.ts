@@ -191,10 +191,7 @@ export function sanitizeCarbs(
     lowDays: num(raw.lowDays, d.lowDays, 0, 7),
     highCarbBoost: num(raw.highCarbBoost, d.highCarbBoost, 0, 0.6),
     lowCarbCut: num(raw.lowCarbCut, d.lowCarbCut, 0, 0.9),
-    carbDeficitGrams: num(raw.carbDeficitGrams, d.carbDeficitGrams, 0, 300),
     weekdayPattern: patternFromString(raw.weekdayPattern),
-    // Missing (older plans) means on. From the URL it arrives as "true"/"false".
-    followTimeline: !(raw.followTimeline === false || raw.followTimeline === "false" || raw.followTimeline === "0"),
     // Missing means the default: the same every day.
     cycleCarbs: raw.cycleCarbs === true || raw.cycleCarbs === "true" || raw.cycleCarbs === "1",
   };
@@ -297,9 +294,7 @@ const URL_KEYS = {
   ld: "lowDays",
   hcb: "highCarbBoost",
   lcc: "lowCarbCut",
-  cdg: "carbDeficitGrams",
   wp: "weekdayPattern",
-  ft: "followTimeline",
   cc: "cycleCarbs",
 } as const;
 
@@ -310,7 +305,7 @@ const FAT_LOSS_KEYS: UrlKey[] = [
   "gt", "tw", "tbf", "r", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
 ];
 const CARB_KEYS: UrlKey[] = [
-  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "cdg", "wp", "ft", "cc",
+  "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "wp", "cc",
 ];
 
 export function encodeStateToQuery(state: AppState): string {

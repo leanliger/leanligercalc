@@ -187,8 +187,8 @@ export interface CarbCyclingInputs {
   goal: CarbGoal;
   /**
    * Daily calorie target. When null it is derived from `tdee` and the goal's
-   * default deficit; when set (e.g. handed over from the timeline tool) it
-   * overrides the derived value.
+   * default deficit. `tdee` and this are only the member's own while the
+   * Timeline has no plan; otherwise Macros uses the Timeline's (src/lib/plan-link.ts).
    */
   dailyCalorieTarget: number | null;
   proteinBasis: ProteinBasis;
@@ -209,23 +209,11 @@ export interface CarbCyclingInputs {
   /** Carb reduction on low days as a fraction of baseline carbs, e.g. 0.25. */
   lowCarbCut: number;
   /**
-   * Grams of carbohydrate removed per day to create the deficit. 0 is
-   * maintenance. The conventional working range is 50–125g, which is a
-   * 200–500 kcal/day deficit.
-   */
-  carbDeficitGrams: number;
-  /**
    * Which day type falls on each weekday, Monday first (7 entries). Null means
    * "spread the counts above automatically". A pattern whose counts no longer
    * match highDays/mediumDays/lowDays is treated as stale and ignored.
    */
   weekdayPattern: DayType[] | null;
-  /**
-   * Take maintenance and the daily target from the Timeline (src/lib/plan-link.ts)
-   * instead of `tdee` and `dailyCalorieTarget` above. On by default; typing
-   * either number on Carb cycle turns it off.
-   */
-  followTimeline: boolean;
   /**
    * Eating pattern. false (the default) = the same calories and macros every
    * day; true = carb cycling with the high / medium / low days above.

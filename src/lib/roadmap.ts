@@ -26,6 +26,7 @@ import type {
   RoadmapResult,
   RoadmapWeek,
   TimelineWarning,
+  WeekProjection,
 } from "./types";
 import { round } from "./units";
 import { intakeFloor } from "./fat-loss";
@@ -38,6 +39,20 @@ import {
 } from "./weekday-pattern";
 
 const EMPTY_PLAN: MacroTargets = { protein: 0, carbs: 0, fat: 0, calories: 0 };
+
+/**
+ * A week's daily calorie target: the Timeline's, plus any check-in change in
+ * force from that week, never below the intake floor. Macros shows the same
+ * number for the current week (src/lib/plan-link.ts).
+ */
+export function weekCalorieTarget(
+  row: WeekProjection,
+  weekStart: string,
+  adjustments: CalorieAdjustment[],
+): { target: number; adjustment: number } {
+  const adjustment = adjustmentOn(adjustments, weekStart);
+  return { target: Math.max(intakeFloor(row.weight), row.targetCalories + adjustment), adjustment };
+}
 
 export function buildRoadmap(
   profile: BiometricProfile,
@@ -94,8 +109,7 @@ export function buildRoadmap(
     if (!row) break;
     const weekStart = addDays(startDate, w * 7);
     // Check-in adjustments shift the whole week's target; the floor still holds.
-    const adjustment = adjustmentOn(adjustments, weekStart);
-    const weekTarget = Math.max(intakeFloor(row.weight), row.targetCalories + adjustment);
+    const { target: weekTarget, adjustment } = weekCalorieTarget(row, weekStart, adjustments);
 
     // Feed the carb-cycling engine this week's numbers: the timeline's calorie
     // target and maintenance, and the projected weight and body fat so protein

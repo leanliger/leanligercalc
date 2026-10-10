@@ -66,7 +66,7 @@ import { answerAssignment, loadAssignments, loadProgramEdits, markProgramEditApp
 import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
 import { applyProgramEdit } from "@/lib/program-edits";
 import { dayTargetFinder } from "@/lib/day-targets";
-import { effectiveCarbInputs, maintenanceSource, timelineCalories } from "@/lib/plan-link";
+import { currentPlanWeek, effectiveCarbInputs, maintenanceSource, planProfile } from "@/lib/plan-link";
 import { sanitizeHabitDefs } from "@/lib/habits";
 import {
   dropEntry,
@@ -610,13 +610,14 @@ export function AppShell() {
     [navigateFor, setTab],
   );
 
-  // The carb plan as every screen uses it: Carb cycle's maintenance and daily
-  // target follow the Timeline unless the member set their own (src/lib/plan-link.ts).
-  const timelineHasPlan = React.useMemo(() => timelineCalories(state.profile, state.fatLoss) !== null, [state.profile, state.fatLoss]);
-  const carbPlan = React.useMemo(
-    () => effectiveCarbInputs(state.profile, state.fatLoss, state.carbs),
-    [state.profile, state.fatLoss, state.carbs],
+  // The carb plan as every screen uses it: while the Timeline has a plan,
+  // Macros' maintenance and daily target are this week of it (src/lib/plan-link.ts).
+  const planWeek = React.useMemo(
+    () => currentPlanWeek(state.profile, state.fatLoss, state.tracking.adjustments, today),
+    [state.profile, state.fatLoss, state.tracking.adjustments, today],
   );
+  const carbPlan = React.useMemo(() => effectiveCarbInputs(state.carbs, planWeek), [state.carbs, planWeek]);
+  const macrosProfile = React.useMemo(() => planProfile(state.profile, planWeek), [state.profile, planWeek]);
 
   // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
   const foodLogToday = React.useMemo(
@@ -1498,13 +1499,13 @@ export function AppShell() {
                   />
                 ) : state.activeTab === "carbs" ? (
                   <CarbCyclingCalculator
-                    profile={state.profile}
+                    profile={macrosProfile}
                     inputs={carbPlan}
                     onChange={updateCarbs}
                     unit={state.unit}
-                    following={state.carbs.followTimeline && timelineHasPlan}
+                    planWeek={planWeek}
                     maintenanceNote={maintenanceSource(state.profile, state.fatLoss)}
-                    canFollow={timelineHasPlan}
+                    onOpenTimeline={() => setTab("timeline")}
                     // "About you" is shared with the Timeline and edited there.
                     profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
                     foodLogToday={foodLogToday}

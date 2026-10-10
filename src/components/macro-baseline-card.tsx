@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, Beef, Calculator, Droplet, TrendingDown, Wheat } from "lucide-react";
+import { Beef, Calculator, Droplet, Wheat } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,13 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { CopyButton } from "@/components/copy-button";
 import { WarningList } from "@/components/warnings";
 import {
-  CARB_DEFICIT_RANGE,
   FAT_PERCENT_RANGE,
   PROTEIN_RANGE,
   calculateMacroBaseline,
@@ -31,19 +28,11 @@ interface MacroBaselineCardProps {
   maintenanceCalories: number;
   proteinPerLb: number;
   fatPercent: number;
-  carbDeficitGrams: number;
   unit: WeightUnit;
   onProteinChange: (value: number) => void;
   onFatPercentChange: (value: number) => void;
-  onDeficitChange: (value: number) => void;
-  /** Pushes the computed target calories into the weekly cycling plan. */
-  onApplyToPlan: (targetCalories: number) => void;
-  /**
-   * Carb cycle is following the Timeline, so this card is an alternative way
-   * to set the target, not the target in use. Labelled that way so the page
-   * doesn't show two different "daily targets".
-   */
-  following?: boolean;
+  /** The plan's daily target, related to maintenance under the split. */
+  dailyTarget?: number;
 }
 
 const MACROS = [
@@ -103,9 +92,9 @@ function Step({
   );
 }
 
-function SplitRow({ split, dimmed }: { split: MacroSplit; dimmed?: boolean }) {
+function SplitRow({ split }: { split: MacroSplit }) {
   return (
-    <div className={cn("grid grid-cols-3 gap-2", dimmed && "opacity-60")}>
+    <div className="grid grid-cols-3 gap-2">
       {MACROS.map((macro) => {
         const line = split[macro.key];
         return (
@@ -135,23 +124,21 @@ export function MacroBaselineCard({
   maintenanceCalories,
   proteinPerLb,
   fatPercent,
-  carbDeficitGrams,
   unit,
   onProteinChange,
   onFatPercentChange,
-  onDeficitChange,
-  onApplyToPlan,
-  following = false,
+  dailyTarget,
 }: MacroBaselineCardProps) {
+  // Maintenance only: the deficit is the Timeline's, set by its weekly rate.
   const result = React.useMemo(
     () =>
       calculateMacroBaseline(profile, {
         dailyCalories: maintenanceCalories,
         proteinPerLb,
         fatPercent,
-        carbDeficitGrams,
+        carbDeficitGrams: 0,
       }),
-    [profile, maintenanceCalories, proteinPerLb, fatPercent, carbDeficitGrams],
+    [profile, maintenanceCalories, proteinPerLb, fatPercent],
   );
 
   const displayWeight = round(fromLb(profile.weight, unit), 1);
@@ -160,8 +147,8 @@ export function MacroBaselineCard({
     [result, unit, profile.weight],
   );
 
-  const { maintenance, target } = result;
-  const inDeficit = carbDeficitGrams > 0;
+  const { maintenance } = result;
+  const under = dailyTarget ? Math.round(maintenance.totalCalories - dailyTarget) : 0;
 
   return (
     <Card>
@@ -169,12 +156,10 @@ export function MacroBaselineCard({
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2">
             <Calculator className="h-4 w-4 text-primary" />
-            {following ? "Or: set your deficit by cutting carbs" : "Daily macro targets"}
+            Your macros at maintenance
           </CardTitle>
           <CardDescription>
-            {following
-              ? "An alternative to the Timeline's target. Using it switches Macros off following the Timeline."
-              : "Protein from body weight, fat as a share of calories, carbs from what remains."}
+            Protein from body weight, fat as a share of calories, carbs from what remains.
           </CardDescription>
         </div>
         <CopyButton getText={() => summary} label="Copy" />
@@ -247,94 +232,15 @@ export function MacroBaselineCard({
           title="Carbs — everything left over"
           working={`${maintenance.totalCalories.toLocaleString()} − ${maintenance.protein.calories.toLocaleString()} − ${maintenance.fat.calories.toLocaleString()} = ${maintenance.carbs.calories.toLocaleString()} kcal ÷ 4 = ${maintenance.carbs.grams}g`}
         >
-          <SplitRow split={maintenance} dimmed={inDeficit} />
+          <SplitRow split={maintenance} />
           <p className="text-[11px] text-muted-foreground">
             At maintenance — {maintenance.totalCalories.toLocaleString()} kcal per day.
+            {dailyTarget && under > 10
+              ? ` Your daily target is ${dailyTarget.toLocaleString()} kcal, ${under.toLocaleString()} under it: see Daily targets.`
+              : ""}
           </p>
         </Step>
 
-        {/* ------------------------- Step 4: deficit ------------------------ */}
-        <Step
-          number={4}
-          title="Deficit — cut carbs only"
-          working={
-            inDeficit
-              ? `−${Math.round(carbDeficitGrams)}g × 4 = −${result.dailyDeficit.toLocaleString()} kcal/day`
-              : "maintenance — no deficit"
-          }
-        >
-          <div className="space-y-1.5">
-            <Slider
-              value={[carbDeficitGrams]}
-              onValueChange={([v]) => onDeficitChange(Math.round(v ?? 0))}
-              min={0}
-              max={175}
-              step={5}
-              aria-label="Grams of carbohydrate removed per day"
-            />
-            <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>0g · maintain</span>
-              <span className="font-medium text-macro-carb">
-                −{Math.round(carbDeficitGrams)}g carbs
-              </span>
-              <span>175g</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Recommended {CARB_DEFICIT_RANGE.min}–{CARB_DEFICIT_RANGE.max}g, which is
-              a {CARB_DEFICIT_RANGE.min * 4}–{CARB_DEFICIT_RANGE.max * 4} kcal daily
-              deficit. Protein and fat stay put — protein protects lean mass, fat
-              protects hormones, so carbs are the only macro with room to give.
-            </p>
-          </div>
-        </Step>
-
-        {/* ---------------------------- Result ----------------------------- */}
-        {inDeficit ? (
-          <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ArrowDown className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">{following ? "Target by cutting carbs" : "Your daily target"}</span>
-              </div>
-              <Badge variant="default" className="tabular">
-                −{result.dailyDeficit.toLocaleString()} kcal/day
-              </Badge>
-            </div>
-
-            <SplitRow split={target} />
-
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <span className="tabular text-2xl font-semibold text-primary">
-                {target.totalCalories.toLocaleString()}
-                <span className="ml-1 text-sm font-normal text-muted-foreground">
-                  kcal/day
-                </span>
-              </span>
-              <span className="tabular flex items-center gap-1.5 text-xs text-muted-foreground">
-                <TrendingDown className="h-3.5 w-3.5" />
-                {result.weeklyDeficit.toLocaleString()} kcal/week ≈{" "}
-                {result.projectedWeeklyLoss} {unit}/week
-              </span>
-            </div>
-
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              disabled={!result.feasible}
-              onClick={() => onApplyToPlan(target.totalCalories)}
-            >
-              {following
-                ? `Use ${target.totalCalories.toLocaleString()} kcal instead`
-                : `Use ${target.totalCalories.toLocaleString()} kcal for the weekly plan`}
-            </Button>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-            Set a carb deficit above to see your fat-loss targets. At 0g you are eating
-            at maintenance.
-          </div>
-        )}
       </CardContent>
     </Card>
   );

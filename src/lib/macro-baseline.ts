@@ -192,15 +192,16 @@ export function formatMacroBaselineSummary(
   bodyWeight: number,
 ): string {
   const { target, maintenance } = result;
+  const split = result.dailyDeficit > 0 ? target : maintenance;
   const lines = [
-    "DAILY MACRO TARGETS",
+    result.dailyDeficit > 0 ? "DAILY MACRO TARGETS" : "MACROS AT MAINTENANCE",
     `Body weight: ${round(bodyWeight, 1)} ${unitLabel}`,
     `Maintenance: ${maintenance.totalCalories} kcal`,
     "",
-    `TARGET: ${target.totalCalories} kcal/day`,
-    `  Protein  ${target.protein.grams}g   (${target.protein.calories} kcal)`,
-    `  Fat      ${target.fat.grams}g   (${target.fat.calories} kcal)`,
-    `  Carbs    ${target.carbs.grams}g   (${target.carbs.calories} kcal)`,
+    `${result.dailyDeficit > 0 ? "TARGET" : "MAINTENANCE"}: ${split.totalCalories} kcal/day`,
+    `  Protein  ${split.protein.grams}g   (${split.protein.calories} kcal)`,
+    `  Fat      ${split.fat.grams}g   (${split.fat.calories} kcal)`,
+    `  Carbs    ${split.carbs.grams}g   (${split.carbs.calories} kcal)`,
   ];
 
   if (result.dailyDeficit > 0) {
