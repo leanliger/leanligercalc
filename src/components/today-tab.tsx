@@ -289,7 +289,7 @@ export function TodayTab(props: TodayTabProps) {
           <CardContent className="flex flex-wrap items-center gap-3 p-4 sm:p-6">
             <Sparkles className="h-5 w-5 shrink-0 text-primary" />
             <p className="min-w-0 flex-1 text-sm">
-              Welcome! Set your goal on the Fat Loss Timeline first, then come back here each morning — everything you need
+              Welcome! Set your goal in Plan first, then come back here each morning — everything you need
               to do today is on this page.
             </p>
             <Button size="sm" onClick={() => onOpen("timeline")}>

@@ -100,7 +100,7 @@ const STATUS_STYLE: Record<ProgressAnalysis["status"], { badge: BadgeVariant; la
   ahead: { badge: "warning", label: "Ahead of plan" },
 };
 
-/** The Check-in tab's sub-sections. */
+/** The Progress tab's sub-sections (its id is still "checkin", so old links work). */
 export type CheckinSection = "weigh-in" | "habits" | "measurements" | "photos" | "scorecard";
 
 const SECTIONS: { value: CheckinSection; label: string; short: string }[] = [
@@ -236,7 +236,7 @@ export function CheckinTab({
 
   const nav = (
     <SegmentedControl
-      ariaLabel="Check-in section"
+      ariaLabel="Progress section"
       size="sm"
       value={section}
       onValueChange={onSectionChange}

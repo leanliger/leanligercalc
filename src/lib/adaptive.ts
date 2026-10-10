@@ -222,7 +222,7 @@ export function analyzeProgress(
       ...EMPTY,
       status: "no-plan",
       headline: "Set a goal first",
-      detail: "Check-ins compare against your Fat Loss Timeline. Set a goal below your current weight there.",
+      detail: "Check-ins compare against your timeline in Plan. Set a goal below your current weight there.",
     };
   }
 

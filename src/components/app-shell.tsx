@@ -8,9 +8,8 @@ import {
   House,
   Link2,
   RotateCcw,
-  Salad,
-  Scale,
-  TrendingDown,
+  Target,
+  TrendingUp,
   Trophy,
   Utensils,
 } from "lucide-react";
@@ -19,6 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SegmentedControl } from "@/components/ui/segmented";
+import { cn } from "@/lib/utils";
 import { SettingsMenu } from "@/components/settings-menu";
 import { CopyButton } from "@/components/copy-button";
 import { FatLossCalculator } from "@/components/fat-loss-calculator";
@@ -147,6 +147,39 @@ const byWorkoutTime = (a: Workout, b: Workout) => (a.date === b.date ? a.started
 
 /** How long workout edits wait before saving, so typing a weight is one write. */
 const WORKOUT_SAVE_DEBOUNCE_MS = 600;
+
+/**
+ * Plan's sections. Each is still a destination of its own ("timeline", "carbs",
+ * "roadmap"), so links and saved tabs from before Plan existed still land in
+ * the right place; the tab bar shows them as one tab.
+ */
+const PLAN_SECTIONS = [
+  { value: "timeline", label: "Timeline" },
+  { value: "carbs", label: "Carb cycle" },
+  { value: "roadmap", label: "Roadmap" },
+] as const;
+type PlanSection = (typeof PLAN_SECTIONS)[number]["value"];
+const isPlanTab = (t: AppTab): t is PlanSection => t === "timeline" || t === "carbs" || t === "roadmap";
+
+/** True while a text field has focus, so the phone tab bar can step aside for the keyboard. */
+function useTyping(): boolean {
+  const [typing, setTyping] = React.useState(false);
+  React.useEffect(() => {
+    const NOT_TEXT = ["checkbox", "radio", "range", "button", "submit", "reset", "file", "color", "image"];
+    const isText = (el: EventTarget | null) =>
+      el instanceof HTMLElement &&
+      (el.isContentEditable || el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !NOT_TEXT.includes(el.type)));
+    const onIn = (e: FocusEvent) => setTyping(isText(e.target));
+    const onOut = (e: FocusEvent) => setTyping(isText(e.relatedTarget));
+    document.addEventListener("focusin", onIn);
+    document.addEventListener("focusout", onOut);
+    return () => {
+      document.removeEventListener("focusin", onIn);
+      document.removeEventListener("focusout", onOut);
+    };
+  }, []);
+  return typing;
+}
 
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -537,6 +570,13 @@ export function AppShell() {
   const setTab = React.useCallback((tab: AppTab) => {
     setState((prev) => ({ ...prev, activeTab: tab }));
   }, []);
+
+  // Coming back to Plan opens the section you were last on.
+  const lastPlanSection = React.useRef<PlanSection>("timeline");
+  React.useEffect(() => {
+    if (isPlanTab(state.activeTab)) lastPlanSection.current = state.activeTab;
+  }, [state.activeTab]);
+  const typing = useTyping();
 
   // Which Check-in sub-section is open. Links into Check-in from other tabs
   // open the section they're about (habits from Nutrition and the leaderboard,
@@ -1182,7 +1222,13 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="min-h-screen bg-background">
+      <div
+        className={cn(
+          "min-h-screen bg-background",
+          // Height of the phone tab bar, so the rest timer sits above it. Zero while it's hidden for typing.
+          !typing && "max-sm:[--bottom-nav:calc(4rem_+_env(safe-area-inset-bottom))]",
+        )}
+      >
         <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <div className="container flex h-16 items-center gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -1254,7 +1300,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="container py-6">
+        <main className="container py-6 max-sm:pb-[calc(5.5rem_+_env(safe-area-inset-bottom))]">
           {/* The calculators render client-side only. This is a static
               export, so anything rendered at build time is frozen at the build
               date — and nearly everything here depends on "today". Rendering it
@@ -1269,42 +1315,47 @@ export function AppShell() {
               </div>
             </div>
           ) : (
-            // The roadmap is a sub-section of Carb Cycling; "roadmap" stays a
-            // destination of its own so links to it (and saved tabs) still work.
-            <Tabs value={state.activeTab === "roadmap" ? "carbs" : state.activeTab} onValueChange={(value) => setTab(value as AppTab)}>
+            <Tabs
+              // On phones the tab bar is at the bottom, so pages start closer to the header.
+              className="max-sm:[&>[role=tabpanel]]:mt-2"
+              value={isPlanTab(state.activeTab) ? "plan" : state.activeTab}
+              onValueChange={(value) => setTab(value === "plan" ? lastPlanSection.current : (value as AppTab))}
+            >
               <div className="flex flex-wrap items-center gap-3">
-                <TabsList className="relative scrollbar-thin max-w-full gap-0.5 overflow-x-auto sm:gap-1 [&>button]:px-1.5 [&>button]:text-[13px] sm:[&>button]:px-4 sm:[&>button]:text-sm [&_svg]:hidden sm:[&_svg]:block">
-                  {/* Icon-only on phones (like Training and the leaderboard) so every tab fits. */}
-                  <TabsTrigger value="today" className="[&_svg]:!block">
+                {/* Phones: a bar fixed to the bottom of the screen, icon over label, hidden while
+                    typing so it doesn't ride up on the keyboard. Wider screens: a row at the top. */}
+                <TabsList
+                  className={cn(
+                    "scrollbar-thin sm:relative sm:max-w-full sm:gap-1 sm:overflow-x-auto sm:[&>button]:px-3 md:[&>button]:px-4",
+                    "max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-40 max-sm:grid max-sm:grid-cols-6 max-sm:gap-0 max-sm:rounded-none max-sm:border-x-0 max-sm:border-b-0 max-sm:bg-background/95 max-sm:px-1 max-sm:pb-[max(0.25rem,env(safe-area-inset-bottom))] max-sm:pt-1 max-sm:backdrop-blur",
+                    "max-sm:[&>button]:h-14 max-sm:[&>button]:flex-col max-sm:[&>button]:gap-1 max-sm:[&>button]:px-0 max-sm:[&>button]:text-[11px] max-sm:[&_svg]:size-5",
+                    "max-sm:[&>button[data-state=active]]:bg-primary/10 max-sm:[&>button[data-state=active]]:text-primary max-sm:[&>button[data-state=active]]:shadow-none",
+                    typing && "max-sm:hidden",
+                  )}
+                >
+                  <TabsTrigger value="today">
                     <House />
-                    <span className="sr-only sm:not-sr-only">Today</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="timeline">
-                    <TrendingDown />
-                    <span className="sm:hidden">Timeline</span>
-                    <span className="hidden sm:inline">Fat Loss Timeline</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="carbs">
-                    <Salad />
-                    <span className="sm:hidden">Carbs</span>
-                    <span className="hidden sm:inline">Carb Cycling</span>
+                    Today
                   </TabsTrigger>
                   <TabsTrigger value="macros">
                     <Utensils />
-                    <span className="sm:hidden">Food</span>
-                    <span className="hidden sm:inline">Nutrition</span>
+                    Food
                   </TabsTrigger>
-                  <TabsTrigger value="training" className="[&_svg]:!block">
+                  <TabsTrigger value="training">
                     <Dumbbell />
-                    <span className="sr-only sm:not-sr-only">Training</span>
+                    Training
                   </TabsTrigger>
                   <TabsTrigger value="checkin">
-                    <Scale />
-                    Check-in
+                    <TrendingUp />
+                    Progress
                   </TabsTrigger>
-                  <TabsTrigger value="leaderboard" className="[&_svg]:!block">
+                  <TabsTrigger value="plan">
+                    <Target />
+                    Plan
+                  </TabsTrigger>
+                  <TabsTrigger value="leaderboard">
                     <Trophy />
-                    <span className="sr-only sm:not-sr-only">Leaderboard</span>
+                    Ranks
                   </TabsTrigger>
                 </TabsList>
 
@@ -1358,29 +1409,13 @@ export function AppShell() {
                 />
               </TabsContent>
 
-              <TabsContent value="timeline">
-                <FatLossCalculator
-                  profile={state.profile}
-                  inputs={state.fatLoss}
-                  onChange={updateFatLoss}
-                  unit={state.unit}
-                  onSendToCarbCycling={handleSendToCarbCycling}
-                  profileSlot={
-                    <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
-                  }
-                />
-              </TabsContent>
-
-              <TabsContent value="carbs" className="space-y-5">
+              <TabsContent value="plan" className="space-y-5">
                 <SegmentedControl
-                  ariaLabel="Carb cycling section"
-                  value={state.activeTab === "roadmap" ? "roadmap" : "carbs"}
+                  ariaLabel="Plan section"
+                  value={isPlanTab(state.activeTab) ? state.activeTab : "timeline"}
                   onValueChange={(v) => setTab(v)}
-                  options={[
-                    { value: "carbs" as const, label: "Weekly plan" },
-                    { value: "roadmap" as const, label: "Roadmap" },
-                  ]}
-                  className="max-w-xs"
+                  options={PLAN_SECTIONS}
+                  className="max-w-sm"
                 />
                 {state.activeTab === "roadmap" ? (
                   <RoadmapCalendar
@@ -1393,7 +1428,7 @@ export function AppShell() {
                     onCarbsChange={updateCarbs}
                     onNavigate={navigateFor.weighIn}
                   />
-                ) : (
+                ) : state.activeTab === "carbs" ? (
                   <CarbCyclingCalculator
                     profile={state.profile}
                     inputs={state.carbs}
@@ -1403,6 +1438,17 @@ export function AppShell() {
                     onClearLink={() => setLinkedToTimeline(false)}
                     // "About you" is shared with the Timeline and edited there.
                     profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
+                  />
+                ) : (
+                  <FatLossCalculator
+                    profile={state.profile}
+                    inputs={state.fatLoss}
+                    onChange={updateFatLoss}
+                    unit={state.unit}
+                    onSendToCarbCycling={handleSendToCarbCycling}
+                    profileSlot={
+                      <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
+                    }
                   />
                 )}
               </TabsContent>

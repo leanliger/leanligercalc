@@ -54,15 +54,15 @@ export interface TrackingState {
   adjustments: CalorieAdjustment[];
   /** Which habits this member tracks. Daily logs are stored separately. */
   habits: HabitDef[];
-  /** Intermittent fasting meal times (Nutrition tab → Fasting). */
+  /** Intermittent fasting meal times (Food → Fasting). */
   fasting: FastingSettings;
-  /** Weigh-in, habits and Sunday recap reminders (Check-in tab). */
+  /** Weigh-in, habits and Sunday recap reminders (Progress tab). */
   reminders: ReminderPrefs;
   /** Programs, the member's own exercises and rest settings (Training tab). */
   training: TrainingSettings;
   /** Pause mode periods, past and current (Settings). */
   pauses: PausePeriod[];
-  /** Saved meals, logged in one tap (Nutrition → Food log). */
+  /** Saved meals, logged in one tap (Food → Food log). */
   savedMeals: SavedMeal[];
 }
 

@@ -32,7 +32,7 @@ interface WeekdayPatternEditorProps {
 /**
  * Seven weekday chips, Monday first. Clicking one cycles it high → medium →
  * low. The schedule counts follow the pattern, so editing here also updates
- * the "2 / 3 / 2" totals on the Carb Cycling tab.
+ * the "2 / 3 / 2" totals in Plan → Carb cycle.
  */
 export function WeekdayPatternEditor({
   pattern,

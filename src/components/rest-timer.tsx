@@ -176,7 +176,8 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
   const pct = timer.endsAt > timer.startedAt ? Math.min(100, ((now - timer.startedAt) / (timer.endsAt - timer.startedAt)) * 100) : 100;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    // Sits above the phone tab bar (--bottom-nav, set by the app shell); without one it clears the iPhone home indicator.
+    <div className="pointer-events-none fixed inset-x-0 bottom-[var(--bottom-nav,0px)] z-50 px-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)_-_var(--bottom-nav,0px)))]">
       <div
         role="timer"
         aria-label="Rest timer"

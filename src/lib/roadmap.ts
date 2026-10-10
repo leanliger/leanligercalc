@@ -70,7 +70,7 @@ export function buildRoadmap(
           level: "info",
           title: "No roadmap yet",
           detail:
-            "Set a goal weight or body fat below your current numbers on the Fat Loss Timeline tab, and the day-by-day plan will appear here.",
+            "Set a goal weight or body fat below your current numbers in Plan → Timeline, and the day-by-day plan will appear here.",
         },
       ],
       feasible: false,
@@ -82,7 +82,7 @@ export function buildRoadmap(
     warnings.push({
       level: "info",
       title: `Carb cycling schedule covers ${total} days — adjusted to 7`,
-      detail: `The roadmap is using ${counts.high} high, ${counts.medium} medium and ${counts.low} low. Fix the counts on the Carb Cycling tab to choose your own split.`,
+      detail: `The roadmap is using ${counts.high} high, ${counts.medium} medium and ${counts.low} low. Fix the counts in Plan → Carb cycle to choose your own split.`,
     });
   }
 

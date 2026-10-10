@@ -36,7 +36,7 @@ function amount(bottles: number, unit: WeightUnit): string {
   return unit === "kg" ? `${liters(bottles)} L` : `${ounces(bottles)} oz`;
 }
 
-/** Nutrition → Water: six bottles a day, ticking the hydration habit at the goal. */
+/** Food → Water: six bottles a day, ticking the hydration habit at the goal. */
 export function WaterCard({ today, unit, habits, habitLogs, onSaveHabits }: WaterCardProps) {
   const [date, setDate] = React.useState(today);
   const saved = React.useMemo(() => habitLogs.find((l) => l.date === date)?.entries ?? {}, [habitLogs, date]);

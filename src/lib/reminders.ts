@@ -196,7 +196,7 @@ export interface Message {
 export function weighInMessage(): Message {
   return {
     title: "Time for your weigh-in",
-    content: "Step on the scale before you eat or drink, then log it in Check-in. It takes ten seconds.",
+    content: "Step on the scale before you eat or drink, then log it on Today. It takes ten seconds.",
   };
 }
 

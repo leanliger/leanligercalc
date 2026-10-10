@@ -88,7 +88,7 @@ function HeightImperial({
 
 /**
  * A read-only line of the same details, for places that use them but where
- * they're edited elsewhere (the Carb Cycling tab uses the Timeline's).
+ * they're edited elsewhere (Plan → Carb cycle uses the Timeline's).
  */
 export function ProfileSummary({
   profile,
@@ -134,7 +134,7 @@ export function ProfileCard({ profile, onChange, unit, className }: ProfileCardP
           About you
         </CardTitle>
         <CardDescription>
-          Used by the Timeline and Carb Cycling. Everything recalculates as you type.
+          Used by the Timeline and Carb cycle. Everything recalculates as you type.
         </CardDescription>
       </CardHeader>
 

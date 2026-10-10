@@ -83,7 +83,7 @@ export function ProgressChart({
   if (data.length === 0) {
     return (
       <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-        Set a goal on the Fat Loss Timeline to see the plan.
+        Set a goal in Plan → Timeline to see the plan.
       </div>
     );
   }

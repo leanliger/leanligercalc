@@ -300,17 +300,16 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
-              Nutrition tab (Fasting), and weigh-in, habit, downtime and recap reminders from Settings (the gear at the top left).
+              Food tab (Fasting), and weigh-in, habit, downtime and recap reminders from Settings (the gear at the top left).
             </li>
             <li>
-              <strong>Leave the leaderboard</strong> at any time from the Leaderboard tab.
+              <strong>Leave the leaderboard</strong> at any time from the Ranks tab.
             </li>
             <li>
-              <strong>Withdraw a lift submission</strong> (waiting, approved or not) at any time from Leaderboard → Lifts.
+              <strong>Withdraw a lift submission</strong> (waiting, approved or not) at any time from Ranks → Lifts.
             </li>
             <li>
-              <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from Check-in → Progress
-              photos.
+              <strong>Delete a photo, or stop sharing photos with your coach,</strong> at any time from Progress → Photos.
             </li>
             <li>
               <strong>Access or a copy:</strong> email us and we will send you the data stored with your Whop user ID.

@@ -22,7 +22,7 @@ interface LeaderboardTabProps {
 
 type Board = "streaks" | "lifts";
 
-/** The Leaderboard tab: habit streaks, or verified lifts. */
+/** The Ranks tab (id "leaderboard"): habit streaks, or verified lifts. */
 export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today }: LeaderboardTabProps) {
   const [board, setBoard] = React.useState<Board>("streaks");
   return (

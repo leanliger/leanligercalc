@@ -56,7 +56,7 @@ export function StepsWeekCard({
     if (!planUsesSteps) {
       message = {
         tone: "neutral",
-        text: "Your plan uses an activity level, so steps aren't counted in its calories. Switch to Steps and training on the Fat Loss Timeline to use them.",
+        text: "Your plan uses an activity level, so steps aren't counted in its calories. Switch to Steps and training in Plan → Timeline to use them.",
       };
     } else {
       const gap = target - avg;

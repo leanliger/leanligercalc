@@ -78,7 +78,7 @@ export function RemindersSettings({ prefs, onChange, status }: RemindersSettings
       </p>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         {available
-          ? "Whop notifications at the times you choose. Fasting reminders are on Nutrition → Fasting."
+          ? "Whop notifications at the times you choose. Fasting reminders are on Food → Fasting."
           : UNAVAILABLE[status.availability as Exclude<NotificationStatus["availability"], "ok">]}
       </p>
       {REMINDER_TYPES.map((type) => (

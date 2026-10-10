@@ -309,7 +309,7 @@ export function FatLossCalculator({
                     max={STEP_LIMITS.max}
                     step={500}
                     decimals={0}
-                    help="Your usual daily average from your phone or watch. Log your real steps on Check-in to see if you're matching it."
+                    help="Your usual daily average from your phone or watch. Log your real steps in Progress → Habits to see if you're matching it."
                   />
                   <NumberField
                     label="Training days"

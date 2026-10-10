@@ -557,7 +557,7 @@ const LINK_LABEL = {
   calories: "Shows today's calorie target",
   workout: "Excused on rest days",
   steps: "Log your steps; ticks itself at your step target",
-  water: "Ticks itself at 6 bottles (100+ oz) in Nutrition → Water",
+  water: "Ticks itself at 6 bottles (100+ oz) in Food → Water",
 } as const;
 
 export function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange: (habits: HabitDef[]) => void }) {

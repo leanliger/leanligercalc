@@ -223,7 +223,7 @@ export function RoadmapCalendar({
           <WarningList warnings={roadmap.warnings} />
           <Button onClick={() => onNavigate("timeline")}>
             <Target />
-            Set a goal on the Fat Loss Timeline
+            Set a goal on the Timeline
           </Button>
         </CardContent>
       </Card>
@@ -259,7 +259,7 @@ export function RoadmapCalendar({
 
   const progressLine = (() => {
     if (!latestTrend) {
-      return "Log weigh-ins on the Check-in tab and they'll be plotted against the plan here.";
+      return "Log weigh-ins on Today or in Progress and they'll be plotted against the plan here.";
     }
     const planned = predictedWeightOn(timeline, latestTrend.date);
     const head = "Trend " + formatWeight(latestTrend.trend, unit) + " on " + formatShort(latestTrend.date);
@@ -283,7 +283,7 @@ export function RoadmapCalendar({
               Roadmap to {formatWeight(roadmap.goalWeight, unit)}
             </CardTitle>
             <CardDescription className="max-w-2xl">
-              Calories come from your Fat Loss Timeline and step down each week as your
+              Calories come from your Timeline and step down each week as your
               maintenance falls. The high / medium / low split comes from your Carb
               Cycling settings — every week still averages exactly to its target.
             </CardDescription>
