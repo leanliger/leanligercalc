@@ -11,7 +11,7 @@ Five integrated tools for contest prep and body recomposition planning, plus a *
 
 The timeline's derived calorie target can be handed straight over to the carb cycling tool with one click.
 
-**Tabs**, in order of daily use: **Today**, **Food**, **Training**, **Progress**, **Plan** (Timeline · Carb cycle · Roadmap) and **Ranks** (the leaderboards). On phones they are a bar fixed to the bottom of the screen (icon over label; hidden while a text field has focus so it doesn't ride up on the keyboard; the rest timer sits above it via `--bottom-nav`); on wider screens a row under the header. Internal tab ids are unchanged (`macros`, `checkin`, `leaderboard`, and `timeline` / `carbs` / `roadmap` for Plan's sections), so old links (`?t=carbs`) and saved tabs still land in the right place; Plan reopens on the section last used.
+**Tabs**: **Today**, **Plan** (Timeline · Carb cycle · Roadmap), **Progress**, **Food**, **Training** and **Ranks** (the leaderboards). On phones they are a bar fixed to the bottom of the screen (icon over label; hidden while a text field has focus so it doesn't ride up on the keyboard; the rest timer sits above it via `--bottom-nav`); on wider screens a row under the header. Internal tab ids are unchanged (`macros`, `checkin`, `leaderboard`, and `timeline` / `carbs` / `roadmap` for Plan's sections), so old links (`?t=carbs`) and saved tabs still land in the right place; Plan reopens on the section last used.
 
 ## Getting started
 

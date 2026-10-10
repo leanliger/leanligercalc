@@ -1337,6 +1337,14 @@ export function AppShell() {
                     <House />
                     Today
                   </TabsTrigger>
+                  <TabsTrigger value="plan">
+                    <Target />
+                    Plan
+                  </TabsTrigger>
+                  <TabsTrigger value="checkin">
+                    <TrendingUp />
+                    Progress
+                  </TabsTrigger>
                   <TabsTrigger value="macros">
                     <Utensils />
                     Food
@@ -1344,14 +1352,6 @@ export function AppShell() {
                   <TabsTrigger value="training">
                     <Dumbbell />
                     Training
-                  </TabsTrigger>
-                  <TabsTrigger value="checkin">
-                    <TrendingUp />
-                    Progress
-                  </TabsTrigger>
-                  <TabsTrigger value="plan">
-                    <Target />
-                    Plan
                   </TabsTrigger>
                   <TabsTrigger value="leaderboard">
                     <Trophy />
