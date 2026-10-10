@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ArrowDown, ArrowLeftRight, ArrowUp, Check, ChevronsUp, CloudOff, Disc3, Flag, Minus, Pause, Plus, Trash2, TrendingUp, Trophy } from "lucide-react";
-import { BarPicker, PlateResult, useBar } from "@/components/plate-calculator";
+import { BarPicker, LoadTypePicker, PlateResult, useBar, type LoadType } from "@/components/plate-calculator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -538,17 +538,19 @@ function RirPicker({ n, value, onChange }: { n: number; value: number | null; on
 /** Plates for the next set still to do (or the last one with a weight). */
 function NextSetPlates({ sets, unit }: { sets: readonly WorkoutSet[]; unit: WeightUnit }) {
   const [bar, setBar] = useBar(unit);
+  const [type, setType] = React.useState<LoadType>("barbell");
   const next = sets.find((s) => !s.done && s.weight !== null) ?? [...sets].reverse().find((s) => s.weight !== null) ?? null;
   const total = next?.weight != null ? Math.round(fromLb(next.weight, unit) * 100) / 100 : null;
   return (
     <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+      <LoadTypePicker value={type} onChange={setType} />
       <div className="flex flex-wrap items-end justify-between gap-2">
         <p className="text-xs font-medium">
           {total === null ? "Enter a weight to see the plates." : `Loading ${total} ${unit}`}
         </p>
-        <BarPicker unit={unit} bar={bar} onBar={setBar} className="w-36" />
+        {type === "barbell" ? <BarPicker unit={unit} bar={bar} onBar={setBar} className="w-36" /> : null}
       </div>
-      {total !== null ? <PlateResult total={total} bar={bar} unit={unit} /> : null}
+      {total !== null ? <PlateResult total={total} bar={bar} unit={unit} type={type} /> : null}
     </div>
   );
 }
