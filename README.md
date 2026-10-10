@@ -120,7 +120,7 @@ The timeline is a **week-by-week simulation**, not a single division, because ev
 W(n) = W(0) · (1 − r)^n
 ```
 
-The rate runs from 0.25% to 1% a week, with four presets: Gentle 0.25%, Conservative 0.5%, Moderate 0.75% and Aggressive 1%. Gentle suits members who are already lean or want a deficit they barely notice; at 200 lb it is about 0.5 lb a week (roughly a 250–300 kcal/day deficit), and the Timeline shows the longer finish date plainly.
+The rate runs from 0.25% to 1% a week, with four presets: Gentle 0.25%, Conservative 0.5%, Moderate 0.75% and Aggressive 1%. Gentle suits members who are already lean or want a deficit they barely notice; at 200 lb it is about 0.5 lb a week (roughly a 250–300 kcal/day deficit), and the Timeline shows the longer finish date plainly. Or type a **daily deficit** (kcal/day) under the presets: `rateForDailyDeficit()` finds the rate whose week-1 deficit is that number (the inverse of `dailyDeficitForRate()`, the simulation's first-week arithmetic), so slider, presets and box stay in step. Like any rate, the deficit then eases as weight comes down, and the box says where it ends up (500 kcal/day at 200 lb eases to "about 415 kcal/day by week 27"). Typed deficits can go beyond the slider (0.1–3% a week); above 1% the usual warning shows.
 
 At 200 lb and 0.75%/week that is 1.50 lb in week 1 but 1.31 lb by week 18. The closed-form inverse is used for fractional-week precision and as a cross-check on the simulation:
 

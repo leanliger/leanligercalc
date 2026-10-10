@@ -654,8 +654,9 @@ export function CarbCyclingCalculator({
               steady={!inputs.cycleCarbs}
             />
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
               <Stat
+                compact
                 label="Weekly average"
                 emphasis
                 icon={<Flame className="h-3.5 w-3.5" />}
@@ -663,6 +664,7 @@ export function CarbCyclingCalculator({
                 sub={`Target ${formatCalories(result.baseline.calories)}`}
               />
               <Stat
+                compact
                 label="Weekly deficit"
                 icon={<Percent className="h-3.5 w-3.5" />}
                 value={
@@ -672,21 +674,23 @@ export function CarbCyclingCalculator({
                 }
                 sub={
                   result.weekly.weeklyDeficit > 0
-                    ? `≈ ${formatWeight(result.weekly.projectedWeeklyLoss, unit, 2)} per week`
-                    : "No deficit configured"
+                    ? `≈ ${formatWeight(result.weekly.projectedWeeklyLoss, unit, 2)} a week`
+                    : "No deficit"
                 }
               />
               <Stat
+                compact
                 label="Weekly protein"
                 icon={<CalendarRange className="h-3.5 w-3.5" />}
                 value={`${result.weekly.protein.toLocaleString()}g`}
-                sub={`${result.days[0]?.protein ?? 0}g every day`}
+                sub={`${result.days[0]?.protein ?? 0}g a day`}
               />
               <Stat
+                compact
                 label="Weekly carbs"
                 icon={<CalendarRange className="h-3.5 w-3.5" />}
                 value={`${result.weekly.carbs.toLocaleString()}g`}
-                sub={`${result.baseline.carbs}g on an average day`}
+                sub={inputs.cycleCarbs ? `${result.baseline.carbs}g a day on average` : `${result.baseline.carbs}g a day`}
               />
             </div>
 

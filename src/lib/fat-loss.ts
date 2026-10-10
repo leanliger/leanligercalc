@@ -134,6 +134,38 @@ export function weeklyEnergyDeficit(fatLost: number, leanLost: number): number {
 }
 
 /**
+ * Week 1's daily deficit for a weekly rate: the same arithmetic as the first
+ * row of the simulation, before any intake floor.
+ */
+export function dailyDeficitForRate(profile: BiometricProfile, weeklyRate: number): number {
+  const weight = Math.max(safeNumber(profile.weight, 0), 0);
+  const bodyFat = clamp(resolveBodyFat(profile), 1, 70);
+  const loss = weight * weeklyRate;
+  const fatFrac = fatLossFraction(weeklyRate, bodyFat);
+  return weeklyEnergyDeficit(loss * fatFrac, loss * (1 - fatFrac)) / 7;
+}
+
+/**
+ * The weekly rate whose week-1 deficit is `kcal` a day: the inverse of
+ * dailyDeficitForRate(), within the engine's 0.1–3% bounds. The deficit then
+ * eases week by week like any rate's, as weight comes down.
+ */
+export function rateForDailyDeficit(profile: BiometricProfile, kcal: number): number {
+  let lo = 0.001;
+  let hi = 0.03;
+  if (!(dailyDeficitForRate(profile, hi) > 0)) return RATE_PRESETS.moderate;
+  if (dailyDeficitForRate(profile, lo) >= kcal) return lo;
+  if (dailyDeficitForRate(profile, hi) <= kcal) return hi;
+  // The deficit rises with the rate, so halve the bracket until it's exact.
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (dailyDeficitForRate(profile, mid) < kcal) lo = mid;
+    else hi = mid;
+  }
+  return Math.round(((lo + hi) / 2) * 1e6) / 1e6;
+}
+
+/**
  * Convert a weekly energy deficit into pounds of body weight.
  *
  * Dividing by a flat 3500 kcal/lb understates the loss, because part of what is
@@ -570,6 +602,7 @@ export function formatTimelineSummary(
     `Finish date: ${result.finishDate}`,
     "",
     `Total loss: ${fmt(result.totalLoss)} (${fmt(result.fatLoss)} fat, ${fmt(result.leanLoss)} lean)`,
+    `Loss per week: ${fmt(result.preciseWeeks > 0 ? result.totalLoss / result.preciseWeeks : 0)} on average`,
     `Average intake: ${result.averageTargetCalories} kcal/day`,
     `Average deficit: ${result.averageDailyDeficit} kcal/day`,
   ];

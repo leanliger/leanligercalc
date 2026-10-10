@@ -40,6 +40,8 @@ import {
   MIN_RATE,
   RATE_PRESETS,
   calculateFatLossTimeline,
+  dailyDeficitForRate,
+  rateForDailyDeficit,
   formatTimelineSummary,
   weightAtBodyFat,
 } from "@/lib/fat-loss";
@@ -138,6 +140,16 @@ export function FatLossCalculator({
   );
 
   const firstWeek = result.projection[0];
+  // Pounds a week: the average over the prep, and the first and last weeks
+  // (it shrinks as weight comes down, because the rate is a share of it).
+  const weeklyLoss = {
+    average: result.feasible && result.preciseWeeks > 0 ? result.totalLoss / result.preciseWeeks : 0,
+    first: result.projection[1]?.weeklyLoss ?? 0,
+    last: result.projection[result.projection.length - 1]?.weeklyLoss ?? 0,
+  };
+  // The last week of dieting (the final row is the goal week itself).
+  const lastDietWeek = result.projection.length > 2 ? result.projection[result.projection.length - 2] : undefined;
+  const typedDeficit = Math.round(dailyDeficitForRate(profile, inputs.weeklyRate));
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
@@ -276,6 +288,25 @@ export function FatLossCalculator({
                 </Button>
               ))}
             </div>
+
+            <NumberField
+              label="Or enter a daily deficit"
+              value={typedDeficit}
+              onValueChange={(kcal) => {
+                if (kcal > 0) onChange({ weeklyRate: rateForDailyDeficit(profile, kcal) });
+              }}
+              suffix="kcal/day"
+              min={50}
+              step={25}
+              decimals={0}
+              hint={
+                result.feasible && lastDietWeek
+                  ? `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week. It eases as your weight drops: about ${lastDietWeek.dailyDeficit.toLocaleString()} kcal/day by week ${lastDietWeek.week + 1}.`
+                  : `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week.`
+              }
+              help="Sets the rate that gives this deficit in week 1. The plan then keeps losing the same share of your weight each week, so the deficit shrinks a little as you get lighter."
+              containerClassName="border-t border-border pt-3"
+            />
 
             <p className="text-xs text-muted-foreground">
               Loss is taken as a percentage of <em>current</em> weight each week, so the
@@ -443,8 +474,9 @@ export function FatLossCalculator({
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Stat
+                className="sm:col-span-2"
                 label="Prep duration"
                 emphasis
                 icon={<Timer className="h-3.5 w-3.5" />}
@@ -476,6 +508,16 @@ export function FatLossCalculator({
                 icon={<Flame className="h-3.5 w-3.5" />}
                 value={formatCalories(result.averageTargetCalories)}
                 sub={`${result.averageDailyDeficit} kcal/day deficit`}
+              />
+              <Stat
+                label="Loss per week"
+                icon={<Scale className="h-3.5 w-3.5" />}
+                value={weeklyLoss.average > 0 ? formatWeight(weeklyLoss.average, unit, 2) : "—"}
+                sub={
+                  weeklyLoss.first > 0 && weeklyLoss.last > 0
+                    ? `On average. ${formatWeight(weeklyLoss.first, unit, 2)} in week 1, ${formatWeight(weeklyLoss.last, unit, 2)} by the end`
+                    : "On average"
+                }
               />
             </div>
 
