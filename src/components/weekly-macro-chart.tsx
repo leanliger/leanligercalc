@@ -52,7 +52,7 @@ function buildWeek(result: CarbCyclingResult, pattern: readonly DayType[]): Week
   });
 }
 
-export function WeeklyMacroChart({
+function WeeklyMacroChartChart({
   result,
   pattern,
   maintenance,
@@ -151,3 +151,6 @@ export function WeeklyMacroChart({
     </div>
   );
 }
+
+/** Redrawn only when its data changes, not on every keystroke elsewhere on the page. */
+export const WeeklyMacroChart = React.memo(WeeklyMacroChartChart);

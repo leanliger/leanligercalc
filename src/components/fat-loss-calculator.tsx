@@ -102,7 +102,7 @@ export function FatLossCalculator({
   weighIns,
 }: FatLossCalculatorProps) {
   // Recalculated on every keystroke — the whole simulation is well under a
-  // millisecond, so there is nothing to debounce or memoise beyond this.
+  // millisecond. Drawing is what costs; see `chart` below.
   const result = React.useMemo(
     () => calculateFatLossTimeline(profile, inputs),
     [profile, inputs],
@@ -132,6 +132,15 @@ export function FatLossCalculator({
     }
     return out;
   }, [profile, inputs]);
+
+  // The chart is the slow part to draw: it catches up a beat behind typing
+  // instead of holding up each keystroke.
+  const chart = React.useDeferredValue(
+    React.useMemo(
+      () => ({ projection: result.projection, goal: result.feasible ? goalWeight : null }),
+      [result, goalWeight],
+    ),
+  );
 
   const summary = React.useMemo(
     () =>
@@ -587,9 +596,9 @@ export function FatLossCalculator({
                 </p>
               </div>
               <WeightCurveChart
-                projection={result.projection}
+                projection={chart.projection}
                 unit={unit}
-                goalWeight={result.feasible ? goalWeight : null}
+                goalWeight={chart.goal}
                 weighIns={weighIns}
               />
             </div>

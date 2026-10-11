@@ -79,6 +79,23 @@ src/
 
 Every calculation is a pure function in `src/lib/`. Components never do arithmetic beyond formatting, which means the engines can be unit-tested or reused server-side without touching React.
 
+### Speed
+
+The app runs on the member's phone, so speed comes from how much code it downloads and how much it redraws, not from the server.
+
+- **Split bundles.** `app-root.tsx` loads the member app or the coach dashboard, never both. In `app-shell.tsx`, Today is the only tab in the start-up bundle. Every other tab (and with them the Recharts library) is loaded with `next/dynamic`, then fetched one at a time while the phone is idle, about a second after start (`usePrefetchTabs`). `lazy-panel.tsx` is the brief placeholder if a tab is opened before its code arrives.
+- **Charts redraw only when their data changes.** `WeightCurveChart`, `ProgressChart` and `WeeklyMacroChart` are `React.memo`. The Timeline and Macros calculators pass them a `useDeferredValue` copy of the results, so typing updates the numbers first and the chart catches up a beat later.
+- **Saves wait for a pause.** The on-device copy and the URL are written 250 ms after the last change. The cloud plan is written 800 ms after. Anything still waiting is sent the moment the app is closed or backgrounded (`pagehide` / `visibilitychange`, with a `keepalive` request), so a quick edit-and-leave isn't lost.
+
+Measured locally on desktop (phones are several times slower), from before these changes to after:
+
+| Measure | Before | After |
+|---|---|---|
+| JavaScript at start-up | ~1.6 MB | ~0.7 MB |
+| Progress tab switch | 103 ms | 23 ms |
+| Training tab switch | 51 ms | 14 ms |
+| Timeline keystroke | 41–65 ms | 13–18 ms (chart finishes in the background) |
+
 ## What the user has to know
 
 The only inputs required are things people actually know about themselves:

@@ -54,7 +54,7 @@ interface ChartPoint {
  * different scales, and overlaying them is the whole point — a good prep shows
  * body fat falling faster than scale weight.
  */
-export function WeightCurveChart({ projection, unit, goalWeight, weighIns = [] }: WeightCurveChartProps) {
+function WeightCurveChartChart({ projection, unit, goalWeight, weighIns = [] }: WeightCurveChartProps) {
   const data = React.useMemo<ChartPoint[]>(
     () =>
       projection.map((week) => ({
@@ -250,3 +250,6 @@ export function WeightCurveChart({ projection, unit, goalWeight, weighIns = [] }
     </div>
   );
 }
+
+/** Redrawn only when its data changes, not on every keystroke elsewhere on the page. */
+export const WeightCurveChart = React.memo(WeightCurveChartChart);

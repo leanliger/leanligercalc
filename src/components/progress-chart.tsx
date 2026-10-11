@@ -41,7 +41,7 @@ interface Point {
  *   actual  dots only    — individual weigh-ins (noisy by nature)
  *   trend   solid line   — smoothed weigh-ins; the one to judge progress by
  */
-export function ProgressChart({
+function ProgressChartChart({
   timeline,
   weighIns,
   unit,
@@ -209,3 +209,6 @@ export function ProgressChart({
     </div>
   );
 }
+
+/** Redrawn only when its data changes, not on every keystroke elsewhere on the page. */
+export const ProgressChart = React.memo(ProgressChartChart);

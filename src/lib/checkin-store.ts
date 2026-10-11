@@ -389,7 +389,8 @@ export interface CheckinStore {
   saveReminders(req: RemindersRequest): Promise<void>;
   deleteReminders(): Promise<void>;
   loadPlan(): Promise<unknown | null>;
-  savePlan(state: unknown): Promise<void>;
+  /** `keepalive`: the page is closing, so the request must outlive it. */
+  savePlan(state: unknown, opts?: { keepalive?: boolean }): Promise<void>;
   /** Delete everything: weigh-ins, habits, reviews, food logs, my foods and the plan. */
   deleteAll(): Promise<void>;
 }
@@ -510,8 +511,13 @@ export function createStore(mode: StorageMode): CheckinStore {
         const res = await expectOk(await api("/api/plan"));
         return ((await res.json()) as { state: unknown }).state ?? null;
       },
-      async savePlan(state) {
-        await expectOk(await api("/api/plan", { method: "PUT", body: JSON.stringify({ state }) }));
+      async savePlan(state, opts) {
+        const init: RequestInit = { method: "PUT", body: JSON.stringify({ state }) };
+        // Browsers cap keepalive bodies at 64 KB; a bigger plan goes as a normal request.
+        const res = opts?.keepalive
+          ? await api("/api/plan", { ...init, keepalive: true }).catch(() => api("/api/plan", init))
+          : await api("/api/plan", init);
+        await expectOk(res);
       },
       async deleteAll() {
         await expectOk(await api("/api/me", { method: "DELETE" }));

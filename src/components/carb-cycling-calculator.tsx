@@ -286,6 +286,8 @@ export function CarbCyclingCalculator({
   const protein = resolveProtein(profile, inputs);
   const totalDays = inputs.highDays + inputs.mediumDays + inputs.lowDays;
   const pattern = React.useMemo(() => resolveWeekdayPattern(inputs), [inputs]);
+  // The week chart redraws a beat behind typing instead of holding up each keystroke.
+  const chart = React.useDeferredValue(React.useMemo(() => ({ result, pattern }), [result, pattern]));
 
   // Changing the counts invalidates any hand-placed weekday pattern, so drop it
   // and let the new counts be placed automatically.
@@ -708,7 +710,7 @@ export function CarbCyclingCalculator({
                   Arrange high days around your hardest sessions
                 </p>
               </div>
-              <WeeklyMacroChart result={result} pattern={pattern} maintenance={inputs.tdee} />
+              <WeeklyMacroChart result={chart.result} pattern={chart.pattern} maintenance={inputs.tdee} />
             </div>
             </>
             ) : null}

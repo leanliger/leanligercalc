@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import {
   Activity,
   CloudOff,
@@ -21,15 +22,11 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
 import { SettingsMenu } from "@/components/settings-menu";
 import { CopyButton } from "@/components/copy-button";
-import { FatLossCalculator } from "@/components/fat-loss-calculator";
-import { CarbCyclingCalculator } from "@/components/carb-cycling-calculator";
 import { ProfileCard, ProfileSummary } from "@/components/profile-card";
-import { RoadmapCalendar } from "@/components/roadmap-calendar";
-import { CheckinTab, type CheckinSection } from "@/components/checkin-tab";
-import { MacrosTab, type NutritionSection } from "@/components/macros-tab";
+import type { CheckinSection } from "@/components/checkin-tab";
+import type { NutritionSection } from "@/components/macros-tab";
 import { TodayTab, type TodayDestination } from "@/components/today-tab";
-import { LeaderboardTab } from "@/components/leaderboard-tab";
-import { TrainingTab } from "@/components/training-tab";
+import { LazyPanel } from "@/components/lazy-panel";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
 import {
@@ -120,6 +117,8 @@ import type {
 } from "@/lib/types";
 
 const PLAN_SAVE_DEBOUNCE_MS = 800;
+/** The on-device copy waits for a pause in typing too (it's flushed when the app closes). */
+const LOCAL_SAVE_DEBOUNCE_MS = 250;
 
 /**
  * The plan as the cloud should hold it. The active tab is left out: it's
@@ -165,6 +164,56 @@ const PLAN_SECTIONS = [
 ] as const;
 type PlanSection = (typeof PLAN_SECTIONS)[number]["value"];
 const isPlanTab = (t: AppTab): t is PlanSection => t === "timeline" || t === "carbs" || t === "roadmap";
+
+/*
+ * Every tab but Today is its own download, so the app starts on a much smaller
+ * bundle (the charts library alone is about a third of the old one). Once the
+ * app is up, the rest are fetched while the phone is idle, so switching tabs
+ * doesn't wait on the network.
+ */
+const TAB_LOADERS = {
+  fatLoss: () => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator),
+  carbs: () => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator),
+  roadmap: () => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar),
+  checkin: () => import("@/components/checkin-tab").then((m) => m.CheckinTab),
+  macros: () => import("@/components/macros-tab").then((m) => m.MacrosTab),
+  training: () => import("@/components/training-tab").then((m) => m.TrainingTab),
+  leaderboard: () => import("@/components/leaderboard-tab").then((m) => m.LeaderboardTab),
+};
+// Same imports as above (they share one download each), written out because
+// next/dynamic only accepts them inline.
+const FatLossCalculator = dynamic(() => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator), { ssr: false, loading: () => <LazyPanel /> });
+const CarbCyclingCalculator = dynamic(() => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator), { ssr: false, loading: () => <LazyPanel /> });
+const RoadmapCalendar = dynamic(() => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar), { ssr: false, loading: () => <LazyPanel /> });
+const CheckinTab = dynamic(() => import("@/components/checkin-tab").then((m) => m.CheckinTab), { ssr: false, loading: () => <LazyPanel /> });
+const MacrosTab = dynamic(() => import("@/components/macros-tab").then((m) => m.MacrosTab), { ssr: false, loading: () => <LazyPanel /> });
+const TrainingTab = dynamic(() => import("@/components/training-tab").then((m) => m.TrainingTab), { ssr: false, loading: () => <LazyPanel /> });
+const LeaderboardTab = dynamic(() => import("@/components/leaderboard-tab").then((m) => m.LeaderboardTab), { ssr: false, loading: () => <LazyPanel /> });
+
+/** Fetch the other tabs' code one at a time while the phone is idle. */
+function usePrefetchTabs(ready: boolean) {
+  React.useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const queue = Object.values(TAB_LOADERS);
+    const idle = (fn: () => void) =>
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(fn, { timeout: 3000 })
+        : window.setTimeout(fn, 400);
+    const next = () => {
+      const load = queue.shift();
+      if (!load || cancelled) return;
+      load()
+        .catch(() => undefined)
+        .finally(() => idle(next));
+    };
+    const start = window.setTimeout(() => idle(next), 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(start);
+    };
+  }, [ready]);
+}
 
 /** True while a text field has focus, so the phone tab bar can step aside for the keyboard. */
 function useTyping(): boolean {
@@ -376,6 +425,7 @@ export function AppShell() {
   // Nothing date- or storage-dependent renders until the client is ready —
   // this is a static export, so build-time HTML would carry the build date.
   const [ready, setReady] = React.useState(false);
+  usePrefetchTabs(ready);
   const [today, setToday] = React.useState("");
   const [session, setSession] = React.useState<SessionInfo>({ mode: "local", reason: "no-server" });
   const [weighIns, setWeighIns] = React.useState<WeighIn[]>([]);
@@ -497,27 +547,49 @@ export function AppShell() {
     };
   }, []);
 
-  // Persist locally on every change; in cloud mode also save the plan to the
-  // database, debounced so dragging a slider is one write, not fifty.
+  // Save on this device (and the address bar) once typing pauses; in cloud mode
+  // also save the plan to the database, debounced so dragging a slider is one
+  // write, not fifty. Whatever is still waiting goes straight away if the app
+  // is closed or put in the background, so a quick edit-and-leave isn't lost.
   React.useEffect(() => {
     if (!ready) return;
-    saveToStorage(state);
-    syncUrl(state);
-    if (session.mode !== "cloud") return;
-    const doc = cloudDoc(state);
-    if (doc === lastSynced.current) return;
+    let localDone = false;
+    const saveLocal = () => {
+      if (localDone) return;
+      localDone = true;
+      saveToStorage(state);
+      syncUrl(state);
+    };
+    const cloud = session.mode === "cloud" ? cloudDoc(state) : null;
+    let cloudDone = cloud === null || cloud === lastSynced.current;
     const scheduledAt = Date.now();
-    const timer = setTimeout(() => {
+    const saveCloud = (leaving: boolean) => {
+      if (cloudDone) return;
+      cloudDone = true;
       storeRef.current
-        ?.savePlan(state)
+        ?.savePlan(state, { keepalive: leaving })
         .then(() => {
-          lastSynced.current = doc;
+          lastSynced.current = cloud;
           setSyncError(false);
           confirmProgramEdits(scheduledAt);
         })
         .catch(() => setSyncError(true));
-    }, PLAN_SAVE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    };
+    const flush = () => {
+      saveLocal();
+      saveCloud(true);
+    };
+    const onVisibility = () => document.visibilityState === "hidden" && flush();
+    const localTimer = setTimeout(saveLocal, LOCAL_SAVE_DEBOUNCE_MS);
+    const cloudTimer = cloudDone ? undefined : setTimeout(() => saveCloud(false), PLAN_SAVE_DEBOUNCE_MS);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearTimeout(localTimer);
+      clearTimeout(cloudTimer);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [state, ready, session.mode]);
 
   // Keep the server's fasting notifications in step with the meal times.
