@@ -12,6 +12,7 @@ import { exerciseHistory, findExercise, type ExerciseSession, type Workout } fro
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { liftRank } from "@/lib/progress-report";
 
 /**
  * Every weighted lift on one chart: estimated 1RM per session (or % change
@@ -25,12 +26,8 @@ const COLORS = ["hsl(var(--primary))", "hsl(var(--macro-carb))", "hsl(var(--macr
 
 type Mode = "e1rm" | "change";
 
-/** The big lifts come first, so the chart opens on what most people want to see. */
-const MAIN_LIFTS = [
-  "back-squat", "bench-press", "deadlift", "overhead-press", "barbell-row",
-  "romanian-deadlift", "incline-bench-press", "front-squat", "hip-thrust",
-];
-const rank = (id: string) => (MAIN_LIFTS.includes(id) ? MAIN_LIFTS.indexOf(id) : MAIN_LIFTS.length);
+// The big lifts come first, so the chart opens on what most people want to see.
+const rank = liftRank;
 
 interface Lift {
   exercise: Exercise;

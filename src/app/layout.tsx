@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { A11Y_SCRIPT } from "@/lib/accessibility";
 
 export const metadata: Metadata = {
   title: "Prep Calculator — Fat Loss Timeline & Carb Cycling",
@@ -49,6 +50,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: A11Y_SCRIPT }} />
       </head>
       <body>{children}</body>
     </html>

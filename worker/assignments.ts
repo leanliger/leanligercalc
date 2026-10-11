@@ -38,6 +38,7 @@ import {
 import { COMPANY_ID_PATTERN } from "../src/lib/coach-api";
 import { companyMembers, type Profile } from "./coach";
 import { experiencesOf } from "./experiences";
+import { memberTagsOf, tagsOf } from "./coaching";
 import { sendWhop } from "./reminders";
 import { accessLevel, hasWhopKey, whopGet, type WhopEnv } from "./whop";
 import {
@@ -158,6 +159,13 @@ export async function createAssignment(env: AssignmentEnv, viewerId: string, raw
   if (a.target.type === "all") {
     ids = [...members.keys()];
     audience = "Everyone";
+  } else if (a.target.type === "tag") {
+    const tagId = a.target.tagId;
+    const tag = (await tagsOf(env, a.company)).find((t) => t.id === tagId);
+    if (!tag) return { ok: false, status: 404, error: "That tag no longer exists." };
+    const tagged = await memberTagsOf(env, a.company, [tag]);
+    ids = Object.keys(tagged).filter((id) => members.has(id));
+    audience = `Tag: ${tag.name}`;
   } else if (a.target.type === "group") {
     const groupId = a.target.groupId;
     const group = (await groupsOf(env, a.company)).find((g) => g.id === groupId);

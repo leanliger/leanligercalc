@@ -27,7 +27,11 @@ export const MAX_GROUPS = 50;
 export const ASSIGNMENT_ID_PATTERN = /^[0-9a-f]{32}$/;
 const MEMBER_ID_PATTERN = /^user_[A-Za-z0-9_]{1,40}$/;
 
-export type AssignmentTarget = { type: "all" } | { type: "group"; groupId: string } | { type: "members"; memberIds: string[] };
+export type AssignmentTarget =
+  | { type: "all" }
+  | { type: "group"; groupId: string }
+  | { type: "tag"; tagId: string }
+  | { type: "members"; memberIds: string[] };
 
 export interface AssignmentInput {
   company: string;
@@ -120,6 +124,7 @@ export function validateAssignment(raw: unknown): ValidationResult<AssignmentInp
   let target: AssignmentTarget;
   if (t.type === "all") target = { type: "all" };
   else if (t.type === "group" && typeof t.groupId === "string" && ASSIGNMENT_ID_PATTERN.test(t.groupId)) target = { type: "group", groupId: t.groupId };
+  else if (t.type === "tag" && typeof t.tagId === "string" && /^[a-z0-9_-]{1,32}$/.test(t.tagId)) target = { type: "tag", tagId: t.tagId };
   else if (t.type === "members" && Array.isArray(t.memberIds)) {
     const ids = [...new Set(t.memberIds.filter((id): id is string => typeof id === "string" && MEMBER_ID_PATTERN.test(id)))];
     if (ids.length === 0) return bad("Pick at least one member.");

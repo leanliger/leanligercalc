@@ -599,8 +599,15 @@ export function AppShell() {
   // Nutrition's sub-section, so Today can open the fasting timer directly.
   const [nutritionSection, setNutritionSection] = React.useState<NutritionSection>("food");
 
+  // Bumped to open Settings (the first-week checklist's "Turn on reminders").
+  const [settingsRequest, setSettingsRequest] = React.useState(0);
+
   const openFromToday = React.useCallback(
     (dest: TodayDestination) => {
+      if (dest === "reminders") {
+        setSettingsRequest((n) => n + 1);
+        return;
+      }
       if (dest === "weigh-in") navigateFor.weighIn("checkin");
       else if (dest === "habits") navigateFor.habits("checkin");
       else if (dest === "food" || dest === "fasting") {
@@ -1303,6 +1310,7 @@ export function AppShell() {
           <div className="container flex h-16 items-center gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <SettingsMenu
+                openRequest={settingsRequest}
                 unit={state.unit}
                 onUnitChange={(unit) => setState((prev) => ({ ...prev, unit }))}
                 pause={ready ? { pauses: state.tracking.pauses, today, onChange: updatePauses } : undefined}
@@ -1468,6 +1476,7 @@ export function AppShell() {
 
               <TabsContent value="today">
                 <TodayTab
+                  remindersOn={state.tracking.fasting.notify || Object.values(state.tracking.reminders).some((r) => r.on)}
                   coachMacros={coachMacros}
                   today={today}
                   unit={state.unit}

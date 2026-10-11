@@ -29,6 +29,7 @@ import { WEEKDAY_SHORT } from "@/lib/weekday-pattern";
 import { todayISO } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { ChallengeBoard } from "@/components/challenge-board";
+import { TagChip, type TagsData } from "@/components/member-tags";
 import type { ChallengeStandings } from "@/lib/challenges";
 
 const FIELD =
@@ -52,10 +53,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-type Audience = "all" | "group" | "member";
+type Audience = "all" | "group" | "tag" | "member";
 
 /** Coach dashboard → Assign: send a program or habit set to everyone, a group or one member. */
-export function CoachAssignPanel({ companyId, members }: { companyId: string; members: CoachMemberData[] }) {
+export function CoachAssignPanel({ companyId, members, tags }: { companyId: string; members: CoachMemberData[]; tags: TagsData | null }) {
   const [data, setData] = React.useState<{ assignments: CoachAssignment[]; groups: CoachGroup[] } | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<SavedProgram[]>([]);
@@ -89,6 +90,7 @@ export function CoachAssignPanel({ companyId, members }: { companyId: string; me
         companyId={companyId}
         members={members}
         groups={data?.groups ?? []}
+        tags={tags}
         saved={saved}
         onProgramsChanged={loadPrograms}
         onSent={load}
@@ -113,6 +115,7 @@ function NewAssignment({
   companyId,
   members,
   groups,
+  tags,
   saved,
   onProgramsChanged,
   onSent,
@@ -121,6 +124,7 @@ function NewAssignment({
   companyId: string;
   members: CoachMemberData[];
   groups: CoachGroup[];
+  tags: TagsData | null;
   /** The coach's saved programs, newest first. */
   saved: SavedProgram[];
   onProgramsChanged: () => Promise<void>;
@@ -133,6 +137,7 @@ function NewAssignment({
   const [habitTitle, setHabitTitle] = React.useState("Daily non-negotiables");
   const [audience, setAudience] = React.useState<Audience>("all");
   const [groupId, setGroupId] = React.useState<string>("");
+  const [tagId, setTagId] = React.useState<string>("");
   const [memberId, setMemberId] = React.useState<string>("");
   const [note, setNote] = React.useState("");
   // The calendar members get with a program.
@@ -207,6 +212,10 @@ function NewAssignment({
         ? groupId
           ? { type: "group", groupId }
           : null
+        : audience === "tag"
+          ? tagId
+            ? { type: "tag", tagId }
+            : null
         : memberId
           ? { type: "members", memberIds: [memberId] }
           : null;
@@ -505,6 +514,7 @@ function NewAssignment({
             options={[
               { value: "all" as const, label: `Everyone (${members.length})` },
               { value: "group" as const, label: "A group" },
+              { value: "tag" as const, label: "A tag" },
               { value: "member" as const, label: "One member" },
             ]}
           />
@@ -522,6 +532,25 @@ function NewAssignment({
                     </label>
                   </li>
                 ))}
+              </ul>
+            )
+          ) : audience === "tag" ? (
+            !tags || tags.tags.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No tags yet. Tag members on their page in Members.</p>
+            ) : (
+              <ul className="space-y-1">
+                {tags.tags.map((t) => {
+                  const n = Object.values(tags.members).filter((ids) => ids.includes(t.id)).length;
+                  return (
+                    <li key={t.id}>
+                      <label className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm", tagId === t.id ? "border-primary/50 bg-primary/5" : "border-border")}>
+                        <input type="radio" name="assign-tag" checked={tagId === t.id} onChange={() => setTagId(t.id)} className="accent-[hsl(var(--primary))]" />
+                        <TagChip tag={t} className="text-xs" />
+                        <span className="tabular ml-auto text-xs text-muted-foreground">{n} member{n === 1 ? "" : "s"}</span>
+                      </label>
+                    </li>
+                  );
+                })}
               </ul>
             )
           ) : audience === "member" ? (
@@ -559,7 +588,9 @@ function NewAssignment({
                 : target === null
                   ? audience === "group"
                     ? "Pick a group."
-                    : "Pick a member."
+                    : audience === "tag"
+                      ? "Pick a tag."
+                      : "Pick a member."
                   : "Add at least one habit."}
             </p>
           ) : null}

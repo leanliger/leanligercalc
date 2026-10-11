@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  History,
   Bookmark,
   BookmarkPlus,
   Check,
@@ -54,6 +55,8 @@ import {
   defaultMeal,
   myFoodId,
   recentFoods,
+  recentMeals,
+  type RecentMeal,
   roundMacros,
   scaleMacros,
   sumMacros,
@@ -258,6 +261,18 @@ export function MacrosTab({
     void commit(date, [...logFor(date), ...yesterday.map((e) => ({ ...e, id: newId() }))]).catch(() => {});
   };
 
+  /** Log the same foods again into a meal of this day, with undo. */
+  const repeatMeal = (items: FoodEntry[], slot: MealId, what: string) => {
+    const before = logFor(date);
+    const added = items.map((e) => ({ ...e, id: newId(), meal: slot }));
+    void commit(date, [...before, ...added])
+      .then(() => setUndo({ date, entries: before, message: `Added ${what} to ${MEALS.find((m) => m.id === slot)?.label ?? "your log"}.` }))
+      .catch(() => {});
+  };
+  // Meals eaten yesterday that this day doesn't have yet.
+  const sameAsYesterday = MEALS.filter((m) => yesterday.some((e) => e.meal === m.id) && !entries.some((e) => e.meal === m.id));
+  const recent = React.useMemo(() => recentMeals(foodLogs, date), [foodLogs, date]);
+
   React.useEffect(() => {
     if (!undo) return;
     const t = setTimeout(() => setUndo(null), 10000);
@@ -431,7 +446,12 @@ export function MacrosTab({
             recents={recents}
             leftAfter={leftAfter}
             onAdd={addEntry}
+            onAddMany={async (added) => {
+              setUndo(null);
+              await commit(date, [...logFor(date), ...added]);
+            }}
             onSaveMyFood={onSaveMyFood}
+            photoEnabled={session.mode === "cloud" && session.mealPhotos === true}
           />
 
           <SavedMealsCard
@@ -440,6 +460,7 @@ export function MacrosTab({
             onLog={logSavedMeal}
             onRemove={(id) => onSavedMealsChange(savedMeals.filter((m) => m.id !== id))}
           />
+          <RecentMealsCard meals={recent} today={today} onAdd={(r) => repeatMeal(r.items, r.meal, "it")} />
         </div>
 
         <div className="space-y-5">
@@ -539,6 +560,23 @@ export function MacrosTab({
                   );
                 })
               )}
+              {entries.length > 0 && sameAsYesterday.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
+                  <span className="text-xs text-muted-foreground">Same as yesterday:</span>
+                  {sameAsYesterday.map((m) => (
+                    <Button
+                      key={m.id}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => repeatMeal(yesterday.filter((e) => e.meal === m.id), m.id, `yesterday's ${m.label.toLowerCase()}`)}
+                    >
+                      <Copy />
+                      {m.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -609,6 +647,49 @@ function SaveMealForm({
           : "Log it again in one tap from Saved meals. Saving with the same name updates it."}
       </p>
     </form>
+  );
+}
+
+/** Meals from the last two weeks, to log again in one tap (into the same meal). */
+function RecentMealsCard({ meals, today, onAdd }: { meals: RecentMeal[]; today: string; onAdd: (m: RecentMeal) => void }) {
+  if (meals.length === 0) return null;
+  const when = (d: string) => (d === addDays(today, -1) ? "Yesterday" : d === today ? "Today" : formatShort(d));
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <History className="h-4 w-4 text-primary" />
+          Repeat a meal
+        </CardTitle>
+        <CardDescription>Meals from the last two weeks. Tap + to log the same foods again, into the same meal.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y divide-border">
+          {meals.map((r) => {
+            const label = MEALS.find((m) => m.id === r.meal)?.label ?? "Meal";
+            return (
+              <li key={`${r.date}-${r.meal}`} className="flex items-center gap-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{r.items.map((e) => e.name).join(", ")}</p>
+                  <p className="tabular text-[11px] text-muted-foreground">
+                    {when(r.date)} · {label} · <MacroLine m={sumMacros(r.items)} />
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  aria-label={`Add ${r.items.map((e) => e.name).join(", ")} to ${label.toLowerCase()}`}
+                  onClick={() => onAdd(r)}
+                >
+                  <Plus />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 

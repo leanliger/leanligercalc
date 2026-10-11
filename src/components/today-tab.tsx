@@ -14,7 +14,6 @@ import {
   Play,
   Plus,
   Scale,
-  Sparkles,
   Timer,
   Utensils,
   X,
@@ -68,14 +67,18 @@ import {
 import type { BiometricProfile, CarbCyclingInputs, FatLossInputs, WeightUnit } from "@/lib/types";
 import { fromLb, round, toLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { FirstWeekCard } from "@/components/first-week-card";
+import { DEFAULT_FAT_LOSS_INPUTS, DEFAULT_PROFILE } from "@/lib/defaults";
 
 /** Where Today's links go. */
-export type TodayDestination = "weigh-in" | "habits" | "food" | "fasting" | "training" | "timeline";
+export type TodayDestination = "weigh-in" | "habits" | "food" | "fasting" | "training" | "timeline" | "reminders";
 
 const SAVE_DEBOUNCE_MS = 400;
 const SEEN_BADGES_KEY = "prep-calculator:badges-seen:v1";
 
 interface TodayTabProps {
+  /** Any reminder switched on (Settings), for the first-week checklist. */
+  remindersOn: boolean;
   /** Macros the coach set: today's targets while set. */
   coachMacros: CoachMacros | null;
   today: string;
@@ -226,7 +229,6 @@ export function TodayTab(props: TodayTabProps) {
     ...(stepHabit ? [{ id: "steps", label: "Steps", done: steps !== null && steps >= stepTarget }] : []),
   ];
   const doneCount = tasks.filter((t) => t.done).length;
-  const fresh = weighIns.length === 0 && habitLogs.length === 0 && foodLogs.length === 0 && workouts.length === 0;
   const dateLabel = new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
   return (
@@ -287,20 +289,24 @@ export function TodayTab(props: TodayTabProps) {
         </Card>
       ) : null}
 
-      {fresh ? (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="flex flex-wrap items-center gap-3 p-4 sm:p-6">
-            <Sparkles className="h-5 w-5 shrink-0 text-primary" />
-            <p className="min-w-0 flex-1 text-sm">
-              Welcome! Set your goal in Plan first, then come back here each morning — everything you need
-              to do today is on this page.
-            </p>
-            <Button size="sm" onClick={() => onOpen("timeline")}>
-              Set my goal
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
+      <FirstWeekCard
+        done={{
+          // Anything changed from the starting example counts as their own goal.
+          goal:
+            profile.weight !== DEFAULT_PROFILE.weight ||
+            profile.heightInches !== DEFAULT_PROFILE.heightInches ||
+            profile.age !== DEFAULT_PROFILE.age ||
+            fatLoss.targetWeight !== DEFAULT_FAT_LOSS_INPUTS.targetWeight ||
+            fatLoss.goalType !== DEFAULT_FAT_LOSS_INPUTS.goalType,
+          "weigh-in": weighIns.length > 0,
+          food: foodLogs.some((l) => l.entries.length > 0),
+          workout: workouts.some((w) => w.finishedAt !== null),
+          reminders: props.remindersOn,
+        }}
+        onGo={(step) =>
+          onOpen(step === "goal" ? "timeline" : step === "weigh-in" ? "weigh-in" : step === "workout" ? "training" : step)
+        }
+      />
 
       {newBadges.items.length > 0 ? (
         <Card className="border-primary/50 bg-primary/5">

@@ -30,6 +30,7 @@ import { ConsistencyCard } from "@/components/consistency-card";
 import { StepsWeekCard } from "@/components/steps-week-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { CheckinCard } from "@/components/checkin-card";
+import { ProgressReportLoader } from "@/components/progress-report";
 import { PhotosCard } from "@/components/photos-card";
 import type { Measurement } from "@/lib/measurements";
 import { buildRoadmap } from "@/lib/roadmap";
@@ -327,6 +328,7 @@ export function CheckinTab({
           ) : (
             <div className="space-y-5">
             <CheckinCard cloud={session.mode === "cloud"} today={today} unit={unit} />
+            {session.mode === "cloud" ? <MyReport unit={unit} /> : null}
             <WeeklyScorecard
               habits={habits}
               logs={habitLogs}
@@ -710,5 +712,33 @@ function RecommendationBox({ rec, onApply }: { rec: Recommendation; onApply: () 
         </p>
       )}
     </div>
+  );
+}
+
+/** Progress → Weekly: the member's own progress report, on request. */
+function MyReport({ unit }: { unit: WeightUnit }) {
+  const [open, setOpen] = React.useState(false);
+  if (!open) {
+    return (
+      <Button variant="outline" className="w-full" onClick={() => setOpen(true)}>
+        My progress report
+      </Button>
+    );
+  }
+  return (
+    <ProgressReportLoader
+      url="/api/report"
+      name="Your progress"
+      unit={unit}
+      photoSrc={(p) => `/api/photos/${p.id}`}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+            Close report
+          </Button>
+          <p className="text-[11px] text-muted-foreground">Take a screenshot to share it.</p>
+        </div>
+      }
+    />
   );
 }

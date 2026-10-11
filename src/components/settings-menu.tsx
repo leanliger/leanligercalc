@@ -9,6 +9,51 @@ import { DataSettings, type DataSettingsProps } from "@/components/data-settings
 import { PauseSettings, type PauseSettingsProps } from "@/components/pause-settings";
 import { CoachAccessSettings, type CoachAccessProps } from "@/components/coach-access";
 import type { WeightUnit } from "@/lib/types";
+import { Switch } from "@/components/ui/switch";
+import { DEFAULT_A11Y, readA11y, saveA11y, type A11ySettings, type TextSize } from "@/lib/accessibility";
+
+const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "large", label: "Large" },
+  { value: "larger", label: "Larger" },
+];
+
+/** Accessibility settings for this device (src/lib/accessibility.ts). */
+function AccessibilitySettings() {
+  const [s, setS] = React.useState<A11ySettings>(DEFAULT_A11Y);
+  const contrastId = React.useId();
+  const motionId = React.useId();
+  React.useEffect(() => setS(readA11y()), []);
+  const change = (patch: Partial<A11ySettings>) => {
+    const next = { ...s, ...patch };
+    setS(next);
+    saveA11y(next);
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium text-muted-foreground">Accessibility</p>
+      <div className="space-y-1.5">
+        <p className="text-sm">Text size</p>
+        <SegmentedControl ariaLabel="Text size" value={s.textSize} onValueChange={(textSize) => change({ textSize })} options={TEXT_SIZE_OPTIONS} />
+      </div>
+      <div className="flex items-center gap-2.5">
+        <label htmlFor={contrastId} className="min-w-0 flex-1 text-sm">
+          Stronger contrast
+          <span className="block text-[11px] text-muted-foreground">Darker secondary text and firmer borders.</span>
+        </label>
+        <Switch id={contrastId} checked={s.highContrast} onCheckedChange={(highContrast) => change({ highContrast })} />
+      </div>
+      <div className="flex items-center gap-2.5">
+        <label htmlFor={motionId} className="min-w-0 flex-1 text-sm">
+          Reduce motion
+          <span className="block text-[11px] text-muted-foreground">Turns off animations.</span>
+        </label>
+        <Switch id={motionId} checked={s.reduceMotion} onCheckedChange={(reduceMotion) => change({ reduceMotion })} />
+      </div>
+      <p className="text-[11px] text-muted-foreground">Saved on this device.</p>
+    </div>
+  );
+}
 
 const THEME_KEY = "prep-calculator:theme";
 
@@ -92,6 +137,7 @@ export function SettingsMenu({
   pause,
   coach,
   data,
+  openRequest = 0,
 }: {
   unit: WeightUnit;
   onUnitChange: (unit: WeightUnit) => void;
@@ -103,12 +149,17 @@ export function SettingsMenu({
   coach?: CoachAccessProps;
   /** Sync status and "Delete all my data"; left out on the coach dashboard. */
   data?: DataSettingsProps;
+  /** Bump to open the panel from elsewhere (Today's first-week checklist). */
+  openRequest?: number;
 }) {
   const [open, setOpen] = React.useState(false);
   const [theme, setTheme] = useTheme();
   const dialog = React.useRef<HTMLDialogElement>(null);
   const button = React.useRef<HTMLButtonElement>(null);
   const titleId = React.useId();
+  React.useEffect(() => {
+    if (openRequest > 0) setOpen(true);
+  }, [openRequest]);
 
   React.useEffect(() => {
     const d = dialog.current;
@@ -166,6 +217,10 @@ export function SettingsMenu({
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Appearance</p>
             <SegmentedControl ariaLabel="Appearance" value={theme ?? "dark"} onValueChange={setTheme} options={THEME_OPTIONS} />
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <AccessibilitySettings />
           </div>
 
           {pause ? (

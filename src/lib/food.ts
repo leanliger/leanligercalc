@@ -230,6 +230,37 @@ export function recentFoods(logs: readonly FoodLog[], limit = 12): FoodEntry[] {
   return out;
 }
 
+export interface RecentMeal {
+  date: string;
+  meal: MealId;
+  items: FoodEntry[];
+}
+
+/**
+ * Meals logged in the days before `before` (newest first), one of each: the
+ * same foods in the same amounts count once, whatever day or meal they were.
+ */
+export function recentMeals(logs: readonly FoodLog[], before: string, days = 14, limit = 8): RecentMeal[] {
+  const seen = new Set<string>();
+  const out: RecentMeal[] = [];
+  const byDateDesc = [...logs].filter((l) => l.date < before).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, days);
+  for (const log of byDateDesc) {
+    for (const slot of [...MEALS].reverse()) {
+      const items = log.entries.filter((e) => e.meal === slot.id);
+      if (items.length === 0) continue;
+      const key = items
+        .map((e) => `${(e.barcode ?? e.name).toLowerCase()}:${e.quantity}${e.unit}`)
+        .sort()
+        .join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ date: log.date, meal: slot.id, items });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 /** The meal a member is most likely logging at this hour. */
 export function defaultMeal(hour: number): MealId {
   if (hour < 11) return "breakfast";

@@ -33,6 +33,9 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
+import { CoachReportPanel } from "@/components/coach-report";
+import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
+import { TAG_CLASS } from "@/lib/member-tags";
 import { AttentionList, CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
@@ -99,6 +102,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<Filter>("attention");
+  // The whop's member tags, and the tag the list is filtered to.
+  const [tagsData, setTagsData] = React.useState<TagsData | null>(null);
+  const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   // ?member=user_… opens straight onto one member (bookmarkable).
   const [selected, setSelected] = React.useState<string | null>(() =>
@@ -135,6 +141,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         );
       } else {
         setOverview(body);
+        loadTags(companyId)
+          .then(setTagsData)
+          .catch(() => {
+            /* tags are extra: the dashboard works without them */
+          });
       }
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
@@ -183,6 +194,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const q = query.trim().toLowerCase();
   const shown = summaries.filter((m) => {
     if (q && !`${m.data.name ?? ""} ${m.data.username ?? ""}`.toLowerCase().includes(q)) return false;
+    if (tagFilter && !(tagsData?.members[m.data.userId] ?? []).includes(tagFilter)) return false;
     if (filter === "all") return true;
     if (filter === "attention") return m.flags.length > 0;
     return m.flags.includes(filter);
@@ -259,7 +271,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               ]}
               className="max-w-md"
             />
-            <CoachAssignPanel companyId={companyId} members={overview.members} />
+            <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
           </>
         ) : (
           <>
@@ -377,6 +389,31 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   })}
                 </div>
 
+                {tagsData && tagsData.tags.length > 0 ? (
+                  <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">Tags:</span>
+                    {tagsData.tags.map((t) => {
+                      const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
+                      const on = tagFilter === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => setTagFilter(on ? null : t.id)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
+                          )}
+                        >
+                          {t.name} <span className="tabular opacity-80">{n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
                 {summaries.length === 0 ? (
                   <EmptyNote>
                     {overview.members.length === 0
@@ -389,7 +426,13 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   <ul className="space-y-2">
                     {shown.map((m) => (
                       <li key={m.data.userId}>
-                        <MemberRow m={m} unit={unit} selected={m.data.userId === selected} onOpen={() => setSelected(m.data.userId)} />
+                        <MemberRow
+                          m={m}
+                          unit={unit}
+                          selected={m.data.userId === selected}
+                          onOpen={() => setSelected(m.data.userId)}
+                          tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -417,6 +460,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               <div className={cn(!current && !currentNotSharing && "hidden lg:block")}>
                 {current ? (
                   <MemberDetail
+                    tags={
+                      <MemberTagsCard companyId={companyId} memberId={current.data.userId} data={tagsData} onChange={setTagsData} />
+                    }
                     m={current}
                     unit={unit}
                     today={today}
@@ -494,7 +540,20 @@ function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | n
   );
 }
 
-function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: WeightUnit; selected: boolean; onOpen: () => void }) {
+function MemberRow({
+  m,
+  unit,
+  selected,
+  onOpen,
+  tags,
+}: {
+  m: MemberSummary;
+  unit: WeightUnit;
+  selected: boolean;
+  onOpen: () => void;
+  /** Their tag chips. */
+  tags?: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -531,6 +590,7 @@ function MemberRow({ m, unit, selected, onOpen }: { m: MemberSummary; unit: Weig
           {m.weekChangeLb !== null ? <span>{signedWeight(m.weekChangeLb, unit)} / wk</span> : null}
           <span>last log {describeDaysAgo(m.daysSinceLog)}</span>
         </span>
+        {tags}
         {m.flags.length > 0 || m.paused ? (
           <span className="flex flex-wrap gap-1">
             {m.paused ? (
@@ -740,7 +800,10 @@ function MemberDetail({
   companyId,
   onBack,
   onStopped,
+  tags,
 }: {
+  /** Their tags card. */
+  tags?: React.ReactNode;
   m: MemberSummary;
   unit: WeightUnit;
   today: string;
@@ -806,6 +869,8 @@ function MemberDetail({
         </div>
       </div>
 
+      <CoachReportPanel companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
+      {tags}
       <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
       <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
 

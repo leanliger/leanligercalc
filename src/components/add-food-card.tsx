@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  Camera,
   ArrowLeft,
   Check,
   CircleAlert,
@@ -22,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { BarcodeScanner } from "@/components/barcode-scanner";
+import { MealPhotoView } from "@/components/meal-photo";
 import {
   MEALS,
   availableUnits,
@@ -58,7 +60,8 @@ export type AddMode =
   | { kind: "lookup"; code: string }
   | { kind: "search" }
   | { kind: "product"; product: FoodProduct; quantity?: number; unit?: FoodUnit }
-  | { kind: "manual"; seed: ManualSeed };
+  | { kind: "manual"; seed: ManualSeed }
+  | { kind: "photo" };
 
 /** Starting values for the type-it-in form. */
 export interface ManualSeed {
@@ -169,11 +172,15 @@ interface AddFoodCardProps {
   /** Calories and macros left for the day after eating `m`, when there's a target. */
   leftAfter: (m: Macros) => Macros | null;
   onAdd: (entry: FoodEntry) => Promise<void>;
+  /** Several foods at once (a photo estimate), saved together. */
+  onAddMany: (entries: FoodEntry[]) => Promise<void>;
   onSaveMyFood: (food: FoodProduct) => Promise<FoodProduct>;
+  /** Photo estimates are switched on (worker/meal-photo.ts). */
+  photoEnabled: boolean;
 }
 
 export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(function AddFoodCard(
-  { mode, setMode, meal, setMeal, dayLabel, myFoods, recents, leftAfter, onAdd, onSaveMyFood },
+  { mode, setMode, meal, setMeal, dayLabel, myFoods, recents, leftAfter, onAdd, onAddMany, onSaveMyFood, photoEnabled },
   ref,
 ) {
   const [flash, setFlash] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -247,8 +254,17 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
     setFlash({ kind: "ok", text: `Added ${entry.name} to ${mealLabel}.` });
   };
 
+  const addMany = async (entries: Omit<FoodEntry, "id" | "meal">[]) => {
+    const mealLabel = MEALS.find((m) => m.id === meal)?.label ?? "your log";
+    await onAddMany(entries.map((e) => ({ ...e, id: newId(), meal })));
+    setMode({ kind: "menu" });
+    setFlash({ kind: "ok", text: `Added ${entries.length} food${entries.length === 1 ? "" : "s"} to ${mealLabel}.` });
+  };
+
   const title =
-    mode.kind === "scan" || mode.kind === "lookup"
+    mode.kind === "photo"
+      ? "Estimate from a photo"
+      : mode.kind === "scan" || mode.kind === "lookup"
       ? "Scan a barcode"
       : mode.kind === "search"
         ? "Search foods"
@@ -292,9 +308,12 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
             onScan={() => go({ kind: "scan" })}
             onSearch={() => go({ kind: "search" })}
             onManual={() => go({ kind: "manual", seed: EMPTY_SEED })}
+            onPhoto={photoEnabled ? () => go({ kind: "photo" }) : undefined}
             onBarcode={(code) => void lookup(code)}
             onRecent={(e) => go({ kind: "product", product: productFromEntry(e), quantity: e.quantity, unit: e.unit })}
           />
+        ) : mode.kind === "photo" ? (
+          <MealPhotoView mealLabel={MEALS.find((m) => m.id === meal)?.label ?? ""} onAddMany={addMany} onCancel={() => go({ kind: "menu" })} />
         ) : mode.kind === "scan" ? (
           <BarcodeScanner onDetected={(code) => void lookup(code)} onCancel={() => go({ kind: "menu" })} />
         ) : mode.kind === "lookup" ? (
@@ -371,6 +390,7 @@ function MenuView({
   onScan,
   onSearch,
   onManual,
+  onPhoto,
   onBarcode,
   onRecent,
 }: {
@@ -378,6 +398,8 @@ function MenuView({
   onScan: () => void;
   onSearch: () => void;
   onManual: () => void;
+  /** Present when photo estimates are switched on. */
+  onPhoto?: () => void;
   onBarcode: (code: string) => void;
   onRecent: (e: FoodEntry) => void;
 }) {
@@ -387,10 +409,11 @@ function MenuView({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className={cn("grid gap-2", onPhoto ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
         <BigButton icon={<ScanBarcode />} label="Scan" sub="barcode" onClick={onScan} primary />
         <BigButton icon={<Search />} label="Search" sub="by name" onClick={onSearch} />
         <BigButton icon={<PenLine />} label="Quick add" sub="from label" onClick={onManual} />
+        {onPhoto ? <BigButton icon={<Camera />} label="Photo" sub="estimate" onClick={onPhoto} /> : null}
       </div>
 
       <form

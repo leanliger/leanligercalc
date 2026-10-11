@@ -74,9 +74,16 @@
  */
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
+import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import {
   coachCheckins,
   coachClearMacros,
+  coachReport,
+  getMyReport,
+  getTags,
+  saveTags,
+  setMemberTags,
+  shareReport,
   coachGetMacros,
   coachSetMacros,
   getCoachNote,
@@ -145,7 +152,7 @@ import { answerFormCheck, askFormCheck, deleteFormCheck, getFormChecks } from ".
 import { FORM_CHECK_ID_PATTERN } from "../src/lib/form-checks";
 import { secretValue } from "./secrets";
 
-export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv {
+export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv, MealPhotoEnv {
   DB: D1Database;
   ASSETS: Fetcher;
 }
@@ -237,7 +244,12 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         reason: env.WHOP_APP_ID ? "not-signed-in" : "not-configured",
       });
     }
-    return json({ storage: "cloud", userId: user.userId, notifications: Boolean(secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) });
+    return json({
+      storage: "cloud",
+      userId: user.userId,
+      notifications: Boolean(secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")),
+      mealPhotos: mealPhotosOn(env),
+    });
   }
 
   if (!user) return error(401, "Open this app inside Whop to save check-ins to your account.");
@@ -650,6 +662,39 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!body.ok) return body.response;
     return send(await submitCheckin(env, userId, body.value));
   }
+  if (path === "/api/coach/tags") {
+    if (method === "GET") return send(await getTags(env, userId, q("company")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveTags(env, userId, body.value));
+  }
+  if (path === "/api/coach/member-tags") {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await setMemberTags(env, userId, body.value));
+  }
+  if (path === "/api/meal-photo") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await estimateMealPhoto(env, userId, body.value));
+  }
+  if (path === "/api/report") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await getMyReport(env, userId));
+  }
+  if (path === "/api/coach/report") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachReport(env, userId, q("company"), q("member")));
+  }
+  if (path === "/api/coach/report/share") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await shareReport(env, userId, body.value));
+  }
   if (path === "/api/my-macros") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await getMyMacros(env, userId));
@@ -1055,6 +1100,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM checkins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_macros WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_notes WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM member_tags WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM meal_photo_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),

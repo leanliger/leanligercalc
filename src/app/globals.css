@@ -239,3 +239,33 @@
 .recharts-text {
   fill: hsl(var(--muted-foreground));
 }
+
+/* ------------------------------------------------------------------------ */
+/* Accessibility (Settings → Accessibility, src/lib/accessibility.ts)        */
+/* ------------------------------------------------------------------------ */
+
+/* Stronger contrast: secondary text close to body text, firmer borders. */
+html.high-contrast {
+  --muted-foreground: 40 15% 20%;
+  --border: 40 12% 62%;
+  --input: 40 12% 55%;
+}
+html.dark.high-contrast {
+  --muted-foreground: 40 20% 86%;
+  --border: 40 8% 46%;
+  --input: 40 8% 52%;
+}
+html.high-contrast :focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Less motion: no animations or transitions anywhere. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

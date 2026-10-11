@@ -11,6 +11,12 @@
  *   GET    /api/checkins?date=yyyy-mm-dd          members: my check-ins, and this week's numbers so far
  *   PUT    /api/checkins  { date, answers }       members: send this week's check-in
  *   GET    /api/my-macros                         members: macros my coach set, if any
+ *   GET    /api/report                            members: my progress report
+ *   GET    /api/coach/report?company&member       a member's progress report (while they share)
+ *   POST   /api/coach/report/share  { company, member }  tell the member it's ready
+ *   GET    /api/coach/tags?company                the whop's tag list and each member's tags
+ *   PUT    /api/coach/tags  { company, tags }     save the tag list
+ *   PUT    /api/coach/member-tags  { company, member, tagIds }  one member's tags
  *
  * Coach calls go through coachCheck (an admin of the whop, asking about one of
  * its members). Notes, check-ins and macros don't depend on progress sharing:
@@ -29,8 +35,14 @@ import {
   type Checkin,
 } from "../src/lib/checkins";
 import { coachMacrosMessage, validateCoachMacros, type CoachMacros } from "../src/lib/coach-macros";
+import { buildProgressReport, type ReportPhoto } from "../src/lib/progress-report";
+import type { Measurement } from "../src/lib/measurements";
+import type { Workout } from "../src/lib/training";
 import { sendWhop } from "./reminders";
-import { coachCheck, experienceOf, type SharingEnv, type SharingResult } from "./sharing";
+import { coachCheck, experienceOf, isSharingProgress, type SharingEnv, type SharingResult } from "./sharing";
+import { accessLevel, hasWhopKey } from "./whop";
+import { COMPANY_ID_PATTERN } from "../src/lib/coach-api";
+import { DEFAULT_TAGS, sanitizeTags, type MemberTag } from "../src/lib/member-tags";
 
 export const NOTE_MAX = 2000;
 const CHECKIN_HISTORY = 26;
@@ -267,4 +279,154 @@ export async function coachClearMacros(env: SharingEnv, viewerId: string, compan
   if ("error" in c) return c.error;
   await env.DB.prepare("DELETE FROM coach_macros WHERE user_id = ?").bind(c.memberId).run();
   return { ok: true, body: { macros: null } };
+}
+
+/* ----------------------------- progress report ----------------------------- */
+
+const REPORT_WORKOUTS = 1000;
+
+/** A member's report from their whole history. Photos only when `withPhotos`. */
+async function reportOf(env: SharingEnv, userId: string, withPhotos: boolean) {
+  const [weighIns, measurements, workouts, photos, checkins, plan] = await env.DB.batch([
+    env.DB.prepare("SELECT date, weight_lb FROM weigh_ins WHERE user_id = ? ORDER BY date").bind(userId),
+    env.DB.prepare("SELECT date, waist, hips, chest, arms, thighs FROM measurements WHERE user_id = ? ORDER BY date").bind(userId),
+    env.DB.prepare("SELECT id, data FROM workouts WHERE user_id = ? ORDER BY date DESC LIMIT ?").bind(userId, REPORT_WORKOUTS),
+    env.DB.prepare("SELECT id, date, pose FROM progress_photos WHERE user_id = ? ORDER BY date").bind(userId),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM checkins WHERE user_id = ?").bind(userId),
+    env.DB.prepare("SELECT state FROM plans WHERE user_id = ?").bind(userId),
+  ]);
+  const parsed: Workout[] = [];
+  for (const r of (workouts?.results ?? []) as { id: string; data: string }[]) {
+    try {
+      parsed.push({ ...(JSON.parse(r.data) as Workout), id: r.id });
+    } catch {
+      /* skip a corrupt row */
+    }
+  }
+  let goalLb: number | null = null;
+  try {
+    const state = JSON.parse(((plan?.results?.[0] ?? null) as { state: string } | null)?.state ?? "null") as {
+      fatLoss?: { goalType?: unknown; targetWeight?: unknown };
+    } | null;
+    if (state?.fatLoss?.goalType === "weight" && typeof state.fatLoss.targetWeight === "number") goalLb = state.fatLoss.targetWeight;
+  } catch {
+    goalLb = null;
+  }
+  return buildProgressReport({
+    weighIns: ((weighIns?.results ?? []) as { date: string; weight_lb: number }[]).map((w) => ({ date: w.date, weightLb: w.weight_lb })),
+    measurements: (measurements?.results ?? []) as Measurement[],
+    workouts: parsed,
+    photos: withPhotos ? ((photos?.results ?? []) as ReportPhoto[]) : null,
+    checkins: ((checkins?.results?.[0] ?? null) as { n: number } | null)?.n ?? 0,
+    goalLb,
+  });
+}
+
+export async function getMyReport(env: SharingEnv, userId: string): Promise<SharingResult> {
+  return { ok: true, body: { report: await reportOf(env, userId, true) } };
+}
+
+export async function coachReport(env: SharingEnv, viewerId: string, company: string, member: string): Promise<SharingResult> {
+  const c = await coachCheck(env, viewerId, { company, member });
+  if ("error" in c) return c.error;
+  if (!(await isSharingProgress(env, c.memberId))) {
+    return { ok: false, status: 403, error: "This member isn't sharing their progress with you right now." };
+  }
+  // Photos only if they also share their photos with you.
+  const photoRow = await env.DB.prepare("SELECT share_with_coach FROM photo_settings WHERE user_id = ?").bind(c.memberId).first<{ share_with_coach: number }>();
+  const report = await reportOf(env, c.memberId, photoRow?.share_with_coach === 1 && Boolean((env as { PHOTOS?: unknown }).PHOTOS));
+  return { ok: true, body: { report } };
+}
+
+export async function shareReport(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {
+  const c = await coachCheck(env, viewerId, raw);
+  if ("error" in c) return c.error;
+  const exp = await experienceOf(env, c.memberId);
+  if (!exp) return { ok: false, status: 409, error: "They haven't opened the app in your whop yet, so there's nowhere to notify them." };
+  const sent = await sendWhop(env, exp, c.memberId, {
+    title: "Your coach shared your progress report",
+    content: "See how far you've come: open Prep Calculator → Progress → Weekly → My progress report.",
+  });
+  if (!sent.ok) return { ok: false, status: 502, error: "Whop didn't send the notification. Try again in a moment." };
+  return { ok: true, body: { notified: true } };
+}
+
+/* ---------------------------------- tags ---------------------------------- */
+
+async function adminOf(env: SharingEnv, viewerId: string, company: unknown): Promise<SharingResult | null> {
+  if (typeof company !== "string" || !COMPANY_ID_PATTERN.test(company)) return { ok: false, status: 422, error: "Open the dashboard from your Whop." };
+  if (!hasWhopKey(env)) return { ok: false, status: 503, error: "The app's Whop API key isn't set up yet." };
+  const level = await accessLevel(env, viewerId, company);
+  if (level === null) return { ok: false, status: 502, error: "Couldn't confirm your access with Whop. Try again in a moment." };
+  if (level !== "admin") return { ok: false, status: 403, error: "Only the owner and admins of this whop can do that." };
+  return null;
+}
+
+/** The whop's tag list (the defaults until a coach changes it). */
+export async function tagsOf(env: SharingEnv, company: string): Promise<MemberTag[]> {
+  const row = await env.DB.prepare("SELECT tags FROM coach_tags WHERE company_id = ?").bind(company).first<{ tags: string }>();
+  if (!row) return DEFAULT_TAGS;
+  try {
+    return sanitizeTags(JSON.parse(row.tags)) ?? DEFAULT_TAGS;
+  } catch {
+    return DEFAULT_TAGS;
+  }
+}
+
+/** Each member's tag ids, keeping only tags that still exist. */
+export async function memberTagsOf(env: SharingEnv, company: string, tags: MemberTag[]): Promise<Record<string, string[]>> {
+  const known = new Set(tags.map((t) => t.id));
+  const { results } = await env.DB.prepare("SELECT member_id, tag_ids FROM member_tags WHERE company_id = ?").bind(company).all<{ member_id: string; tag_ids: string }>();
+  const out: Record<string, string[]> = {};
+  for (const r of results) {
+    try {
+      const ids = (JSON.parse(r.tag_ids) as unknown[]).filter((x): x is string => typeof x === "string" && known.has(x));
+      if (ids.length > 0) out[r.member_id] = ids;
+    } catch {
+      /* skip a corrupt row */
+    }
+  }
+  return out;
+}
+
+export async function getTags(env: SharingEnv, viewerId: string, company: string): Promise<SharingResult> {
+  const denied = await adminOf(env, viewerId, company);
+  if (denied) return denied;
+  const tags = await tagsOf(env, company);
+  return { ok: true, body: { tags, members: await memberTagsOf(env, company, tags) } };
+}
+
+export async function saveTags(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {
+  const b = obj(raw);
+  const denied = await adminOf(env, viewerId, b.company);
+  if (denied) return denied;
+  const tags = sanitizeTags(b.tags);
+  if (!tags) return { ok: false, status: 422, error: "Expected a list of tags." };
+  await env.DB.prepare(
+    `INSERT INTO coach_tags (company_id, tags) VALUES (?, ?)
+     ON CONFLICT (company_id) DO UPDATE SET tags = excluded.tags, updated_at = ${NOW_SQL}`,
+  )
+    .bind(b.company, JSON.stringify(tags))
+    .run();
+  return { ok: true, body: { tags, members: await memberTagsOf(env, b.company as string, tags) } };
+}
+
+export async function setMemberTags(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {
+  const c = await coachCheck(env, viewerId, raw);
+  if ("error" in c) return c.error;
+  const b = obj(raw);
+  const company = b.company as string;
+  const known = new Set((await tagsOf(env, company)).map((t) => t.id));
+  const ids = Array.isArray(b.tagIds) ? [...new Set(b.tagIds.filter((x): x is string => typeof x === "string" && known.has(x)))] : [];
+  if (ids.length > 0) {
+    await env.DB.prepare(
+      `INSERT INTO member_tags (company_id, member_id, tag_ids) VALUES (?, ?, ?)
+       ON CONFLICT (company_id, member_id) DO UPDATE SET tag_ids = excluded.tag_ids`,
+    )
+      .bind(company, c.memberId, JSON.stringify(ids))
+      .run();
+  } else {
+    await env.DB.prepare("DELETE FROM member_tags WHERE company_id = ? AND member_id = ?").bind(company, c.memberId).run();
+  }
+  return { ok: true, body: { tagIds: ids } };
 }
