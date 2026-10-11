@@ -23,6 +23,7 @@ export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
   targetWeight: 175,
   targetBodyFat: 12,
   weeklyRate: 0.0075,
+  fixedDeficit: null,
   mode: "startDate",
   startDate: todayISO(),
   eventDate: addWeeks(todayISO(), 20),

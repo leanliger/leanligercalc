@@ -28,7 +28,7 @@ export function CoachReportPanel({ companyId, memberId, memberName, unit }: { co
       });
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) throw new Error(body?.error ?? "Couldn't send it. Try again.");
-      setState({ busy: false, ok: true, text: `Sent. ${first} got a notification and can open it from Progress → Weekly.` });
+      setState({ busy: false, ok: true, text: `Sent. ${first} got a notification and can open it from Progress → Check-in.` });
     } catch (e) {
       setState({ busy: false, ok: false, text: e instanceof Error ? e.message : "Couldn't send it. Try again." });
     }

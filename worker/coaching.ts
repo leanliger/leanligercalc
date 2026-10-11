@@ -88,6 +88,8 @@ interface CheckinRow {
   submitted_at: string;
   reply: string | null;
   replied_at: string | null;
+  reply_audio: string | null;
+  reply_audio_seconds: number | null;
 }
 
 function toCheckin(r: CheckinRow): Checkin | null {
@@ -99,6 +101,7 @@ function toCheckin(r: CheckinRow): Checkin | null {
       stats: JSON.parse(r.stats) as Checkin["stats"],
       reply: r.reply,
       repliedAt: r.replied_at,
+      replyAudio: r.reply_audio ? { seconds: r.reply_audio_seconds ?? 0 } : null,
     };
   } catch {
     return null;
@@ -107,7 +110,7 @@ function toCheckin(r: CheckinRow): Checkin | null {
 
 async function checkinsOf(env: SharingEnv, userId: string): Promise<Checkin[]> {
   const { results } = await env.DB.prepare(
-    "SELECT week_start, answers, stats, submitted_at, reply, replied_at FROM checkins WHERE user_id = ? ORDER BY week_start DESC LIMIT ?",
+    "SELECT week_start, answers, stats, submitted_at, reply, replied_at, reply_audio, reply_audio_seconds FROM checkins WHERE user_id = ? ORDER BY week_start DESC LIMIT ?",
   )
     .bind(userId, CHECKIN_HISTORY)
     .all<CheckinRow>();
@@ -205,6 +208,7 @@ export async function replyToCheckin(env: SharingEnv, viewerId: string, raw: unk
   const reply = typeof b.reply === "string" ? b.reply.trim().slice(0, CHECKIN_REPLY_MAX) : "";
   if (!weekStart) return { ok: false, status: 422, error: "Bad request." };
   if (!reply) return { ok: false, status: 422, error: "Write a reply first." };
+  // (A voice reply sets reply to '' so the check-in counts as answered; text can follow.)
   const res = await env.DB.prepare(
     `UPDATE checkins SET reply = ?, replied_by = ?, replied_at = ${NOW_SQL} WHERE user_id = ? AND week_start = ?`,
   )
@@ -345,7 +349,7 @@ export async function shareReport(env: SharingEnv, viewerId: string, raw: unknow
   if (!exp) return { ok: false, status: 409, error: "They haven't opened the app in your whop yet, so there's nowhere to notify them." };
   const sent = await sendWhop(env, exp, c.memberId, {
     title: "Your coach shared your progress report",
-    content: "See how far you've come: open Prep Calculator → Progress → Weekly → My progress report.",
+    content: "See how far you've come: open Prep Calculator → Progress → Check-in → My progress report.",
   });
   if (!sent.ok) return { ok: false, status: 502, error: "Whop didn't send the notification. Try again in a moment." };
   return { ok: true, body: { notified: true } };

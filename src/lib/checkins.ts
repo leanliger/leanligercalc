@@ -1,5 +1,5 @@
 /**
- * Weekly coach check-in (Progress → Weekly; worker/coaching.ts).
+ * Weekly coach check-in (Progress → Check-in; worker/coaching.ts).
  *
  * Once a week a member rates five things from 1 (bad) to 5 (good), writes
  * their wins and struggles, and can ask their coach a question. The numbers
@@ -24,6 +24,10 @@ export const CHECKIN_SCALES = [
 export type CheckinScale = (typeof CHECKIN_SCALES)[number]["key"];
 
 export const CHECKIN_TEXT_MAX = 600;
+/** Voice replies (worker/voice-replies.ts). */
+export const VOICE_MAX_SECONDS = 30;
+export const VOICE_MAX_BYTES = 2 * 1024 * 1024;
+export const VOICE_TYPES = ["audio/webm", "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/aac", "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav"];
 export const CHECKIN_REPLY_MAX = 2000;
 /** Days a check-in looks back over, ending on the day it's sent. */
 export const CHECKIN_DAYS = 7;
@@ -34,6 +38,8 @@ export interface CheckinAnswers {
   struggles: string;
   /** Anything they want to ask the coach. */
   question: string;
+  /** One focus or rule for next week (was the weekly self-review). */
+  focus?: string;
 }
 
 /** Filled in from the member's logs for the 7 days to `to`. */
@@ -65,6 +71,8 @@ export interface Checkin {
   stats: CheckinStats;
   reply: string | null;
   repliedAt: string | null;
+  /** The coach's voice reply, if any (played from /api/checkins/voice/:weekStart). */
+  replyAudio: { seconds: number } | null;
 }
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, CHECKIN_TEXT_MAX) : "");
@@ -78,7 +86,7 @@ export function validateCheckinAnswers(raw: unknown): { ok: true; value: Checkin
     if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 5) return { ok: false, error: `Rate your ${s.label.toLowerCase()} from 1 to 5.` };
     ratings[s.key] = v;
   }
-  return { ok: true, value: { ratings, wins: text(b.wins), struggles: text(b.struggles), question: text(b.question) } };
+  return { ok: true, value: { ratings, wins: text(b.wins), struggles: text(b.struggles), question: text(b.question), focus: text(b.focus) } };
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -132,5 +140,5 @@ export function computeCheckinStats(
 
 /** Whop notification when the coach replies. */
 export function checkinReplyMessage(): { title: string; content: string } {
-  return { title: "Your coach replied to your check-in", content: "Open Prep Calculator → Progress → Weekly to read it." };
+  return { title: "Your coach replied to your check-in", content: "Open Prep Calculator → Progress → Check-in to read it." };
 }

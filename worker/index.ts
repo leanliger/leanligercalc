@@ -75,6 +75,7 @@
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
+import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
 import {
   coachCheckins,
   coachClearMacros,
@@ -641,6 +642,17 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachCheckins(env, userId, q("company"), q("member")));
   }
+  if (path === "/api/coach/checkins/voice") {
+    if (method === "POST") return send(await uploadVoiceReply(env, userId, url, request));
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const r = await coachVoice(env, userId, url);
+    return r instanceof Response ? r : send(r);
+  }
+  const voiceMatch = /^\/api\/checkins\/voice\/(\d{4}-\d\d-\d\d)$/.exec(path);
+  if (voiceMatch) {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return (await memberVoice(env, userId, voiceMatch[1]!)) ?? error(404, "No voice reply.");
+  }
   if (path === "/api/coach/checkins/reply") {
     if (method !== "POST") return error(405, "Method not allowed.");
     const body = await readJson(request);
@@ -1093,6 +1105,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (path === "/api/me") {
     if (method !== "DELETE") return error(405, "Method not allowed.");
     await deleteAllPhotos(env, userId);
+    await deleteVoiceReplies(env, userId);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM measurements WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),

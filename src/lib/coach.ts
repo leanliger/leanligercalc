@@ -62,7 +62,46 @@ export interface MemberSummary {
   lastCheckin: { weekStart: string; submittedAt: string; replied: boolean } | null;
   /** Sent a check-in in the last 7 days. */
   checkedIn: boolean;
+  /** Client health score 0–100 (healthScore); null while paused. */
+  health: HealthScore | null;
   flags: Flag[];
+}
+
+/**
+ * One number per member for sorting the list: logging (any log on each of the
+ * last 7 days, 40), adherence (this week's habit scorecard, 35; logging again
+ * when they track no habits) and trend vs plan (25).
+ */
+export interface HealthScore {
+  score: number;
+  logging: number;
+  adherence: number;
+  trend: number;
+}
+
+export const HEALTH_PARTS = { logging: 40, adherence: 35, trend: 25 } as const;
+
+const TREND_POINTS: Record<string, number> = {
+  "on-track": 25,
+  collecting: 18,
+  waiting: 18,
+  "not-started": 18,
+  ahead: 15,
+  behind: 8,
+  "no-data": 5,
+};
+
+export function healthScore(daysLogged7: number, weekPercent: number | null, progressStatus: string | null): HealthScore {
+  const logging = Math.round((Math.min(daysLogged7, 7) / 7) * HEALTH_PARTS.logging);
+  const adherence = Math.round(((weekPercent ?? (Math.min(daysLogged7, 7) / 7) * 100) / 100) * HEALTH_PARTS.adherence);
+  // No plan yet: neither on nor off track.
+  const trend = progressStatus === null ? 12 : (TREND_POINTS[progressStatus] ?? 12);
+  return { score: Math.min(100, logging + adherence + trend), logging, adherence, trend };
+}
+
+/** Green 75+, yellow 50–74, red under 50. */
+export function healthZone(score: number): Zone {
+  return score >= 75 ? "green" : score >= 50 ? "yellow" : "red";
 }
 
 export const FLAG_LABELS: Record<Flag, string> = {
@@ -137,6 +176,14 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   const workouts7 = new Set(data.workoutDates.filter((d) => d >= weekAgo && d <= today)).size;
   const lastCheckin = data.checkins[0] ?? null;
   const checkedIn = lastCheckin !== null && lastCheckin.submittedAt.slice(0, 10) >= weekAgo;
+  const inWeek = (d: string) => d >= weekAgo && d <= today;
+  const daysLogged7 = new Set([
+    ...weighIns.filter((w) => inWeek(w.date)).map((w) => w.date),
+    ...data.habitLogs.filter((l) => inWeek(l.date) && Object.keys(l.entries).length > 0).map((l) => l.date),
+    ...data.foodDays.filter((d) => inWeek(d.date) && d.kcal > 0).map((d) => d.date),
+    ...data.workoutDates.filter(inWeek),
+  ]).size;
+  const health = paused ? null : healthScore(daysLogged7, score.percent, hasPlan ? (progress?.status ?? "no-data") : null);
 
   const flags: Flag[] = [];
   if (lastCheckin && !lastCheckin.replied) flags.push("reply");
@@ -171,6 +218,7 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     workouts7,
     lastCheckin,
     checkedIn,
+    health,
     flags,
   };
 }

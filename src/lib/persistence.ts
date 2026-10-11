@@ -148,6 +148,7 @@ export function sanitizeFatLoss(raw: Partial<Record<keyof FatLossInputs, unknown
     targetWeight: num(raw.targetWeight, d.targetWeight, 50, 1000),
     targetBodyFat: num(raw.targetBodyFat, d.targetBodyFat, 3, 60),
     weeklyRate: num(raw.weeklyRate, d.weeklyRate, 0.001, 0.03),
+    fixedDeficit: nullableNum(raw.fixedDeficit, d.fixedDeficit, 50, 2500),
     mode: oneOf<TimelineMode>(raw.mode, ["startDate", "eventDate"], d.mode),
     startDate: date(raw.startDate, todayISO()),
     eventDate: date(raw.eventDate, d.eventDate),
@@ -273,6 +274,7 @@ const URL_KEYS = {
   tw: "targetWeight",
   tbf: "targetBodyFat",
   r: "weeklyRate",
+  fd: "fixedDeficit",
   m: "mode",
   sd: "startDate",
   ed: "eventDate",
@@ -302,7 +304,7 @@ type UrlKey = keyof typeof URL_KEYS;
 
 const PROFILE_KEYS: UrlKey[] = ["w", "h", "a", "s", "bfo"];
 const FAT_LOSS_KEYS: UrlKey[] = [
-  "gt", "tw", "tbf", "r", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
+  "gt", "tw", "tbf", "r", "fd", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
 ];
 const CARB_KEYS: UrlKey[] = [
   "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "wp", "cc",

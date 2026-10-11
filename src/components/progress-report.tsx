@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 /**
  * One page of before and after (src/lib/progress-report.ts), laid out to look
  * good in a screenshot: weight, photos, measurements, strength, consistency.
- * Shown to coaches on a member's page and to members on Progress → Weekly.
+ * Shown to coaches on a member's page and to members on Progress → Check-in.
  */
 
 const POSE: Record<string, string> = { front: "Front", side: "Side", back: "Back" };

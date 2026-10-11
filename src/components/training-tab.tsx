@@ -185,7 +185,7 @@ export function TrainingTab({
 
   const setActiveProgram = (id: string) => onSettingsChange((s) => ({ ...s, activeProgramId: id }));
   // Workouts (log, programs, library) or Program (the coach's plan on a calendar).
-  const [section, setSection] = React.useState<"workouts" | "program">("workouts");
+  const [section, setSection] = React.useState<"workouts" | "program" | "tools">("workouts");
 
   const addProgram = (template: ProgramTemplate | null) => {
     const program: Program = template
@@ -268,13 +268,14 @@ export function TrainingTab({
         workouts={workouts}
         unit={unit}
         onBack={goHome}
-        backLabel={active ? "Back to workout" : "Back to training"}
+        backLabel={section === "tools" ? "Back to tools" : active ? "Back to workout" : "Back to training"}
         onSaveCustom={ex.custom && findExercise(ex.id, custom) ? addCustom : undefined}
         onDeleteCustom={ex.custom && findExercise(ex.id, custom) ? () => deleteCustom(ex.id) : undefined}
         onFormCheck={
           formCheckAvailability === "ok" && !active && findExercise(ex.id, custom)
             ? () => {
                 setAskFor(ex.id);
+                setSection("tools");
                 goHome();
               }
             : undefined
@@ -350,6 +351,33 @@ export function TrainingTab({
     );
   }
 
+  if (!body && section === "tools") {
+    body = (
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:items-start">
+        <div className="space-y-5">
+          <PlateCalculatorCard unit={unit} />
+          <FormChecksCard
+            availability={formCheckAvailability}
+            custom={custom}
+            onAddCustom={addCustom}
+            askFor={askFor}
+            onAskForHandled={clearAskFor}
+          />
+        </div>
+        <div className="space-y-5">
+          <LiftProgressCard workouts={workouts} custom={custom} unit={unit} onOpen={(id) => setView({ kind: "exercise", id })} />
+          <ExerciseLibraryCard
+            custom={custom}
+            workouts={workouts}
+            unit={unit}
+            onOpen={(id) => setView({ kind: "exercise", id })}
+            onAddCustom={addCustom}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!body && active) {
     body = (
       <WorkoutLogger
@@ -407,30 +435,14 @@ export function TrainingTab({
             onTrackRirChange={(trackRir) => onSettingsChange((s) => ({ ...s, trackRir }))}
             onFinishRemindersChange={(finishReminders) => onSettingsChange((s) => ({ ...s, finishReminders }))}
           />
-          <PlateCalculatorCard unit={unit} />
-          <FormChecksCard
-            availability={formCheckAvailability}
-            custom={custom}
-            onAddCustom={addCustom}
-            askFor={askFor}
-            onAskForHandled={clearAskFor}
-          />
         </div>
         <div className="space-y-5">
-          <LiftProgressCard workouts={workouts} custom={custom} unit={unit} onOpen={(id) => setView({ kind: "exercise", id })} />
           <RecentWorkoutsCard
             workouts={workouts}
             unit={unit}
             records={records}
             onEdit={(id) => setView({ kind: "edit", workoutId: id })}
             onDelete={onDeleteWorkout}
-          />
-          <ExerciseLibraryCard
-            custom={custom}
-            workouts={workouts}
-            unit={unit}
-            onOpen={(id) => setView({ kind: "exercise", id })}
-            onAddCustom={addCustom}
           />
         </div>
       </div>
@@ -447,8 +459,9 @@ export function TrainingTab({
           options={[
             { value: "workouts" as const, label: "Workouts" },
             { value: "program" as const, label: "Programs" },
+            { value: "tools" as const, label: "Tools" },
           ]}
-          className="mb-5 max-w-xs"
+          className="mb-5 max-w-sm"
         />
       ) : null}
       {body}

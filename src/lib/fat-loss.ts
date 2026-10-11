@@ -138,11 +138,30 @@ export function weeklyEnergyDeficit(fatLost: number, leanLost: number): number {
  * row of the simulation, before any intake floor.
  */
 export function dailyDeficitForRate(profile: BiometricProfile, weeklyRate: number): number {
-  const weight = Math.max(safeNumber(profile.weight, 0), 0);
-  const bodyFat = clamp(resolveBodyFat(profile), 1, 70);
+  return deficitAt(Math.max(safeNumber(profile.weight, 0), 0), clamp(resolveBodyFat(profile), 1, 70), weeklyRate);
+}
+
+/** Daily deficit for a weekly rate at a given weight and body fat. */
+function deficitAt(weight: number, bodyFat: number, weeklyRate: number): number {
   const loss = weight * weeklyRate;
   const fatFrac = fatLossFraction(weeklyRate, bodyFat);
   return weeklyEnergyDeficit(loss * fatFrac, loss * (1 - fatFrac)) / 7;
+}
+
+/** The weekly rate giving `kcal` a day at this weight and body fat, within 0.1–3%. */
+function rateAt(weight: number, bodyFat: number, kcal: number): number {
+  let lo = 0.001;
+  let hi = 0.03;
+  if (!(deficitAt(weight, bodyFat, hi) > 0)) return RATE_PRESETS.moderate;
+  if (deficitAt(weight, bodyFat, lo) >= kcal) return lo;
+  if (deficitAt(weight, bodyFat, hi) <= kcal) return hi;
+  // The deficit rises with the rate, so halve the bracket until it's exact.
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (deficitAt(weight, bodyFat, mid) < kcal) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 /**
@@ -151,18 +170,8 @@ export function dailyDeficitForRate(profile: BiometricProfile, weeklyRate: numbe
  * eases week by week like any rate's, as weight comes down.
  */
 export function rateForDailyDeficit(profile: BiometricProfile, kcal: number): number {
-  let lo = 0.001;
-  let hi = 0.03;
-  if (!(dailyDeficitForRate(profile, hi) > 0)) return RATE_PRESETS.moderate;
-  if (dailyDeficitForRate(profile, lo) >= kcal) return lo;
-  if (dailyDeficitForRate(profile, hi) <= kcal) return hi;
-  // The deficit rises with the rate, so halve the bracket until it's exact.
-  for (let i = 0; i < 50; i++) {
-    const mid = (lo + hi) / 2;
-    if (dailyDeficitForRate(profile, mid) < kcal) lo = mid;
-    else hi = mid;
-  }
-  return Math.round(((lo + hi) / 2) * 1e6) / 1e6;
+  const rate = rateAt(Math.max(safeNumber(profile.weight, 0), 0), clamp(resolveBodyFat(profile), 1, 70), kcal);
+  return Math.round(rate * 1e6) / 1e6;
 }
 
 /**
@@ -301,9 +310,12 @@ function simulate(
       tdeeAtWeight(profile, weight, inputs, inputs.tdeeOverride) *
       adaptationFactor(week, inputs.includeMetabolicAdaptation);
 
+    // A fixed deficit: this week's rate is whatever that deficit loses at this weight.
+    const weekRate = inputs.fixedDeficit ? rateAt(weight, (fatMass / weight) * 100, inputs.fixedDeficit) : rate;
+
     // Look ahead one week to price *this* week's prescription.
-    const projectedLoss = weight * rate;
-    const fatFrac = fatLossFraction(rate, (fatMass / weight) * 100);
+    const projectedLoss = weight * weekRate;
+    const fatFrac = fatLossFraction(weekRate, (fatMass / weight) * 100);
     const projectedFatLoss = projectedLoss * fatFrac;
     const projectedLeanLoss = projectedLoss - projectedFatLoss;
     const weeklyDeficit = weeklyEnergyDeficit(projectedFatLoss, projectedLeanLoss);
@@ -365,6 +377,8 @@ function buildWarnings(
   inputs: FatLossInputs,
   result: Omit<FatLossResult, "warnings">,
   rate: number,
+  /** The steepest week's rate (the same as `rate` unless the deficit is fixed). */
+  peakRate: number = rate,
 ): TimelineWarning[] {
   const warnings: TimelineWarning[] = [];
   const { requiredRate, weeksAvailable, projection } = result;
@@ -386,10 +400,12 @@ function buildWarnings(
       detail:
         "Anything above 1%/week carries a high risk of lean mass loss, strength drops, and hormonal disruption. Push the event back, raise the goal weight, or accept arriving slightly above target.",
     });
-  } else if (rate > RISK_RATE_THRESHOLD) {
+  } else if (peakRate > RISK_RATE_THRESHOLD) {
     warnings.push({
       level: "danger",
-      title: "Selected rate exceeds 1% of body weight per week",
+      title: inputs.fixedDeficit
+        ? `This deficit reaches ${(peakRate * 100).toFixed(2)}% of body weight a week by the end`
+        : "Selected rate exceeds 1% of body weight per week",
       detail:
         "Sustained loss faster than 1%/week increasingly comes out of lean tissue rather than fat.",
     });
@@ -507,9 +523,12 @@ export function calculateFatLossTimeline(
   const weeksRequired = finalWeek?.week ?? 0;
 
   // Fractional week count gives a sharper date than the integer week index.
-  const precise = feasible
-    ? weeksToTarget(startWeight, finalWeek?.weight ?? goalWeight, rate)
-    : 0;
+  const beforeFinal = projection[projection.length - 2];
+  const precise = !feasible
+    ? 0
+    : inputs.fixedDeficit && finalWeek && beforeFinal && beforeFinal.weight > finalWeek.weight
+      ? finalWeek.week - 1 + clamp((beforeFinal.weight - goalWeight) / (beforeFinal.weight - finalWeek.weight), 0, 1)
+      : weeksToTarget(startWeight, finalWeek?.weight ?? goalWeight, rate);
   const preciseWeeks = Number.isFinite(precise) && precise > 0 ? precise : weeksRequired;
 
   const endWeight = finalWeek?.weight ?? startWeight;
@@ -574,7 +593,16 @@ export function calculateFatLossTimeline(
     feasible,
   };
 
-  return { ...base, warnings: buildWarnings(profile, inputs, base, rate) };
+  // With a fixed deficit the rate climbs as weight drops: warn on the steepest
+  // week, and compare the date with the average rate.
+  let peakRate = rate;
+  let averageRate = rate;
+  if (inputs.fixedDeficit && projection.length > 1) {
+    peakRate = Math.max(...projection.slice(1).map((r, i) => r.weeklyLoss / projection[i]!.weight));
+    const weeks = projection.length - 1;
+    averageRate = 1 - Math.pow(projection[weeks]!.weight / startWeight, 1 / weeks);
+  }
+  return { ...base, warnings: buildWarnings(profile, inputs, base, averageRate, peakRate) };
 }
 
 /** Plain-text summary for the copy-to-clipboard card. */
@@ -595,7 +623,9 @@ export function formatTimelineSummary(
     "FAT LOSS TIMELINE",
     `Start: ${fmt(profile.weight)} at ${round(startBodyFat, 1)}% body fat${bodyFatSource}`,
     `Goal: ${fmt(result.endWeight)} at ${round(result.endBodyFat, 1)}% body fat`,
-    `Rate: ${(inputs.weeklyRate * 100).toFixed(2)}% of body weight per week`,
+    inputs.fixedDeficit
+      ? `Deficit: ${inputs.fixedDeficit} kcal/day, the same every week`
+      : `Rate: ${(inputs.weeklyRate * 100).toFixed(2)}% of body weight per week`,
     "",
     `Duration: ${result.weeksRequired} weeks`,
     `Start date: ${result.requiredStartDate}`,

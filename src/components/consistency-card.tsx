@@ -146,6 +146,45 @@ export function ConsistencyCard({ habits, logs, today, pauses = NO_PAUSES }: Con
   );
 }
 
+/** Each habit's streak and last-28-days %, without the card (Progress → Habits). */
+export function HabitConsistencyList({ habits, logs, today, pauses = NO_PAUSES }: ConsistencyCardProps) {
+  const rows = React.useMemo(() => {
+    const logMap = withPauses(new Map(logs.map((l) => [l.date, l.entries])), pauses, today);
+    const first = logs[0]?.date ?? null;
+    return habits.map((def) => ({
+      def,
+      streak: habitStreak(def, logMap, today, today, first),
+      consistency: habitConsistency(def, logMap, today, first),
+    }));
+  }, [habits, logs, today, pauses]);
+  return (
+    <ul className="space-y-2.5">
+      {rows.map(({ def, streak, consistency }) => (
+        <li key={def.id} className="space-y-1">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate">{def.name}</span>
+            <StreakBadge days={streak.current} />
+            {streak.best > streak.current ? <span className="tabular shrink-0 text-[11px] text-muted-foreground">best {streak.best}</span> : null}
+            <span className={cn("tabular w-10 shrink-0 text-right text-xs font-semibold", consistency.zone ? ZONE_TEXT[consistency.zone] : "text-muted-foreground")}>
+              {consistency.percent === null ? "—" : `${consistency.percent}%`}
+            </span>
+          </div>
+          <div
+            className="h-1.5 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label={`${def.name}: ${consistency.done} of ${consistency.possible} days in the last ${CONSISTENCY_WINDOW_DAYS}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={consistency.percent ?? 0}
+          >
+            {consistency.zone ? <div className={cn("h-full rounded-full", ZONE_BAR[consistency.zone])} style={{ width: `${consistency.percent}%` }} /> : null}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function StatBox({
   label,
   value,

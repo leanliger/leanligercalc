@@ -127,7 +127,7 @@ export function FatLossCalculator({
   const presetDeficits = React.useMemo(() => {
     const out = {} as Record<(typeof RATE_PRESET_OPTIONS)[number]["value"], number | null>;
     for (const preset of RATE_PRESET_OPTIONS) {
-      const r = calculateFatLossTimeline(profile, { ...inputs, weeklyRate: preset.rate });
+      const r = calculateFatLossTimeline(profile, { ...inputs, weeklyRate: preset.rate, fixedDeficit: null });
       out[preset.value] = r.feasible ? (r.projection[0]?.dailyDeficit ?? null) : null;
     }
     return out;
@@ -149,7 +149,16 @@ export function FatLossCalculator({
   };
   // The last week of dieting (the final row is the goal week itself).
   const lastDietWeek = result.projection.length > 2 ? result.projection[result.projection.length - 2] : undefined;
-  const typedDeficit = Math.round(dailyDeficitForRate(profile, inputs.weeklyRate));
+  const typedDeficit = inputs.fixedDeficit ?? Math.round(dailyDeficitForRate(profile, inputs.weeklyRate));
+  // With a fixed deficit the weekly rate climbs as weight drops: first and last week.
+  const rateAt = (i: number) => {
+    const row = result.projection[i];
+    const prev = result.projection[i - 1];
+    return row && prev && prev.weight > 0 ? (row.weeklyLoss / prev.weight) * 100 : null;
+  };
+  const firstRate = rateAt(1);
+  const lastRate = rateAt(result.projection.length - 1);
+  const fixedId = React.useId();
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
@@ -246,7 +255,7 @@ export function FatLossCalculator({
             </div>
             {result.feasible && firstWeek ? (
               <p className="tabular -mt-2 text-right text-xs text-muted-foreground">
-                {firstWeek.dailyDeficit.toLocaleString()} kcal/day deficit to start
+                {firstWeek.dailyDeficit.toLocaleString()} kcal/day deficit {inputs.fixedDeficit ? "every week" : "to start"}
                 {" "}· {(firstWeek.dailyDeficit * 7).toLocaleString()} kcal/week
               </p>
             ) : null}
@@ -254,7 +263,7 @@ export function FatLossCalculator({
             <Slider
               value={[inputs.weeklyRate * 1000]}
               onValueChange={([value]) =>
-                onChange({ weeklyRate: (value ?? 7.5) / 1000 })
+                onChange({ weeklyRate: (value ?? 7.5) / 1000, fixedDeficit: null })
               }
               min={MIN_RATE * 1000}
               max={MAX_RATE * 1000}
@@ -273,7 +282,7 @@ export function FatLossCalculator({
                   key={preset.value}
                   variant={activePreset?.value === preset.value ? "default" : "outline"}
                   size="sm"
-                  onClick={() => onChange({ weeklyRate: preset.rate })}
+                  onClick={() => onChange({ weeklyRate: preset.rate, fixedDeficit: null })}
                   className="flex-col gap-0 py-1.5 h-auto"
                 >
                   <span>{preset.label}</span>
@@ -293,20 +302,42 @@ export function FatLossCalculator({
               label="Or enter a daily deficit"
               value={typedDeficit}
               onValueChange={(kcal) => {
-                if (kcal > 0) onChange({ weeklyRate: rateForDailyDeficit(profile, kcal) });
+                if (kcal > 0)
+                  onChange(
+                    inputs.fixedDeficit
+                      ? { fixedDeficit: Math.round(kcal), weeklyRate: rateForDailyDeficit(profile, kcal) }
+                      : { weeklyRate: rateForDailyDeficit(profile, kcal) },
+                  );
               }}
               suffix="kcal/day"
               min={50}
               step={25}
               decimals={0}
               hint={
-                result.feasible && lastDietWeek
-                  ? `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week. It eases as your weight drops: about ${lastDietWeek.dailyDeficit.toLocaleString()} kcal/day by week ${lastDietWeek.week + 1}.`
-                  : `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week.`
+                inputs.fixedDeficit
+                  ? result.feasible && firstRate !== null && lastRate !== null
+                    ? `The same every week. Weekly loss goes from ${firstRate.toFixed(2)}% to ${lastRate.toFixed(2)}% of your weight as you get lighter.`
+                    : "The same every week."
+                  : result.feasible && lastDietWeek
+                    ? `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week. It eases as your weight drops: about ${lastDietWeek.dailyDeficit.toLocaleString()} kcal/day by week ${lastDietWeek.week + 1}.`
+                    : `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week.`
               }
-              help="Sets the rate that gives this deficit in week 1. The plan then keeps losing the same share of your weight each week, so the deficit shrinks a little as you get lighter."
+              help="With 'Keep it the same every week' off, this sets the rate that gives this deficit in week 1, and the deficit shrinks a little as you get lighter. On, the deficit stays exactly this, so the weekly loss speeds up slightly instead."
               containerClassName="border-t border-border pt-3"
             />
+            <div className="flex items-center gap-2.5">
+              <label htmlFor={fixedId} className="min-w-0 flex-1 text-xs font-medium">
+                Keep it the same every week
+                <span className="block font-normal text-muted-foreground">
+                  {inputs.fixedDeficit ? "Moving the slider or a preset goes back to a rate." : "Off: the deficit eases as your weight drops."}
+                </span>
+              </label>
+              <Switch
+                id={fixedId}
+                checked={inputs.fixedDeficit !== null}
+                onCheckedChange={(on) => onChange(on ? { fixedDeficit: typedDeficit } : { fixedDeficit: null })}
+              />
+            </div>
 
             <p className="text-xs text-muted-foreground">
               Loss is taken as a percentage of <em>current</em> weight each week, so the

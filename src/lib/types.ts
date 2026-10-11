@@ -71,6 +71,12 @@ export interface FatLossInputs {
   targetBodyFat: number;
   /** Weekly loss rate as a fraction of body weight, e.g. 0.0075 for 0.75%. */
   weeklyRate: number;
+  /**
+   * A daily deficit (kcal) held the same every week, instead of a rate that
+   * eases as weight drops. Null = the rate above. While set, `weeklyRate` is
+   * kept at week 1's equivalent for display.
+   */
+  fixedDeficit: number | null;
   mode: TimelineMode;
   /** ISO date (yyyy-mm-dd) the diet begins. Used in `startDate` mode. */
   startDate: string;

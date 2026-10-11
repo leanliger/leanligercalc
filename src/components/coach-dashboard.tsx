@@ -49,6 +49,9 @@ import {
   type CoachOverview,
   type Flag,
   type MemberSummary,
+  HEALTH_PARTS,
+  healthZone,
+  type HealthScore,
 } from "@/lib/coach";
 import type { MemberSharing } from "@/lib/sharing";
 import { formatShort, todayISO } from "@/lib/dates";
@@ -105,6 +108,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   // The whop's member tags, and the tag the list is filtered to.
   const [tagsData, setTagsData] = React.useState<TagsData | null>(null);
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
+  // List order: most urgent first, lowest health score first, or by name.
+  const [sort, setSort] = React.useState<"attention" | "health" | "name">("attention");
   const [query, setQuery] = React.useState("");
   // ?member=user_… opens straight onto one member (bookmarkable).
   const [selected, setSelected] = React.useState<string | null>(() =>
@@ -192,13 +197,19 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     );
 
   const q = query.trim().toLowerCase();
-  const shown = summaries.filter((m) => {
+  const filtered = summaries.filter((m) => {
     if (q && !`${m.data.name ?? ""} ${m.data.username ?? ""}`.toLowerCase().includes(q)) return false;
     if (tagFilter && !(tagsData?.members[m.data.userId] ?? []).includes(tagFilter)) return false;
     if (filter === "all") return true;
     if (filter === "attention") return m.flags.length > 0;
     return m.flags.includes(filter);
   });
+  const shown =
+    sort === "health"
+      ? [...filtered].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
+      : sort === "name"
+        ? [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName))
+        : filtered;
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
   const currentNotSharing = current ? null : (notSharing.find((m) => m.userId === selected) ?? null);
   const shownNotSharing = notSharing.filter((m) => !q || `${m.name ?? ""} ${m.username ?? ""}`.toLowerCase().includes(q));
@@ -360,6 +371,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     className="pl-9"
                   />
                 </div>
+                <SegmentedControl
+                  ariaLabel="Sort members"
+                  size="sm"
+                  value={sort}
+                  onValueChange={setSort}
+                  options={[
+                    { value: "attention" as const, label: "Most urgent" },
+                    { value: "health" as const, label: "Health score" },
+                    { value: "name" as const, label: "Name" },
+                  ]}
+                />
                 <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
                   {FILTERS.map((f) => {
                     const n =
@@ -606,8 +628,33 @@ function MemberRow({
           </span>
         ) : null}
       </span>
+      <HealthPill health={m.health} />
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
     </button>
+  );
+}
+
+const ZONE_RING: Record<Zone, string> = {
+  green: "border-success/50 bg-success/10 text-success",
+  yellow: "border-warning/50 bg-warning/10 text-warning",
+  red: "border-destructive/50 bg-destructive/10 text-destructive",
+};
+
+/** The client health score as a small coloured number. */
+function HealthPill({ health, large }: { health: HealthScore | null; large?: boolean }) {
+  if (!health) return null;
+  return (
+    <span
+      className={cn(
+        "tabular flex shrink-0 flex-col items-center justify-center rounded-full border font-semibold",
+        large ? "h-12 w-12 text-lg" : "h-9 w-9 text-sm",
+        ZONE_RING[healthZone(health.score)],
+      )}
+      title={`Health score ${health.score}: logging ${health.logging}/${HEALTH_PARTS.logging}, adherence ${health.adherence}/${HEALTH_PARTS.adherence}, trend ${health.trend}/${HEALTH_PARTS.trend}`}
+    >
+      {health.score}
+      <span className="sr-only"> health score out of 100</span>
+    </span>
   );
 }
 
@@ -869,6 +916,18 @@ function MemberDetail({
         </div>
       </div>
 
+      {m.health ? (
+        <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+          <HealthPill health={m.health} large />
+          <div className="min-w-0 text-xs">
+            <p className="text-sm font-semibold">Health score</p>
+            <p className="tabular text-muted-foreground">
+              Logging {m.health.logging}/{HEALTH_PARTS.logging} · Adherence {m.health.adherence}/{HEALTH_PARTS.adherence} · Trend {m.health.trend}/{HEALTH_PARTS.trend}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Days logged this week, habit scorecard, and weight vs plan.</p>
+          </div>
+        </div>
+      ) : null}
       <CoachReportPanel companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
       {tags}
       <CoachNotesCard companyId={companyId} memberId={m.data.userId} />

@@ -14,6 +14,7 @@ import { formatShort } from "@/lib/dates";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { VoicePlayer, VoiceRecorder } from "@/components/voice-reply";
 
 /** Coach dashboard pieces: private notes, check-ins, set macros, and the "look at today" list. */
 
@@ -238,6 +239,7 @@ export function CheckinAnswersText({ c }: { c: Checkin }) {
   const rows: [string, string][] = [
     ["Wins", c.answers.wins],
     ["Struggles", c.answers.struggles],
+    ["Focus for next week", c.answers.focus ?? ""],
     ["Question for you", c.answers.question],
   ];
   return (
@@ -308,7 +310,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
           {checkins === null
             ? error ?? "Loading…"
             : checkins.length === 0
-              ? `${first(memberName)} hasn't sent a check-in yet. They send one from Progress → Weekly in their app.`
+              ? `${first(memberName)} hasn't sent a check-in yet. They send one from Progress → Check-in in their app.`
               : "Their answers, with the week's numbers filled in from their logs. Reply and they get a notification."}
         </CardDescription>
       </CardHeader>
@@ -331,7 +333,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                   <span className="text-sm font-medium">Week of {formatShort(c.weekStart)}</span>
                   <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     sent {formatShort(c.submittedAt.slice(0, 10))}
-                    {c.reply ? <Badge variant="success">Replied</Badge> : <Badge variant="default">To review</Badge>}
+                    {c.reply !== null || c.replyAudio ? <Badge variant="success">Replied</Badge> : <Badge variant="default">To review</Badge>}
                   </span>
                 </button>
                 {isOpen ? (
@@ -339,6 +341,13 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                     <CheckinRatings c={c} />
                     <CheckinStatsGrid stats={c.stats} unit={unit} />
                     <CheckinAnswersText c={c} />
+                    {c.replyAudio ? (
+                      <VoicePlayer
+                        src={`/api/coach/checkins/voice?${qs(companyId, memberId)}&weekStart=${c.weekStart}`}
+                        seconds={c.replyAudio.seconds}
+                        label="Your voice reply"
+                      />
+                    ) : null}
                     {c.reply ? (
                       <div className="rounded-md bg-primary/5 p-2.5">
                         <p className="text-[10px] font-medium uppercase tracking-wide text-primary">Your reply · {formatShort((c.repliedAt ?? "").slice(0, 10))}</p>
@@ -360,8 +369,17 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                         />
                         <Button size="sm" onClick={() => void send(c.weekStart)} disabled={!reply.trim() || sending}>
                           <Send />
-                          {sending ? "Sending…" : "Send reply"}
+                          {sending ? "Sending…" : c.replyAudio ? "Add a written reply" : "Send reply"}
                         </Button>
+                        {!c.replyAudio ? (
+                          <VoiceRecorder
+                            uploadUrl={`/api/coach/checkins/voice?${qs(companyId, memberId)}&weekStart=${c.weekStart}`}
+                            onSent={(notified) => {
+                              setMessage(notified ? `Voice reply sent. ${first(memberName)} got a notification.` : `Voice reply sent. ${first(memberName)} hears it next time they open the app.`);
+                              void call<{ checkins: Checkin[] }>(`/api/coach/checkins?${qs(companyId, memberId)}`).then((r) => setCheckins(r.checkins));
+                            }}
+                          />
+                        ) : null}
                       </div>
                     )}
                     {message && isOpen ? (

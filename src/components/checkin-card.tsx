@@ -12,9 +12,10 @@ import { formatShort } from "@/lib/dates";
 import { weekStartOf } from "@/lib/habits";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { VoicePlayer } from "@/components/voice-reply";
 
 /**
- * Progress → Weekly: this week's check-in for the coach (src/lib/checkins.ts),
+ * Progress → Check-in: this week's check-in for the coach (src/lib/checkins.ts),
  * the coach's replies, and past weeks. The numbers are filled in from the
  * member's logs by the server when they send it; a preview shows them first.
  */
@@ -24,6 +25,7 @@ const EMPTY: CheckinAnswers = {
   wins: "",
   struggles: "",
   question: "",
+  focus: "",
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -103,13 +105,13 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
             <div className="space-y-3 rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold">This week · sent {formatShort(current.submittedAt.slice(0, 10))}</p>
-                {current.reply ? <Badge variant="success">Coach replied</Badge> : <Badge variant="secondary">Waiting for your coach</Badge>}
+                {current.reply !== null || current.replyAudio ? <Badge variant="success">Coach replied</Badge> : <Badge variant="secondary">Waiting for your coach</Badge>}
               </div>
-              {current.reply ? <CoachReply c={current} /> : null}
+              {current.reply || current.replyAudio ? <CoachReply c={current} /> : null}
               <CheckinRatings c={current} />
               <CheckinStatsGrid stats={current.stats} unit={unit} />
               <CheckinAnswersText c={current} />
-              {!current.reply ? (
+              {current.reply === null && !current.replyAudio ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -145,6 +147,12 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                 value={answers.struggles}
                 onChange={(struggles) => setAnswers((a) => ({ ...a, struggles }))}
                 placeholder="Weekend eating, low energy on leg day…"
+              />
+              <TextBox
+                label="Focus for next week (optional)"
+                value={answers.focus ?? ""}
+                onChange={(focus) => setAnswers((a) => ({ ...a, focus }))}
+                placeholder="Prep lunches Sunday, 10k steps every day…"
               />
               <TextBox
                 label="Question for your coach (optional)"
@@ -193,7 +201,7 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                       className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted/40"
                     >
                       Week of {formatShort(c.weekStart)}
-                      {c.reply ? (
+                      {c.reply || c.replyAudio ? (
                         <span className="flex items-center gap-1 text-[11px] text-primary">
                           <MessageSquare className="h-3 w-3" />
                           Coach replied
@@ -204,7 +212,7 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                     </button>
                     {open ? (
                       <div className="space-y-3 border-t border-border px-3 py-3">
-                        {c.reply ? <CoachReply c={c} /> : null}
+                        {c.reply || c.replyAudio ? <CoachReply c={c} /> : null}
                         <CheckinRatings c={c} />
                         <CheckinStatsGrid stats={c.stats} unit={unit} />
                         <CheckinAnswersText c={c} />
@@ -223,11 +231,12 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
 
 function CoachReply({ c }: { c: Checkin }) {
   return (
-    <div className="rounded-md bg-primary/5 p-2.5">
+    <div className="space-y-2 rounded-md bg-primary/5 p-2.5">
       <p className="text-[10px] font-medium uppercase tracking-wide text-primary">
         Your coach · {formatShort((c.repliedAt ?? "").slice(0, 10))}
       </p>
-      <p className="whitespace-pre-wrap text-sm">{c.reply}</p>
+      {c.replyAudio ? <VoicePlayer src={`/api/checkins/voice/${c.weekStart}`} seconds={c.replyAudio.seconds} label="Voice reply" /> : null}
+      {c.reply ? <p className="whitespace-pre-wrap text-sm">{c.reply}</p> : null}
     </div>
   );
 }

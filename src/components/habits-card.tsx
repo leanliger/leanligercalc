@@ -99,6 +99,8 @@ interface HabitsCardProps {
   stepTarget?: number;
   /** Pause mode periods: those days don't count. */
   pauses?: PausePeriod[];
+  /** Current day streak, shown in the header. */
+  streak?: number;
 }
 
 export function HabitsCard({
@@ -111,6 +113,7 @@ export function HabitsCard({
   onHabitsChange,
   stepTarget = DEFAULT_STEP_TARGET,
   pauses = NO_PAUSES,
+  streak = 0,
 }: HabitsCardProps) {
   const [date, setDate] = React.useState(today);
   const [editing, setEditing] = React.useState(false);
@@ -223,6 +226,13 @@ export function HabitsCard({
             <CardTitle className="flex items-center gap-2">
               <ListChecks className="h-4 w-4 text-primary" />
               Daily non-negotiables
+              {streak > 0 ? (
+                <span className="tabular inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                  <Flame className="h-3 w-3" aria-hidden />
+                  {streak} {streak === 1 ? "day" : "days"}
+                  <span className="sr-only"> streak</span>
+                </span>
+              ) : null}
             </CardTitle>
             <CardDescription>
               {editing ? "Rename, reorder, remove or add habits." : "Tick off each target you hit. Saves as you go."}
@@ -747,15 +757,30 @@ function CellMark({ cell, date }: { cell: Cell; date: string }) {
 interface WeeklyScorecardProps {
   habits: HabitDef[];
   logs: HabitLog[];
-  reviews: WeeklyReview[];
+  /** The old weekly self-review; left out now the check-in asks the same. */
+  reviews?: WeeklyReview[];
   today: string;
   /** Average calorie/protein targets for a Mon–Sun week, if it's in the plan. */
   weekTargets: (weekStart: string) => { calories: number; protein: number } | null;
-  onSaveReview: (review: WeeklyReview) => Promise<void>;
+  onSaveReview?: (review: WeeklyReview) => Promise<void>;
   pauses?: PausePeriod[];
+  /** Day and Green-week streaks, shown above the grid. */
+  streaks?: { day: { current: number; best: number }; weeks: { current: number; best: number } };
+  /** Extra content at the bottom (each habit's last 28 days). */
+  children?: React.ReactNode;
 }
 
-export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onSaveReview, pauses = NO_PAUSES }: WeeklyScorecardProps) {
+export function WeeklyScorecard({
+  habits,
+  logs,
+  reviews = [],
+  today,
+  weekTargets,
+  onSaveReview,
+  pauses = NO_PAUSES,
+  streaks,
+  children,
+}: WeeklyScorecardProps) {
   const thisWeek = weekStartOf(today);
   const [weekStart, setWeekStart] = React.useState(thisWeek);
   const logMap = React.useMemo(
@@ -776,6 +801,13 @@ export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onS
               <ClipboardCheck className="h-4 w-4 text-primary" />
               Weekly scorecard
             </CardTitle>
+            {streaks ? (
+              <p className="tabular text-xs text-muted-foreground">
+                <Flame className="mr-0.5 inline h-3 w-3 -translate-y-px text-primary" aria-hidden />
+                Day streak <span className="font-semibold text-foreground">{streaks.day.current}</span> (best {streaks.day.best}) · Green
+                weeks <span className="font-semibold text-foreground">{streaks.weeks.current}</span> (best {streaks.weeks.best})
+              </p>
+            ) : null}
             <CardDescription>
               Target: {WEEKLY_TARGET_PERCENT}%+ consistency. Rest days excuse the workout only; paused days don&apos;t count.
             </CardDescription>
@@ -894,12 +926,15 @@ export function WeeklyScorecard({ habits, logs, reviews, today, weekTargets, onS
           <p className="text-xs text-muted-foreground">No ticks logged for this week yet.</p>
         )}
 
-        <WeeklyReviewForm
-          key={weekStart}
-          weekStart={weekStart}
-          saved={reviews.find((r) => r.weekStart === weekStart) ?? null}
-          onSave={onSaveReview}
-        />
+        {onSaveReview ? (
+          <WeeklyReviewForm
+            key={weekStart}
+            weekStart={weekStart}
+            saved={reviews.find((r) => r.weekStart === weekStart) ?? null}
+            onSave={onSaveReview}
+          />
+        ) : null}
+        {children}
       </CardContent>
     </Card>
   );

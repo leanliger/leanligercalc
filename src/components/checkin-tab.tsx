@@ -26,10 +26,12 @@ import { Stat } from "@/components/stat";
 import { ProgressChart } from "@/components/progress-chart";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
-import { ConsistencyCard } from "@/components/consistency-card";
+import { HabitConsistencyList } from "@/components/consistency-card";
+import { CONSISTENCY_WINDOW_DAYS, dailyStreak, greenWeekStreak } from "@/lib/streaks";
 import { StepsWeekCard } from "@/components/steps-week-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { CheckinCard } from "@/components/checkin-card";
+import { withPauses } from "@/lib/pause";
 import { ProgressReportLoader } from "@/components/progress-report";
 import { PhotosCard } from "@/components/photos-card";
 import type { Measurement } from "@/lib/measurements";
@@ -111,10 +113,10 @@ export type CheckinSection = "weigh-in" | "habits" | "measurements" | "photos" |
 
 const SECTIONS: { value: CheckinSection; label: string; short: string }[] = [
   { value: "weigh-in", label: "Weigh-in", short: "Weigh-in" },
-  { value: "habits", label: "Daily non-negotiables", short: "Habits" },
+  { value: "habits", label: "Habits", short: "Habits" },
   { value: "measurements", label: "Measurements", short: "Measure" },
   { value: "photos", label: "Progress photos", short: "Photos" },
-  { value: "scorecard", label: "Weekly check-in", short: "Weekly" },
+  { value: "scorecard", label: "Check-in", short: "Check-in" },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -273,6 +275,15 @@ export function CheckinTab({
     />
   );
 
+  // Day and Green-week streaks, for the checklist header and the scorecard.
+  const streaks = React.useMemo(() => {
+    const logMap = withPauses(new Map(habitLogs.map((l) => [l.date, l.entries])), pauses, today);
+    const first = habitLogs[0]?.date ?? null;
+    const d = dailyStreak(habits, logMap, today, first);
+    const w = greenWeekStreak(habits, logMap, today, first);
+    return { day: { current: d.current, best: d.best }, weeks: { current: w.current, best: w.best } };
+  }, [habits, habitLogs, pauses, today]);
+
   // The steps the plan assumes; the step habit ticks itself at this count.
   const stepTarget = fatLoss.activitySource === "steps" ? fatLoss.dailySteps : DEFAULT_STEP_TARGET;
 
@@ -291,8 +302,21 @@ export function CheckinTab({
             onHabitsChange={onHabitsChange}
             stepTarget={stepTarget}
             pauses={pauses}
+            streak={streaks.day.current}
           />
           <div className="space-y-5">
+            <WeeklyScorecard habits={habits} logs={habitLogs} pauses={pauses} today={today} weekTargets={weekTargets} streaks={streaks}>
+              {habits.length > 0 && habitLogs.length > 0 ? (
+                <details className="group border-t border-border pt-3">
+                  <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+                    See each habit · last {CONSISTENCY_WINDOW_DAYS} days
+                  </summary>
+                  <div className="pt-3">
+                    <HabitConsistencyList habits={habits} logs={habitLogs} today={today} pauses={pauses} />
+                  </div>
+                </details>
+              ) : null}
+            </WeeklyScorecard>
             {habits.some((h) => h.link === "steps") ? (
               <StepsWeekCard
                 logs={habitLogs}
@@ -302,7 +326,6 @@ export function CheckinTab({
                 weightLb={weighIns[weighIns.length - 1]?.weightLb ?? profile.weight}
               />
             ) : null}
-            <ConsistencyCard habits={habits} logs={habitLogs} today={today} pauses={pauses} />
           </div>
         </div>
       </div>
@@ -329,15 +352,6 @@ export function CheckinTab({
             <div className="space-y-5">
             <CheckinCard cloud={session.mode === "cloud"} today={today} unit={unit} />
             {session.mode === "cloud" ? <MyReport unit={unit} /> : null}
-            <WeeklyScorecard
-              habits={habits}
-              logs={habitLogs}
-              pauses={pauses}
-              reviews={reviews}
-              today={today}
-              weekTargets={weekTargets}
-              onSaveReview={onSaveReview}
-            />
             </div>
           )}
         </div>
@@ -715,7 +729,7 @@ function RecommendationBox({ rec, onApply }: { rec: Recommendation; onApply: () 
   );
 }
 
-/** Progress → Weekly: the member's own progress report, on request. */
+/** Progress → Check-in: the member's own progress report, on request. */
 function MyReport({ unit }: { unit: WeightUnit }) {
   const [open, setOpen] = React.useState(false);
   if (!open) {
