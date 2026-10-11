@@ -426,12 +426,12 @@ export function TodayTab(props: TodayTabProps) {
           <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <ListChecks className="h-4 w-4 text-primary" />
-              Habits
+              Daily non-negotiables
               <span className="tabular text-xs font-normal text-muted-foreground">
                 {progress.done} / {progress.total}
               </span>
             </CardTitle>
-            <OpenLink label="Checklist" onClick={() => onOpen("habits")} />
+            <OpenLink label="Your week" onClick={() => onOpen("habits")} />
           </CardHeader>
           <CardContent>
             {habits.length === 0 ? (

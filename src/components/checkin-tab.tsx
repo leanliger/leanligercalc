@@ -291,21 +291,8 @@ export function CheckinTab({
     return (
       <div className="space-y-5">
         {nav}
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start">
-          <HabitsCard
-            habits={habits}
-            eatenFor={eatenFor}
-            logs={habitLogs}
-            today={today}
-            dayPlanFor={dayPlanFor}
-            onSave={onSaveHabits}
-            onHabitsChange={onHabitsChange}
-            stepTarget={stepTarget}
-            pauses={pauses}
-            streak={streaks.day.current}
-          />
-          <div className="space-y-5">
-            <WeeklyScorecard habits={habits} logs={habitLogs} pauses={pauses} today={today} weekTargets={weekTargets} streaks={streaks}>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
+          <WeeklyScorecard habits={habits} logs={habitLogs} pauses={pauses} today={today} weekTargets={weekTargets} streaks={streaks}>
               {habits.length > 0 && habitLogs.length > 0 ? (
                 <details className="group border-t border-border pt-3">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -316,7 +303,20 @@ export function CheckinTab({
                   </div>
                 </details>
               ) : null}
-            </WeeklyScorecard>
+          </WeeklyScorecard>
+          <div className="space-y-5">
+            <HabitsCard
+              mode="fix"
+              habits={habits}
+              eatenFor={eatenFor}
+              logs={habitLogs}
+              today={today}
+              dayPlanFor={dayPlanFor}
+              onSave={onSaveHabits}
+              onHabitsChange={onHabitsChange}
+              stepTarget={stepTarget}
+              pauses={pauses}
+            />
             {habits.some((h) => h.link === "steps") ? (
               <StepsWeekCard
                 logs={habitLogs}

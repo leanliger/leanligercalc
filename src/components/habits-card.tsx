@@ -101,6 +101,12 @@ interface HabitsCardProps {
   pauses?: PausePeriod[];
   /** Current day streak, shown in the header. */
   streak?: number;
+  /**
+   * "fix": Progress → Habits, where today is ticked on the Today tab instead.
+   * Folded until opened, titled for fixing a day or editing the list, and
+   * opening on yesterday.
+   */
+  mode?: "today" | "fix";
 }
 
 export function HabitsCard({
@@ -114,8 +120,11 @@ export function HabitsCard({
   stepTarget = DEFAULT_STEP_TARGET,
   pauses = NO_PAUSES,
   streak = 0,
+  mode = "today",
 }: HabitsCardProps) {
-  const [date, setDate] = React.useState(today);
+  const fix = mode === "fix";
+  const [date, setDate] = React.useState(() => (fix ? addDays(today, -1) : today));
+  const [open, setOpen] = React.useState(!fix);
   const [editing, setEditing] = React.useState(false);
   const logMap = React.useMemo(() => new Map(logs.map((l) => [l.date, l.entries])), [logs]);
   const saved = React.useMemo(() => logMap.get(date) ?? {}, [logMap, date]);
@@ -225,8 +234,8 @@ export function HabitsCard({
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2">
               <ListChecks className="h-4 w-4 text-primary" />
-              Daily non-negotiables
-              {streak > 0 ? (
+              {fix ? "Fix a day or edit habits" : "Daily non-negotiables"}
+              {!fix && streak > 0 ? (
                 <span className="tabular inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                   <Flame className="h-3 w-3" aria-hidden />
                   {streak} {streak === 1 ? "day" : "days"}
@@ -235,21 +244,32 @@ export function HabitsCard({
               ) : null}
             </CardTitle>
             <CardDescription>
-              {editing ? "Rename, reorder, remove or add habits." : "Tick off each target you hit. Saves as you go."}
+              {editing
+                ? "Rename, reorder, remove or add habits."
+                : fix
+                  ? "Tick a day you missed, add a step count you forgot, or change your list. Tick today on the Today tab."
+                  : "Tick off each target you hit. Saves as you go."}
             </CardDescription>
           </div>
-          <Button
-            variant={editing ? "default" : "ghost"}
-            size="sm"
-            className="h-8 shrink-0 px-2"
-            onClick={() => setEditing((e) => !e)}
-          >
-            {editing ? <Check /> : <Pencil />}
-            {editing ? "Done" : "Edit"}
-          </Button>
+          {open ? (
+            <Button
+              variant={editing ? "default" : "ghost"}
+              size="sm"
+              className="h-8 shrink-0 px-2"
+              onClick={() => setEditing((e) => !e)}
+            >
+              {editing ? <Check /> : <Pencil />}
+              {editing ? "Done" : "Edit"}
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="h-8 shrink-0 px-2" onClick={() => setOpen(true)} aria-expanded={false}>
+              Open
+              <ChevronRight />
+            </Button>
+          )}
         </div>
 
-        {!editing ? (
+        {open && !editing ? (
           <>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1">
@@ -297,6 +317,7 @@ export function HabitsCard({
         ) : null}
       </CardHeader>
 
+      {open ? (
       <CardContent className="space-y-2">
         {editing ? (
           <HabitEditor habits={habits} onChange={onHabitsChange} />
@@ -371,6 +392,7 @@ export function HabitsCard({
           </>
         )}
       </CardContent>
+      ) : null}
     </Card>
   );
 }
