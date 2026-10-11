@@ -11,7 +11,9 @@
  *   POST   /api/coach/programs                    save one { company, program, weekdays, weeks }
  *   PUT    /api/coach/programs/:id                update it
  *   DELETE /api/coach/programs/:id?company=…      delete it
+ *   GET    /api/coach/challenges/:id?company=…    a challenge's leaderboard
  *   GET    /api/assignments                       members: what's waiting for me
+ *   GET    /api/challenges                        members: leaderboards of challenges I joined
  *   PUT    /api/assignments/:id  { accept }       members: used it, or Not now
  *
  * Coach calls check with Whop that the viewer is an admin of the company, and
@@ -37,7 +39,16 @@ import { COMPANY_ID_PATTERN } from "../src/lib/coach-api";
 import { companyMembers, type Profile } from "./coach";
 import { experiencesOf } from "./experiences";
 import { sendWhop } from "./reminders";
-import { accessLevel, hasWhopKey, type WhopEnv } from "./whop";
+import { accessLevel, hasWhopKey, whopGet, type WhopEnv } from "./whop";
+import {
+  challengeMessage,
+  challengeWindow,
+  plannedWorkouts,
+  rankEntries,
+  type ChallengeStandings,
+} from "../src/lib/challenges";
+import { sanitizeSchedule } from "../src/lib/program-schedule";
+import { assignedProgramId } from "../src/lib/assignments";
 
 export interface AssignmentEnv extends WhopEnv {
   DB: D1Database;
@@ -71,6 +82,7 @@ interface AssignmentRow {
   audience: string;
   created_at: string;
   cancelled_at: string | null;
+  challenge: number;
 }
 
 async function groupsOf(env: AssignmentEnv, companyId: string): Promise<CoachGroup[]> {
@@ -95,7 +107,7 @@ export async function listAssignments(env: AssignmentEnv, viewerId: string, comp
   const denied = await adminCheck(env, viewerId, companyId);
   if (denied) return denied;
   const { results: rows } = await env.DB.prepare(
-    "SELECT id, company_id, kind, title, payload, note, audience, created_at, cancelled_at FROM assignments WHERE company_id = ? ORDER BY created_at DESC LIMIT 50",
+    "SELECT id, company_id, kind, title, payload, note, audience, created_at, cancelled_at, challenge FROM assignments WHERE company_id = ? ORDER BY created_at DESC LIMIT 50",
   )
     .bind(companyId)
     .all<AssignmentRow>();
@@ -124,6 +136,7 @@ export async function listAssignments(env: AssignmentEnv, viewerId: string, comp
     audience: r.audience,
     createdAt: r.created_at,
     cancelled: r.cancelled_at !== null,
+    challenge: r.challenge === 1,
     counts: counts.get(r.id) ?? { sent: 0, accepted: 0, declined: 0, pending: 0 },
   }));
   return { ok: true, body: { assignments, groups: await groupsOf(env, companyId) } };
@@ -161,8 +174,8 @@ export async function createAssignment(env: AssignmentEnv, viewerId: string, raw
   const payload = JSON.stringify(a.kind === "program" ? a.program : a.habits);
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      "INSERT INTO assignments (id, company_id, created_by, kind, title, payload, note, audience) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(id, a.company, viewerId, a.kind, a.title, payload, a.note, audience),
+      "INSERT INTO assignments (id, company_id, created_by, kind, title, payload, note, audience, challenge) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, a.company, viewerId, a.kind, a.title, payload, a.note, audience, a.challenge ? 1 : 0),
   ];
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
@@ -179,7 +192,10 @@ export async function createAssignment(env: AssignmentEnv, viewerId: string, raw
   const byExperience = new Map<string, string[]>();
   for (const [user, exp] of where) byExperience.set(exp, [...(byExperience.get(exp) ?? []), user]);
   let notified = 0;
-  const msg = assignmentMessage(a.kind, a.title);
+  const msg =
+    a.challenge && a.program?.schedule
+      ? challengeMessage(a.title, a.program.schedule.startDate, a.program.schedule.weeks)
+      : assignmentMessage(a.kind, a.title);
   for (const [exp, users] of byExperience) {
     for (let i = 0; i < users.length; i += NOTIFY_CHUNK) {
       const chunk = users.slice(i, i + NOTIFY_CHUNK);
@@ -316,13 +332,13 @@ export async function deleteProgram(env: AssignmentEnv, viewerId: string, progra
 
 export async function myAssignments(env: AssignmentEnv, userId: string): Promise<MemberAssignment[]> {
   const { results } = await env.DB.prepare(
-    `SELECT a.id, a.kind, a.title, a.payload, a.note, a.created_at
+    `SELECT a.id, a.kind, a.title, a.payload, a.note, a.created_at, a.challenge
      FROM assignments a JOIN assignment_targets t ON t.assignment_id = a.id
      WHERE t.user_id = ? AND t.status = 'pending' AND a.cancelled_at IS NULL
      ORDER BY a.created_at ASC LIMIT 20`,
   )
     .bind(userId)
-    .all<Pick<AssignmentRow, "id" | "kind" | "title" | "payload" | "note" | "created_at">>();
+    .all<Pick<AssignmentRow, "id" | "kind" | "title" | "payload" | "note" | "created_at" | "challenge">>();
   return results.flatMap((r) => {
     try {
       const payload = JSON.parse(r.payload) as unknown;
@@ -335,6 +351,7 @@ export async function myAssignments(env: AssignmentEnv, userId: string): Promise
           createdAt: r.created_at,
           program: r.kind === "program" ? (payload as MemberAssignment["program"]) : null,
           habits: r.kind === "habits" ? (payload as MemberAssignment["habits"]) : null,
+          challenge: r.challenge === 1,
         },
       ];
     } catch {
@@ -352,7 +369,105 @@ export async function answerAssignment(env: AssignmentEnv, userId: string, id: s
     .bind(accept ? "accepted" : "declined", id, userId)
     .run();
   if (!r.meta.changes) return { ok: false, status: 404, error: "That's no longer waiting for you." };
+  if (accept) await enterChallenge(env, userId, id);
   return { ok: true, body: { status: accept ? "accepted" : "declined" } };
+}
+
+/* -------------------------------- challenges -------------------------------- */
+
+const ENTRANT_NAME_MAX = 60;
+const STANDINGS_MAX = 100;
+
+/** Joining a challenge puts the member on its leaderboard under their Whop name and photo. */
+async function enterChallenge(env: AssignmentEnv, userId: string, assignmentId: string): Promise<void> {
+  const a = await env.DB.prepare("SELECT challenge FROM assignments WHERE id = ?").bind(assignmentId).first<{ challenge: number }>();
+  if (a?.challenge !== 1) return;
+  const profile = await whopGet(env, `/api/v1/users/${encodeURIComponent(userId)}`);
+  const p = (profile.status === 200 ? profile.body : null) as { name?: string | null; username?: string | null; profile_picture?: { url?: string } | null } | null;
+  const name = (p?.name?.trim() || (p?.username ? `@${p.username}` : "") || "Member").slice(0, ENTRANT_NAME_MAX);
+  const avatar = typeof p?.profile_picture?.url === "string" && /^https:\/\//.test(p.profile_picture.url) ? p.profile_picture.url : null;
+  await env.DB.prepare(
+    `INSERT INTO challenge_entrants (assignment_id, user_id, name, avatar_url) VALUES (?, ?, ?, ?)
+     ON CONFLICT (assignment_id, user_id) DO UPDATE SET name = excluded.name, avatar_url = excluded.avatar_url`,
+  )
+    .bind(assignmentId, userId, name, avatar)
+    .run();
+}
+
+/** A challenge's leaderboard: each entrant's finished workouts from its program, within its dates. */
+async function standings(env: AssignmentEnv, row: Pick<AssignmentRow, "id" | "title" | "payload" | "note">, viewerId: string | null): Promise<ChallengeStandings | null> {
+  let schedule;
+  try {
+    schedule = sanitizeSchedule((JSON.parse(row.payload) as { schedule?: unknown } | null)?.schedule);
+  } catch {
+    schedule = undefined;
+  }
+  if (!schedule) return null;
+  const { start, end } = challengeWindow(schedule);
+  const { results: entrants } = await env.DB.prepare(
+    "SELECT user_id, name, avatar_url FROM challenge_entrants WHERE assignment_id = ? ORDER BY joined_at LIMIT 1000",
+  )
+    .bind(row.id)
+    .all<{ user_id: string; name: string; avatar_url: string | null }>();
+  const done = new Map<string, number>();
+  for (let i = 0; i < entrants.length; i += ID_CHUNK) {
+    const chunk = entrants.slice(i, i + ID_CHUNK).map((e) => e.user_id);
+    const { results } = await env.DB.prepare(
+      `SELECT user_id, COUNT(*) AS n FROM workouts
+       WHERE user_id IN (${chunk.map(() => "?").join(",")}) AND date >= ? AND date <= ?
+         AND json_extract(data, '$.programId') = ? AND json_extract(data, '$.finishedAt') IS NOT NULL
+       GROUP BY user_id`,
+    )
+      .bind(...chunk, start, end, assignedProgramId(row.id))
+      .all<{ user_id: string; n: number }>();
+    for (const r of results) done.set(r.user_id, r.n);
+  }
+  const ranked = rankEntries(
+    entrants.map((e) => ({ userId: e.user_id, name: e.name, avatarUrl: e.avatar_url, done: done.get(e.user_id) ?? 0, isYou: e.user_id === viewerId })),
+  );
+  const you = ranked.find((e) => e.isYou);
+  const top = ranked.slice(0, STANDINGS_MAX);
+  return {
+    id: row.id,
+    title: row.title,
+    note: row.note,
+    startDate: start,
+    endDate: end,
+    weeks: schedule.weeks,
+    planned: plannedWorkouts(schedule),
+    entrants: ranked.length,
+    entries: you && !top.includes(you) ? [...top, you] : top,
+  };
+}
+
+/** Members: the leaderboards of challenges they joined (newest first). */
+export async function myChallenges(env: AssignmentEnv, userId: string): Promise<AssignmentResult> {
+  const { results } = await env.DB.prepare(
+    `SELECT a.id, a.title, a.payload, a.note FROM assignments a
+     JOIN challenge_entrants e ON e.assignment_id = a.id
+     WHERE e.user_id = ? AND a.challenge = 1 AND a.cancelled_at IS NULL
+     ORDER BY a.created_at DESC LIMIT 5`,
+  )
+    .bind(userId)
+    .all<Pick<AssignmentRow, "id" | "title" | "payload" | "note">>();
+  const challenges: ChallengeStandings[] = [];
+  for (const r of results) {
+    const s = await standings(env, r, userId);
+    if (s) challenges.push(s);
+  }
+  return { ok: true, body: { challenges } };
+}
+
+/** Coaches: one challenge's leaderboard. */
+export async function coachChallenge(env: AssignmentEnv, viewerId: string, id: string, companyId: string): Promise<AssignmentResult> {
+  const denied = await adminCheck(env, viewerId, companyId);
+  if (denied) return denied;
+  const row = await env.DB.prepare("SELECT id, title, payload, note FROM assignments WHERE id = ? AND company_id = ? AND challenge = 1")
+    .bind(id, companyId)
+    .first<Pick<AssignmentRow, "id" | "title" | "payload" | "note">>();
+  if (!row) return { ok: false, status: 404, error: "That challenge isn't there any more." };
+  const s = await standings(env, row, null);
+  return s ? { ok: true, body: { challenge: s } } : { ok: false, status: 404, error: "That challenge has no schedule." };
 }
 
 export { ASSIGNMENT_ID_PATTERN };

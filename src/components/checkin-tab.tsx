@@ -29,9 +29,12 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { ConsistencyCard } from "@/components/consistency-card";
 import { StepsWeekCard } from "@/components/steps-week-card";
 import { MeasurementsCard } from "@/components/measurements-card";
+import { CheckinCard } from "@/components/checkin-card";
 import { PhotosCard } from "@/components/photos-card";
 import type { Measurement } from "@/lib/measurements";
 import { buildRoadmap } from "@/lib/roadmap";
+import type { CoachMacros } from "@/lib/coach-macros";
+import type { RoadmapDay } from "@/lib/types";
 import { DEFAULT_STEP_TARGET, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import type { WeeklyReview } from "@/lib/reviews";
 import type { PausePeriod } from "@/lib/pause";
@@ -55,6 +58,8 @@ import { fromLb, round, toLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 interface CheckinTabProps {
+  /** Macros the coach set: the calorie and protein habits aim at these while set. */
+  coachMacros: CoachMacros | null;
   profile: BiometricProfile;
   fatLoss: FatLossInputs;
   unit: WeightUnit;
@@ -108,12 +113,13 @@ const SECTIONS: { value: CheckinSection; label: string; short: string }[] = [
   { value: "habits", label: "Daily non-negotiables", short: "Habits" },
   { value: "measurements", label: "Measurements", short: "Measure" },
   { value: "photos", label: "Progress photos", short: "Photos" },
-  { value: "scorecard", label: "Weekly scorecard", short: "Scorecard" },
+  { value: "scorecard", label: "Weekly check-in", short: "Weekly" },
 ];
 
 /* -------------------------------------------------------------------------- */
 
 export function CheckinTab({
+  coachMacros,
   profile,
   fatLoss,
   unit,
@@ -151,7 +157,17 @@ export function CheckinTab({
     const r = buildRoadmap(profile, carbs, timeline, adjustments);
     return new Map(r.days.map((d) => [d.date, d]));
   }, [profile, carbs, timeline, adjustments]);
-  const dayPlanFor = React.useCallback((d: string) => roadmapDays.get(d) ?? null, [roadmapDays]);
+  const dayPlanFor = React.useCallback(
+    (d: string): RoadmapDay | null => {
+      const day = roadmapDays.get(d) ?? null;
+      if (!coachMacros) return day;
+      const m = { calories: coachMacros.kcal, protein: coachMacros.protein, carbs: coachMacros.carbs, fat: coachMacros.fat };
+      return day
+        ? { ...day, ...m, type: "medium", steady: true }
+        : { date: d, index: 0, week: 0, weekday: 0, type: "medium", ...m, isGoalDay: false, steady: true };
+    },
+    [roadmapDays, coachMacros],
+  );
   const eatenFor = React.useCallback(
     (d: string): Macros | null => {
       const log = foodLogs.find((l) => l.date === d);
@@ -163,6 +179,7 @@ export function CheckinTab({
   // Average plan targets across a Mon–Sun week, for the scorecard header.
   const weekTargets = React.useCallback(
     (weekStart: string) => {
+      if (coachMacros) return { calories: coachMacros.kcal, protein: coachMacros.protein };
       const days = Array.from({ length: 7 }, (_, i) => roadmapDays.get(addDays(weekStart, i)))
         .filter((d): d is NonNullable<typeof d> => !!d && !d.isGoalDay);
       if (days.length === 0) return null;
@@ -171,7 +188,7 @@ export function CheckinTab({
         protein: Math.round(days.reduce((s, d) => s + d.protein, 0) / days.length),
       };
     },
-    [roadmapDays],
+    [roadmapDays, coachMacros],
   );
 
   const trendByDate = React.useMemo(
@@ -308,6 +325,8 @@ export function CheckinTab({
           ) : section === "photos" ? (
             <PhotosCard cloud={session.mode === "cloud"} today={today} />
           ) : (
+            <div className="space-y-5">
+            <CheckinCard cloud={session.mode === "cloud"} today={today} unit={unit} />
             <WeeklyScorecard
               habits={habits}
               logs={habitLogs}
@@ -317,6 +336,7 @@ export function CheckinTab({
               weekTargets={weekTargets}
               onSaveReview={onSaveReview}
             />
+            </div>
           )}
         </div>
       </div>

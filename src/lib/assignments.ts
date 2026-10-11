@@ -37,6 +37,8 @@ export interface AssignmentInput {
   habits: HabitDef[] | null;
   note: string;
   target: AssignmentTarget;
+  /** A challenge: members who join get a leaderboard (src/lib/challenges.ts). */
+  challenge: boolean;
 }
 
 /** What a member sees: the assignment to use, or say Not now. */
@@ -48,6 +50,7 @@ export interface MemberAssignment {
   createdAt: string;
   program: Program | null;
   habits: HabitDef[] | null;
+  challenge: boolean;
 }
 
 /** The coach's list. */
@@ -60,6 +63,7 @@ export interface CoachAssignment {
   audience: string;
   createdAt: string;
   cancelled: boolean;
+  challenge: boolean;
   counts: { sent: number; accepted: number; declined: number; pending: number };
 }
 
@@ -109,6 +113,9 @@ export function validateAssignment(raw: unknown): ValidationResult<AssignmentInp
     title = tidy(b.title, HABIT_SET_NAME_MAX) || "Daily habits";
   }
 
+  const challenge = b.challenge === true;
+  if (challenge && (!program || !program.schedule)) return bad("A challenge needs a program with a start date and number of weeks.");
+
   const t = (typeof b.target === "object" && b.target !== null ? b.target : {}) as Record<string, unknown>;
   let target: AssignmentTarget;
   if (t.type === "all") target = { type: "all" };
@@ -120,7 +127,7 @@ export function validateAssignment(raw: unknown): ValidationResult<AssignmentInp
     target = { type: "members", memberIds: ids };
   } else return bad("Choose who to send it to.");
 
-  return { ok: true, value: { company: b.company, kind: b.kind, title, program, habits, note, target } };
+  return { ok: true, value: { company: b.company, kind: b.kind, title, program, habits, note, target, challenge } };
 }
 
 export function validateGroup(raw: unknown): ValidationResult<{ company: string; name: string; memberIds: string[] }> {

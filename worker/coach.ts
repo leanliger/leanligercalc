@@ -122,14 +122,14 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
   const sharing = await sharingFor(env, [...profiles.keys()]);
   const members = new Map<string, CoachMemberData>();
   for (const p of profiles.values()) {
-    members.set(p.userId, { ...p, sharing: sharing.get(p.userId)!, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null });
+    members.set(p.userId, { ...p, sharing: sharing.get(p.userId)!, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null, workoutDates: [], checkins: [] });
   }
   // Only members who share their progress: nobody else's data is read at all.
   const ids = [...profiles.keys()].filter((id) => sharing.get(id)?.state === "shared");
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -147,7 +147,18 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       env.DB.prepare(
         `SELECT user_id, id, date, pose FROM progress_photos WHERE user_id IN (${marks}) ORDER BY date DESC, created_at DESC`,
       ).bind(...chunk),
+      env.DB.prepare(
+        `SELECT DISTINCT user_id, date FROM workouts WHERE user_id IN (${marks}) AND date >= ? AND json_extract(data, '$.finishedAt') IS NOT NULL`,
+      ).bind(...chunk, addDays(today, -30)),
+      env.DB.prepare(
+        `SELECT user_id, week_start, submitted_at, reply IS NOT NULL AS replied FROM checkins WHERE user_id IN (${marks}) AND week_start >= ? ORDER BY week_start DESC`,
+      ).bind(...chunk, addDays(today, -35)),
     ]);
+    for (const r of (workouts?.results ?? []) as { user_id: string; date: string }[]) members.get(r.user_id)?.workoutDates.push(r.date);
+    for (const r of (checkins?.results ?? []) as { user_id: string; week_start: string; submitted_at: string; replied: number }[]) {
+      const m = members.get(r.user_id);
+      if (m && m.checkins.length < 4) m.checkins.push({ weekStart: r.week_start, submittedAt: r.submitted_at, replied: r.replied === 1 });
+    }
     for (const r of (measurements?.results ?? []) as { user_id: string; date: string; waist: number | null; hips: number | null; chest: number | null; arms: number | null; thighs: number | null }[]) {
       members.get(r.user_id)?.measurements.push({ date: r.date, waist: r.waist, hips: r.hips, chest: r.chest, arms: r.arms, thighs: r.thighs });
     }

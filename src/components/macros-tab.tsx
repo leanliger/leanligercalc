@@ -21,6 +21,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { dayTargetFinder } from "@/lib/day-targets";
+import type { CoachMacros } from "@/lib/coach-macros";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,8 @@ function newId(): string {
 const fmt = (n: number) => (Math.round(n * 10) / 10).toLocaleString();
 
 interface MacrosTabProps {
+  /** Macros the coach set: every day's targets while set. */
+  coachMacros: CoachMacros | null;
   profile: BiometricProfile;
   fatLoss: FatLossInputs;
   carbs: CarbCyclingInputs;
@@ -116,6 +119,7 @@ interface MacrosTabProps {
 export type NutritionSection = "food" | "water" | "fasting";
 
 export function MacrosTab({
+  coachMacros,
   profile,
   fatLoss,
   carbs,
@@ -155,8 +159,8 @@ export function MacrosTab({
 
   // The roadmap is the plan; outside its dates, the Carb Cycling weekly plan.
   const targetFor = React.useMemo(
-    () => dayTargetFinder(profile, fatLoss, carbs, adjustments),
-    [profile, fatLoss, carbs, adjustments],
+    () => dayTargetFinder(profile, fatLoss, carbs, adjustments, coachMacros),
+    [profile, fatLoss, carbs, adjustments, coachMacros],
   );
 
   const logFor = React.useCallback((d: string) => foodLogs.find((l) => l.date === d)?.entries ?? [], [foodLogs]);
@@ -365,7 +369,9 @@ export function MacrosTab({
                     <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {target.source === "roadmap"
+                    {target.source === "coach"
+                      ? "Targets your coach set for you."
+                      : target.source === "roadmap"
                       ? "Targets from your Roadmap for this day."
                       : "This day is outside your Roadmap, so targets come from Plan → Macros."}
                   </p>

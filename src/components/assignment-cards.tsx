@@ -5,6 +5,8 @@ import { Dumbbell, ListChecks } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { MemberAssignment } from "@/lib/assignments";
+import { formatShort } from "@/lib/dates";
+import type { CoachMacros } from "@/lib/coach-macros";
 import type { ProgramEdit } from "@/lib/program-edits";
 import { findExercise } from "@/lib/training";
 
@@ -24,6 +26,8 @@ export const answerAssignment = (id: string, accept: boolean) =>
   call(`/api/assignments/${id}`, { method: "PUT", body: JSON.stringify({ accept }) });
 
 /** Coach edits to my programs, waiting for this app (src/lib/program-edits.ts). */
+/** Macros my coach set, or null (worker/coaching.ts). */
+export const loadMyMacros = () => call<{ macros: CoachMacros | null }>("/api/my-macros").then((r) => r.macros);
 export const loadProgramEdits = () => call<{ edits: ProgramEdit[] }>("/api/program-edits").then((r) => r.edits);
 export const markProgramEditApplied = async (id: string) => {
   const res = await fetch(`/api/program-edits/${id}/applied`, { method: "POST", credentials: "same-origin" });
@@ -83,10 +87,12 @@ function AssignmentCard({
           {isProgram ? <Dumbbell className="mt-0.5 h-5 w-5 shrink-0 text-primary" /> : <ListChecks className="mt-0.5 h-5 w-5 shrink-0 text-primary" />}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">
-              {isProgram ? "Your coach sent you a program" : "Your coach set new daily habits"}: {a.title}
+              {a.challenge ? "Your coach started a challenge" : isProgram ? "Your coach sent you a program" : "Your coach set new daily habits"}: {a.title}
             </p>
             <p className="text-xs text-muted-foreground">
-              {isProgram
+              {a.challenge && a.program?.schedule
+                ? `${a.program.schedule.weeks} weeks from ${formatShort(a.program.schedule.startDate)}. Join to get the program and a spot on the leaderboard (Ranks), ranked by workouts finished.`
+                : isProgram
                 ? `${a.program?.days.map((d) => d.name).join(" · ") ?? ""}. It becomes your active program; your own programs stay.`
                 : `${a.habits?.length ?? 0} habits. They replace your current list; past ticks and streaks stay.`}{" "}
               <button type="button" className="underline underline-offset-2" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
@@ -123,7 +129,7 @@ function AssignmentCard({
         ) : null}
         <div className="flex gap-2">
           <Button size="sm" disabled={busy} onClick={() => void act(() => onUse(a))}>
-            {isProgram ? "Add to my training" : "Use these habits"}
+            {a.challenge ? "Join challenge" : isProgram ? "Add to my training" : "Use these habits"}
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(() => onDecline(a))}>
             Not now

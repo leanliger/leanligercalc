@@ -62,7 +62,9 @@ import { endPause, type PausePeriod } from "@/lib/pause";
 import type { MySharing } from "@/lib/sharing";
 import type { SavedMeal } from "@/lib/saved-meals";
 import { loadSharing, saveSharing } from "@/components/coach-access";
-import { answerAssignment, loadAssignments, loadProgramEdits, markProgramEditApplied } from "@/components/assignment-cards";
+import { answerAssignment, loadAssignments, loadMyMacros, loadProgramEdits, markProgramEditApplied } from "@/components/assignment-cards";
+import { CoachMacrosBanner } from "@/components/coach-macros-banner";
+import type { CoachMacros } from "@/lib/coach-macros";
 import { applyAssignedProgram, cleanAssignedProgram, type MemberAssignment } from "@/lib/assignments";
 import { applyProgramEdit } from "@/lib/program-edits";
 import { dayTargetFinder } from "@/lib/day-targets";
@@ -612,6 +614,9 @@ export function AppShell() {
 
   // The carb plan as every screen uses it: while the Timeline has a plan,
   // Macros' maintenance and daily target are this week of it (src/lib/plan-link.ts).
+  // Macros the coach set from the dashboard; they replace the plan's targets while set.
+  const [coachMacros, setCoachMacros] = React.useState<CoachMacros | null>(null);
+
   const planWeek = React.useMemo(
     () => currentPlanWeek(state.profile, state.fatLoss, state.tracking.adjustments, today),
     [state.profile, state.fatLoss, state.tracking.adjustments, today],
@@ -621,8 +626,8 @@ export function AppShell() {
 
   // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
   const foodLogToday = React.useMemo(
-    () => (today ? dayTargetFinder(state.profile, state.fatLoss, carbPlan, state.tracking.adjustments)(today) : null),
-    [today, state.profile, state.fatLoss, carbPlan, state.tracking.adjustments],
+    () => (today ? dayTargetFinder(state.profile, state.fatLoss, carbPlan, state.tracking.adjustments, coachMacros)(today) : null),
+    [today, state.profile, state.fatLoss, carbPlan, state.tracking.adjustments, coachMacros],
   );
 
   const updateProfile = React.useCallback((patch: Partial<BiometricProfile>) => {
@@ -1151,6 +1156,19 @@ export function AppShell() {
   React.useEffect(() => {
     if (!ready || session.mode !== "cloud") return;
     let cancelled = false;
+    loadMyMacros()
+      .then((m) => !cancelled && setCoachMacros(m))
+      .catch(() => {
+        /* keep the plan's numbers; tried again next open */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, session.mode]);
+
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud") return;
+    let cancelled = false;
     loadProgramEdits()
       .then((edits) => {
         if (cancelled || edits.length === 0) return;
@@ -1450,6 +1468,7 @@ export function AppShell() {
 
               <TabsContent value="today">
                 <TodayTab
+                  coachMacros={coachMacros}
                   today={today}
                   unit={state.unit}
                   profile={state.profile}
@@ -1486,6 +1505,9 @@ export function AppShell() {
                   options={PLAN_SECTIONS}
                   className="max-w-sm"
                 />
+                {coachMacros && (state.activeTab === "roadmap" || state.activeTab === "carbs") ? (
+                  <CoachMacrosBanner macros={coachMacros} />
+                ) : null}
                 {state.activeTab === "roadmap" ? (
                   <RoadmapCalendar
                     profile={state.profile}
@@ -1527,6 +1549,7 @@ export function AppShell() {
 
               <TabsContent value="macros">
                 <MacrosTab
+                  coachMacros={coachMacros}
                   profile={state.profile}
                   fatLoss={state.fatLoss}
                   carbs={carbPlan}
@@ -1584,6 +1607,7 @@ export function AppShell() {
 
               <TabsContent value="checkin">
                 <CheckinTab
+                  coachMacros={coachMacros}
                   profile={state.profile}
                   fatLoss={state.fatLoss}
                   unit={state.unit}

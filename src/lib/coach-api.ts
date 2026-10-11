@@ -50,6 +50,10 @@ export interface CoachMemberData {
   measurements: Measurement[];
   /** Their progress photos — null unless they share their progress AND their photos with you. */
   photos: PhotoMeta[] | null;
+  /** Days with a finished workout in the last 30 days. */
+  workoutDates: string[];
+  /** Their latest weekly check-ins (newest first, up to 4). */
+  checkins: { weekStart: string; submittedAt: string; replied: boolean }[];
 }
 
 export interface CoachOverview {

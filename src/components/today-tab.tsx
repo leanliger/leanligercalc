@@ -27,6 +27,7 @@ import { stepFor } from "@/components/habits-card";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { computeBadges, type Badge } from "@/lib/badges";
 import { dayTargetFinder } from "@/lib/day-targets";
+import type { CoachMacros } from "@/lib/coach-macros";
 import { clock12, fastingStatus, sortedMeals, type FastingSettings } from "@/lib/fasting";
 import { sumMacros, type FoodLog } from "@/lib/food";
 import {
@@ -75,6 +76,8 @@ const SAVE_DEBOUNCE_MS = 400;
 const SEEN_BADGES_KEY = "prep-calculator:badges-seen:v1";
 
 interface TodayTabProps {
+  /** Macros the coach set: today's targets while set. */
+  coachMacros: CoachMacros | null;
   today: string;
   unit: WeightUnit;
   profile: BiometricProfile;
@@ -186,8 +189,8 @@ export function TodayTab(props: TodayTabProps) {
     return t[t.length - 1]?.trend ?? null;
   }, [weighIns]);
   const targetFor = React.useMemo(
-    () => dayTargetFinder(profile, fatLoss, props.carbs, props.adjustments),
-    [profile, fatLoss, props.carbs, props.adjustments],
+    () => dayTargetFinder(profile, fatLoss, props.carbs, props.adjustments, props.coachMacros),
+    [profile, fatLoss, props.carbs, props.adjustments, props.coachMacros],
   );
   const target = targetFor(today);
   const food = foodLogs.find((l) => l.date === today)?.entries ?? [];

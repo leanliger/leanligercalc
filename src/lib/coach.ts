@@ -29,7 +29,10 @@ import { INACTIVE_DAYS, type CoachMemberData } from "./coach-api";
 
 /* -------------------------------- summary -------------------------------- */
 
-export type Flag = "behind" | "red" | "inactive" | "no-plan";
+export type Flag = "reply" | "behind" | "red" | "no-weigh-in" | "no-workouts" | "checkin" | "inactive" | "no-plan";
+
+/** Days without a weigh-in before it counts as missed. */
+export const WEIGH_IN_GAP_DAYS = 4;
 
 export interface MemberSummary {
   data: CoachMemberData;
@@ -52,12 +55,23 @@ export interface MemberSummary {
   food7: { days: number; kcal: number; protein: number } | null;
   /** Their pause (sick, travelling) covering today, if any. */
   paused: PausePeriod | null;
+  daysSinceWeighIn: number | null;
+  /** Days with a finished workout in the last 7. */
+  workouts7: number;
+  /** Their latest check-in, if any. */
+  lastCheckin: { weekStart: string; submittedAt: string; replied: boolean } | null;
+  /** Sent a check-in in the last 7 days. */
+  checkedIn: boolean;
   flags: Flag[];
 }
 
 export const FLAG_LABELS: Record<Flag, string> = {
+  reply: "Check-in to review",
   behind: "Behind plan",
-  red: "Red Zone",
+  red: "Habits slipping",
+  "no-weigh-in": `No weigh-in ${WEIGH_IN_GAP_DAYS}+ days`,
+  "no-workouts": "No workouts this week",
+  checkin: "No check-in this week",
   inactive: `No logs ${INACTIVE_DAYS}+ days`,
   "no-plan": "No plan yet",
 };
@@ -118,10 +132,23 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   const lastLog = latestDate(weighIns, data.habitLogs, data.foodDays.filter((d) => d.kcal > 0));
   const daysSinceLog = lastLog ? Math.max(0, daysBetween(lastLog, today)) : null;
 
+  const daysSinceWeighIn = latest ? Math.max(0, daysBetween(latest.date, today)) : null;
+  const weekAgo = addDays(today, -6);
+  const workouts7 = new Set(data.workoutDates.filter((d) => d >= weekAgo && d <= today)).size;
+  const lastCheckin = data.checkins[0] ?? null;
+  const checkedIn = lastCheckin !== null && lastCheckin.submittedAt.slice(0, 10) >= weekAgo;
+
   const flags: Flag[] = [];
+  if (lastCheckin && !lastCheckin.replied) flags.push("reply");
   if (!hasPlan) flags.push("no-plan");
   if (progress?.status === "behind") flags.push("behind");
   if (score.zone === "red") flags.push("red");
+  if (!paused) {
+    if (hasPlan && (daysSinceWeighIn === null || daysSinceWeighIn >= WEIGH_IN_GAP_DAYS)) flags.push("no-weigh-in");
+    // Only for members who train with the app: some workouts this month, none this week.
+    if (data.workoutDates.length > 0 && workouts7 === 0) flags.push("no-workouts");
+    if (!checkedIn) flags.push("checkin");
+  }
   // A paused member isn't expected to log.
   if (!paused && (daysSinceLog === null || daysSinceLog >= INACTIVE_DAYS)) flags.push("inactive");
 
@@ -140,17 +167,18 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     weekChangeLb,
     food7,
     paused,
+    daysSinceWeighIn,
+    workouts7,
+    lastCheckin,
+    checkedIn,
     flags,
   };
 }
 
 /** Members needing attention first (more flags, then longest without a log), then by name. */
 export function sortForAttention(list: MemberSummary[]): MemberSummary[] {
-  const weight = (m: MemberSummary) =>
-    (m.flags.includes("behind") ? 4 : 0) +
-    (m.flags.includes("red") ? 3 : 0) +
-    (m.flags.includes("inactive") ? 2 : 0) +
-    (m.flags.includes("no-plan") ? 1 : 0);
+  const W: Record<Flag, number> = { reply: 6, behind: 5, red: 4, "no-weigh-in": 3, "no-workouts": 3, inactive: 2, checkin: 1, "no-plan": 1 };
+  const weight = (m: MemberSummary) => m.flags.reduce((s, f) => s + W[f], 0);
   return [...list].sort(
     (a, b) =>
       weight(b) - weight(a) ||

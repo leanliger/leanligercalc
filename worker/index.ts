@@ -41,6 +41,7 @@
  *   GET    /api/coach/programs?company=…      coaches: saved programs; POST to save, PUT/DELETE /api/coach/programs/:id
  *   GET    /api/coach/member-training?company=…&member=…  coaches: a member's programs; PUT to save an edit
  *   GET    /api/coach/member-workouts?company=…&member=…  coaches: a member's workouts (newest 500)
+ *   …      notes, check-ins and coach-set macros: see coaching.ts
  *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
  *   GET    /api/assignments                   members: assignments waiting for me
  *   PUT    /api/assignments/:id               members: { accept } used it, or Not now
@@ -73,6 +74,18 @@
  */
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
+import {
+  coachCheckins,
+  coachClearMacros,
+  coachGetMacros,
+  coachSetMacros,
+  getCoachNote,
+  getMyCheckins,
+  getMyMacros,
+  replyToCheckin,
+  saveCoachNote,
+  submitCheckin,
+} from "./coaching";
 import { coachMemberTraining, coachMemberWorkouts, markProgramEditApplied, myProgramEdits, saveMemberProgram } from "./program-edits";
 import { PROGRAM_EDIT_ID_PATTERN } from "../src/lib/program-edits";
 import {
@@ -111,6 +124,8 @@ import {
   ASSIGNMENT_ID_PATTERN,
   answerAssignment,
   cancelAssignment,
+  coachChallenge,
+  myChallenges,
   createAssignment,
   deleteGroup,
   deleteProgram,
@@ -597,6 +612,49 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return error(405, "Method not allowed.");
   }
 
+  /* ---------------------- notes, check-ins, macros ---------------------- */
+
+  const q = (k: string) => url.searchParams.get(k) ?? "";
+  const send = (r: { ok: true; body: unknown } | { ok: false; status: number; error: string }) =>
+    r.ok ? json(r.body) : error(r.status, r.error);
+
+  if (path === "/api/coach/notes") {
+    if (method === "GET") return send(await getCoachNote(env, userId, q("company"), q("member")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveCoachNote(env, userId, body.value));
+  }
+  if (path === "/api/coach/checkins") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachCheckins(env, userId, q("company"), q("member")));
+  }
+  if (path === "/api/coach/checkins/reply") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await replyToCheckin(env, userId, body.value));
+  }
+  if (path === "/api/coach/macros") {
+    if (method === "GET") return send(await coachGetMacros(env, userId, q("company"), q("member")));
+    if (method === "DELETE") return send(await coachClearMacros(env, userId, q("company"), q("member")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await coachSetMacros(env, userId, body.value));
+  }
+  if (path === "/api/checkins") {
+    if (method === "GET") return send(await getMyCheckins(env, userId, url.searchParams.get("date")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await submitCheckin(env, userId, body.value));
+  }
+  if (path === "/api/my-macros") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await getMyMacros(env, userId));
+  }
+
   if (path === "/api/coach/member-workouts") {
     if (method !== "GET") return error(405, "Method not allowed.");
     const result = await coachMemberWorkouts(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
@@ -676,6 +734,18 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       return result.ok ? json(result.body, programId ? 200 : 201) : error(result.status, result.error);
     }
     return error(405, "Method not allowed.");
+  }
+
+  const challengeMatch = /^\/api\/coach\/challenges\/([0-9a-f]{32})$/.exec(path);
+  if (challengeMatch) {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await coachChallenge(env, userId, challengeMatch[1]!, url.searchParams.get("company") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+  if (path === "/api/challenges") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await myChallenges(env, userId);
+    return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
   if (path === "/api/assignments") {
@@ -982,6 +1052,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM measurements WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM workout_nudges WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM checkins WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_macros WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_notes WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),

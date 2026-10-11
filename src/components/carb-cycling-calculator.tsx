@@ -128,7 +128,12 @@ function FoodLogNote({
   return (
     <p className="flex gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs leading-relaxed">
       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-      {target.source === "roadmap" ? (
+      {target.source === "coach" ? (
+        <span>
+          Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today, the macros your
+          coach set. The numbers on this page are your plan&apos;s, not in use until your coach clears theirs.
+        </span>
+      ) : target.source === "roadmap" ? (
         <span>
           Your Food log is using <strong className="tabular">{formatCalories(target.calories)}</strong> today ({day ? `${day}, ` : ""}from the
           Roadmap){same ? (

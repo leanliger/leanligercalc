@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { LeaderboardCard } from "@/components/leaderboard-card";
 import { LiftBoard } from "@/components/lift-board";
+import { ChallengeBoard } from "@/components/challenge-board";
+import type { ChallengeStandings } from "@/lib/challenges";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { DAILY_STREAK_PERCENT } from "@/lib/streaks";
 import type { WeightUnit } from "@/lib/types";
@@ -20,24 +22,86 @@ interface LeaderboardTabProps {
   today: string;
 }
 
-type Board = "streaks" | "lifts";
+type Board = "streaks" | "lifts" | "challenges";
 
 /** The Ranks tab (id "leaderboard"): habit streaks, or verified lifts. */
 export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today }: LeaderboardTabProps) {
   const [board, setBoard] = React.useState<Board>("streaks");
+  // Challenges the member joined; opening Ranks shows them first when there are any.
+  const [challenges, setChallenges] = React.useState<ChallengeStandings[] | null>(null);
+  const [challengeError, setChallengeError] = React.useState<string | null>(null);
+  const picked = React.useRef(false);
+  React.useEffect(() => {
+    let live = true;
+    fetch("/api/challenges", { credentials: "same-origin", headers: { accept: "application/json" } })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { challenges?: ChallengeStandings[]; error?: string } | null;
+        if (!res.ok || !body?.challenges) throw new Error(body?.error ?? "Challenges need the app opened from your Whop.");
+        if (!live) return;
+        setChallenges(body.challenges);
+        if (!picked.current && body.challenges.length > 0) setBoard("challenges");
+      })
+      .catch((e: unknown) => live && setChallengeError(e instanceof Error ? e.message : "Couldn't load challenges."));
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <div className="space-y-5">
       <SegmentedControl
         ariaLabel="Leaderboard"
         value={board}
-        onValueChange={setBoard}
+        onValueChange={(b) => {
+          picked.current = true;
+          setBoard(b);
+        }}
         options={[
           { value: "streaks", label: "Habit streaks" },
           { value: "lifts", label: "Lifts" },
+          { value: "challenges", label: "Challenges" },
         ]}
-        className="max-w-xs"
+        className="max-w-md"
       />
-      {board === "lifts" ? (
+      {board === "challenges" ? (
+        <div className="space-y-5 lg:max-w-2xl">
+          {challenges === null ? (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">{challengeError ?? "Loading…"}</CardContent>
+            </Card>
+          ) : challenges.length === 0 ? (
+            <Card>
+              <CardContent className="space-y-1 p-5">
+                <p className="flex items-center gap-2 font-semibold">
+                  <Trophy className="h-4 w-4 text-primary" />
+                  No challenges yet
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  When your coach starts a challenge, you get an invite on Today. Join it and its leaderboard shows up here.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            challenges.map((c) => (
+              <Card key={c.id}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Trophy className="h-4 w-4 text-primary" />
+                    {c.title}
+                  </CardTitle>
+                  {c.note ? <p className="text-xs italic text-muted-foreground">&ldquo;{c.note}&rdquo;</p> : null}
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <ChallengeBoard s={c} today={today} />
+                  <p className="text-[11px] text-muted-foreground">
+                    Ranked by workouts from the challenge program finished between the start and end dates. Finish each
+                    workout in Training for it to count.
+                  </p>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      ) : board === "lifts" ? (
         <LiftBoard availability={availability} unit={unit} bodyweightLb={bodyweightLb} today={today} />
       ) : (
         <StreakBoard availability={availability} onNavigate={onNavigate} />

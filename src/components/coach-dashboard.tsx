@@ -5,6 +5,8 @@ import {
   Activity,
   AlertTriangle,
   Camera,
+  ClipboardCheck,
+  Dumbbell,
   Lock,
   ArrowLeft,
   ChevronRight,
@@ -31,6 +33,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
+import { AttentionList, CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
   FLAG_LABELS,
@@ -57,19 +60,17 @@ type Filter = "all" | "attention" | Flag;
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "attention", label: "Needs attention" },
+  { value: "reply", label: "Check-ins to review" },
   { value: "behind", label: "Behind plan" },
-  { value: "red", label: "Red Zone" },
+  { value: "red", label: "Habits slipping" },
+  { value: "no-weigh-in", label: "No weigh-in" },
+  { value: "no-workouts", label: "No workouts" },
+  { value: "checkin", label: "No check-in" },
   { value: "inactive", label: `No logs ${INACTIVE_DAYS}+ days` },
   { value: "no-plan", label: "No plan" },
 ];
 
 const ZONE_TEXT: Record<Zone, string> = { green: "text-success", yellow: "text-warning", red: "text-destructive" };
-const FLAG_VARIANT: Record<Flag, "danger" | "warning" | "secondary"> = {
-  behind: "warning",
-  red: "danger",
-  inactive: "secondary",
-  "no-plan": "secondary",
-};
 
 const STATUS_LABEL: Record<string, { label: string; variant: "success" | "warning" | "secondary" | "default" }> = {
   "on-track": { label: "On track", variant: "success" },
@@ -195,6 +196,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     active: summaries.filter((m) => m.daysSinceLog !== null && m.daysSinceLog < INACTIVE_DAYS).length,
     attention: summaries.filter((m) => m.flags.length > 0).length,
     behind: summaries.filter((m) => m.flags.includes("behind")).length,
+    loggedWeek: summaries.filter((m) => m.daysSinceLog !== null && m.daysSinceLog < 7).length,
+    workouts: summaries.reduce((s, m) => s + m.workouts7, 0),
+    training: summaries.filter((m) => m.workouts7 > 0).length,
+    checkedIn: summaries.filter((m) => m.checkedIn).length,
+    toReview: summaries.filter((m) => m.flags.includes("reply")).length,
   };
   const scored = summaries.filter((m) => m.week.percent !== null);
   const avgWeek = scored.length > 0 ? Math.round(scored.reduce((s, m) => s + (m.week.percent ?? 0), 0) / scored.length) : null;
@@ -267,33 +273,62 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               ]}
               className="max-w-md"
             />
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
               <Stat
+                compact
                 label="Sharing with you"
                 value={counts.total}
                 icon={<Users className="h-3.5 w-3.5" />}
                 sub={`of ${overview.members.length} member${overview.members.length === 1 ? "" : "s"} in your whop`}
               />
               <Stat
-                label="Logging"
-                value={counts.active}
-                sub={`logged in the last ${INACTIVE_DAYS} days`}
+                compact
+                label="Logged this week"
+                value={counts.loggedWeek}
+                sub={`of ${counts.total} sharing, last 7 days`}
                 icon={<Activity className="h-3.5 w-3.5" />}
               />
               <Stat
+                compact
+                label="Avg adherence"
+                value={avgWeek === null ? "—" : `${avgWeek}%`}
+                sub={scored.length > 0 ? `habit scorecard, ${scored.length} scored` : "no habit logs this week"}
+                icon={<Flame className="h-3.5 w-3.5" />}
+              />
+              <Stat
+                compact
+                label="Workouts"
+                value={counts.workouts}
+                sub={`last 7 days, ${counts.training} member${counts.training === 1 ? "" : "s"} training`}
+                icon={<Dumbbell className="h-3.5 w-3.5" />}
+              />
+              <Stat
+                compact
+                label="Check-ins"
+                value={counts.checkedIn}
+                sub={counts.toReview > 0 ? `${counts.toReview} to review` : "last 7 days, all reviewed"}
+                emphasis={counts.toReview > 0}
+                icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+              />
+              <Stat
+                compact
                 label="Need attention"
                 value={counts.attention}
                 emphasis={counts.attention > 0}
                 sub={`${counts.behind} behind plan`}
                 icon={<AlertTriangle className="h-3.5 w-3.5" />}
               />
-              <Stat
-                label="Avg scorecard"
-                value={avgWeek === null ? "—" : `${avgWeek}%`}
-                sub={scored.length > 0 ? `this week, ${scored.length} scored` : "no habit logs this week"}
-                icon={<Flame className="h-3.5 w-3.5" />}
-              />
             </div>
+            {summaries.length > 0 ? (
+              <AttentionList
+                members={summaries}
+                onOpen={setSelected}
+                onShowAll={() => {
+                  setFilter("attention");
+                  setSelected(null);
+                }}
+              />
+            ) : null}
             {overview.photoStorage ? <PhotoStorageLine {...overview.photoStorage} /> : null}
 
             <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
@@ -771,6 +806,9 @@ function MemberDetail({
         </div>
       </div>
 
+      <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
+      <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
+
       {/* --------------------------- weight vs plan --------------------------- */}
       <Card>
         <CardHeader className="space-y-2 pb-3">
@@ -858,6 +896,7 @@ function MemberDetail({
       <MemberWorkoutsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
 
       {/* -------------------------------- food -------------------------------- */}
+      <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">

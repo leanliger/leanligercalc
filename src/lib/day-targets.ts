@@ -10,6 +10,7 @@ import { calculateFatLossTimeline } from "./fat-loss";
 import { buildRoadmap } from "./roadmap";
 import type { CalorieAdjustment } from "./tracking";
 import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs } from "./types";
+import type { CoachMacros } from "./coach-macros";
 import { resolveWeekdayPattern, weekdayIndex } from "./weekday-pattern";
 
 export interface DayTarget {
@@ -18,7 +19,8 @@ export interface DayTarget {
   protein: number;
   carbs: number;
   fat: number;
-  source: "roadmap" | "carbs";
+  /** coach = macros the coach set (src/lib/coach-macros.ts), the same every day. */
+  source: "roadmap" | "carbs" | "coach";
   /** Not carb cycling: every day the same, so no day type to show. */
   steady: boolean;
 }
@@ -29,7 +31,21 @@ export function dayTargetFinder(
   fatLoss: FatLossInputs,
   carbs: CarbCyclingInputs,
   adjustments: readonly CalorieAdjustment[],
+  /** Macros the coach set: while there are any, every day is these. */
+  coachMacros: CoachMacros | null = null,
 ): (date: string) => DayTarget | null {
+  if (coachMacros) {
+    const t: DayTarget = {
+      type: "medium",
+      calories: coachMacros.kcal,
+      protein: coachMacros.protein,
+      carbs: coachMacros.carbs,
+      fat: coachMacros.fat,
+      source: "coach",
+      steady: true,
+    };
+    return () => t;
+  }
   const timeline = calculateFatLossTimeline(profile, fatLoss);
   const roadmap = buildRoadmap(profile, carbs, timeline, [...adjustments]);
   const roadmapDays = new Map(roadmap.days.map((d) => [d.date, d]));

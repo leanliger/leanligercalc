@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bookmark, Check, Copy, Dumbbell, ListChecks, Pencil, Save, Search, Send, Trash2, Users, X } from "lucide-react";
+import { Bookmark, Check, Copy, Dumbbell, ListChecks, Pencil, Save, Search, Send, Trash2, Trophy, Users, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ import { MAX_SCHEDULE_WEEKS, defaultWeekdays, nextMonday, scheduleEnd, scheduleS
 import { WEEKDAY_SHORT } from "@/lib/weekday-pattern";
 import { todayISO } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { ChallengeBoard } from "@/components/challenge-board";
+import type { ChallengeStandings } from "@/lib/challenges";
 
 const FIELD =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
@@ -138,6 +140,8 @@ function NewAssignment({
   const [startDate, setStartDate] = React.useState(() => nextMonday(todayISO()));
   const [weekdays, setWeekdays] = React.useState<number[]>(defaultWeekdays(4));
   const [weeks, setWeeks] = React.useState(6);
+  // A scheduled program can be sent as a challenge, with a leaderboard for those who join.
+  const [challenge, setChallenge] = React.useState(false);
   // The saved program being edited (null = a new one), and what it looked like when last saved.
   const [savedId, setSavedId] = React.useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = React.useState<string | null>(null);
@@ -220,7 +224,16 @@ function NewAssignment({
     try {
       const r = await call<{ sent: number; notified: number; audience: string }>("/api/coach/assignments", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, kind, program: scheduled, habits, title: habitTitle, note, target }),
+        body: JSON.stringify({
+          company: companyId,
+          kind,
+          program: scheduled,
+          habits,
+          title: habitTitle,
+          note,
+          target,
+          challenge: kind === "program" && challenge && Boolean(scheduled?.schedule),
+        }),
       });
       setResult({
         ok: true,
@@ -231,6 +244,7 @@ function NewAssignment({
         }`,
       });
       setNote("");
+      setChallenge(false);
       if (kind === "program") resetProgram();
       await onSent();
     } catch (e) {
@@ -458,6 +472,26 @@ function NewAssignment({
             ) : (
               <p className="text-xs text-muted-foreground">Members do the days in order, at their own pace.</p>
             )}
+            {scheduleOn ? (
+              <label className="flex items-start gap-2 rounded-md border border-border p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={challenge}
+                  onChange={(e) => setChallenge(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Trophy className="h-3.5 w-3.5 text-primary" />
+                    Make it a challenge
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Members choose to join. Everyone who joins gets the program and a leaderboard ranked by workouts finished
+                    between the start and end dates.
+                  </span>
+                </span>
+              </label>
+            ) : null}
           </div>
         ) : null}
 
@@ -612,6 +646,7 @@ function SentList({ companyId, assignments, onChanged }: { companyId: string; as
                       {a.audience} · {formatShort(a.createdAt.slice(0, 10))}
                     </p>
                   </div>
+                  {a.challenge ? <Badge variant="default">Challenge</Badge> : null}
                   {a.cancelled ? <Badge variant="secondary">Cancelled</Badge> : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -619,6 +654,7 @@ function SentList({ companyId, assignments, onChanged }: { companyId: string; as
                     {a.counts.accepted} of {a.counts.sent} used it
                   </span>
                   {a.counts.declined > 0 ? <span className="tabular text-muted-foreground">{a.counts.declined} not now</span> : null}
+                  {a.challenge ? <LeaderboardToggle companyId={companyId} id={a.id} /> : null}
                   {!a.cancelled && a.counts.pending > 0 ? <span className="tabular text-muted-foreground">{a.counts.pending} waiting</span> : null}
                   {!a.cancelled && a.counts.pending > 0 ? (
                     <ConfirmButton
@@ -638,6 +674,37 @@ function SentList({ companyId, assignments, onChanged }: { companyId: string; as
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** A challenge's leaderboard, loaded when the coach opens it. */
+function LeaderboardToggle({ companyId, id }: { companyId: string; id: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [data, setData] = React.useState<ChallengeStandings | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (!next) return;
+    setError(null);
+    try {
+      const r = await call<{ challenge: ChallengeStandings }>(`/api/coach/challenges/${id}?company=${encodeURIComponent(companyId)}`);
+      setData(r.challenge);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load the leaderboard.");
+    }
+  };
+  return (
+    <>
+      <button type="button" onClick={() => void toggle()} className="text-xs font-medium text-primary underline-offset-2 hover:underline">
+        {open ? "Hide leaderboard" : "Leaderboard"}
+      </button>
+      {open ? (
+        <div className="basis-full pt-1">
+          {error ? <p className="text-xs text-destructive">{error}</p> : data ? <ChallengeBoard s={data} today={todayISO()} /> : <p className="text-xs text-muted-foreground">Loading…</p>}
+        </div>
+      ) : null}
+    </>
   );
 }
 
