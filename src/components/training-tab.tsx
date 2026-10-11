@@ -29,7 +29,9 @@ import { ExerciseLibraryCard } from "@/components/exercise-library";
 import { FormChecksCard } from "@/components/form-checks";
 import { PlateCalculatorCard } from "@/components/plate-calculator";
 import { ProgramCalendar } from "@/components/program-calendar";
+import { NUDGE_IDLE_MIN, NUDGE_REPEAT_MIN } from "@/lib/workout-nudge";
 import { ExerciseThumb } from "@/components/exercise-art";
+import { LiftProgressCard } from "@/components/lift-progress";
 import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
@@ -403,6 +405,7 @@ export function TrainingTab({
             onAddProgram={addProgram}
             onRestChange={(restSec) => onSettingsChange((s) => ({ ...s, restSec }))}
             onTrackRirChange={(trackRir) => onSettingsChange((s) => ({ ...s, trackRir }))}
+            onFinishRemindersChange={(finishReminders) => onSettingsChange((s) => ({ ...s, finishReminders }))}
           />
           <PlateCalculatorCard unit={unit} />
           <FormChecksCard
@@ -414,6 +417,7 @@ export function TrainingTab({
           />
         </div>
         <div className="space-y-5">
+          <LiftProgressCard workouts={workouts} custom={custom} unit={unit} onOpen={(id) => setView({ kind: "exercise", id })} />
           <RecentWorkoutsCard
             workouts={workouts}
             unit={unit}
@@ -498,6 +502,7 @@ function TodayCard({
   onAddProgram,
   onRestChange,
   onTrackRirChange,
+  onFinishRemindersChange,
 }: {
   settings: TrainingSettings;
   program: Program | null;
@@ -509,8 +514,10 @@ function TodayCard({
   onAddProgram: (template: ProgramTemplate | null) => void;
   onRestChange: (sec: number) => void;
   onTrackRirChange: (on: boolean) => void;
+  onFinishRemindersChange: (on: boolean) => void;
 }) {
   const rirId = React.useId();
+  const finishId = React.useId();
   // A program on a calendar: today's planned workout (or the next one) comes first.
   const plan = program ? planToday(program, workouts, today) : null;
   const planned =
@@ -681,6 +688,19 @@ function TodayCard({
           <p className="text-[11px] text-muted-foreground">
             Reps in reserve: 0 means all out. It makes the &ldquo;add weight&rdquo; suggestions smarter: easy sets move you up
             faster, all-out ones hold the weight.
+          </p>
+        </div>
+
+        <div className="space-y-1 border-t border-border pt-3">
+          <div className="flex items-center gap-2.5">
+            <label htmlFor={finishId} className="min-w-0 flex-1 text-xs font-medium">
+              Remind me to finish my workout
+            </label>
+            <Switch id={finishId} checked={settings.finishReminders} onCheckedChange={onFinishRemindersChange} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            If a workout is open with nothing logged for {NUDGE_IDLE_MIN} minutes, you get a notification asking if you&apos;re
+            done, then one every {NUDGE_REPEAT_MIN} minutes until you tap Finish (up to an hour).
           </p>
         </div>
       </CardContent>

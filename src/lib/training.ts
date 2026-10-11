@@ -83,6 +83,8 @@ export interface TrainingSettings {
   restSec: number;
   /** Ask "how many reps were left?" after each set (reps in reserve). */
   trackRir: boolean;
+  /** Notify me when a workout is left open with nothing logged (src/lib/workout-nudge.ts). */
+  finishReminders: boolean;
 }
 
 export const DEFAULT_TRAINING: TrainingSettings = {
@@ -91,6 +93,7 @@ export const DEFAULT_TRAINING: TrainingSettings = {
   activeProgramId: null,
   restSec: DEFAULT_REST_SEC,
   trackRir: true,
+  finishReminders: true,
 };
 
 export interface WorkoutSet {
@@ -321,7 +324,14 @@ export function sanitizeTraining(raw: unknown): TrainingSettings {
     ? raw.activeProgramId
     : null;
   const restSec = isInt(raw.restSec, REST_MIN_SEC, REST_MAX_SEC) ? raw.restSec : DEFAULT_REST_SEC;
-  return { programs, customExercises, activeProgramId: active, restSec, trackRir: raw.trackRir !== false };
+  return {
+    programs,
+    customExercises,
+    activeProgramId: active,
+    restSec,
+    trackRir: raw.trackRir !== false,
+    finishReminders: raw.finishReminders !== false,
+  };
 }
 
 /* -------------------------------- templates ------------------------------- */

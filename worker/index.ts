@@ -40,6 +40,7 @@
  *   POST   /api/coach/groups                  coaches: save a group; PUT/DELETE /api/coach/groups/:id
  *   GET    /api/coach/programs?company=…      coaches: saved programs; POST to save, PUT/DELETE /api/coach/programs/:id
  *   GET    /api/coach/member-training?company=…&member=…  coaches: a member's programs; PUT to save an edit
+ *   GET    /api/coach/member-workouts?company=…&member=…  coaches: a member's workouts (newest 500)
  *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
  *   GET    /api/assignments                   members: assignments waiting for me
  *   PUT    /api/assignments/:id               members: { accept } used it, or Not now
@@ -67,12 +68,12 @@
  *   GET    /api/food/barcode/:code product details for a barcode
  *   GET    /api/food/search?q=     search products by name
  *
- * A Cron Trigger also runs every minute to send fasting notifications through
- * Whop (see reminders.ts).
+ * A Cron Trigger also runs every minute to send fasting, check-in and
+ * "Finished your workout?" notifications through Whop (see reminders.ts).
  */
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
-import { coachMemberTraining, markProgramEditApplied, myProgramEdits, saveMemberProgram } from "./program-edits";
+import { coachMemberTraining, coachMemberWorkouts, markProgramEditApplied, myProgramEdits, saveMemberProgram } from "./program-edits";
 import { PROGRAM_EDIT_ID_PATTERN } from "../src/lib/program-edits";
 import {
   MAX_WEIGH_INS,
@@ -596,6 +597,12 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return error(405, "Method not allowed.");
   }
 
+  if (path === "/api/coach/member-workouts") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await coachMemberWorkouts(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
+
   if (path === "/api/program-edits") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return json({ edits: await myProgramEdits(env, userId) });
@@ -805,7 +812,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const id = workoutMatch[1]!;
     if (!WORKOUT_ID_PATTERN.test(id)) return error(404, "Not found.");
     if (method === "DELETE") {
-      await env.DB.prepare("DELETE FROM workouts WHERE user_id = ? AND id = ?").bind(userId, id).run();
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM workouts WHERE user_id = ? AND id = ?").bind(userId, id),
+        env.DB.prepare("DELETE FROM workout_nudges WHERE user_id = ? AND workout_id = ?").bind(userId, id),
+      ]);
       return noContent();
     }
     if (method !== "PUT") return error(405, "Method not allowed.");
@@ -971,6 +981,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     await env.DB.batch([
       env.DB.prepare("DELETE FROM measurements WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM workout_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),
@@ -1017,12 +1028,12 @@ export default {
     }
   },
 
-  // Every minute (wrangler.jsonc "triggers"): fasting notifications.
+  // Every minute (wrangler.jsonc "triggers"): fasting, check-in and workout notifications.
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       sendDueReminders(env, new Date(controller.scheduledTime))
         .then((r) => {
-          if (r.fasting.due > 0 || r.checkin.due > 0) console.log("reminders", r);
+          if (r.fasting.due > 0 || r.checkin.due > 0 || r.workout.due > 0) console.log("reminders", r);
         })
         .catch((e) => console.error("fasting reminders crashed", e)),
     );

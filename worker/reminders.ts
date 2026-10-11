@@ -4,6 +4,8 @@
  *   fasting     the eating window opening and closing (src/lib/fasting.ts)
  *   reminders   morning weigh-in, evening habits, bedtime downtime,
  *               Sunday recap (src/lib/reminders.ts)
+ *   workouts    "Finished your workout?" when one is left open with nothing
+ *               logged for 10 minutes, then every 5 (src/lib/workout-nudge.ts)
  *
  * For each member who switched them on, the scheduler works out their local
  * time and asks Whop's API to notify them when something is due. Each one goes
@@ -45,6 +47,8 @@ import {
 import { dailyStreak } from "../src/lib/streaks";
 import { isPausedOn, sanitizePauses, withPauses, type PausePeriod } from "../src/lib/pause";
 import type { WeightUnit } from "../src/lib/types";
+import { NUDGE_IDLE_MIN, NUDGE_LOOKBACK_MIN, NUDGE_MAX, nudgeDue, nudgeMessage } from "../src/lib/workout-nudge";
+import { experiencesOf } from "./experiences";
 import { secretValue } from "./secrets";
 
 export interface ReminderEnv {
@@ -452,14 +456,106 @@ async function sendDueCheckinReminders(env: ReminderEnv, now: Date, budget: numb
   return counts;
 }
 
+/* ============================ workout reminders ============================ */
+
+interface OpenWorkoutRow {
+  user_id: string;
+  id: string;
+  updated_at: string;
+  name: string | null;
+  sent_at: string | null;
+  sent_count: number | null;
+}
+
+/** "Remind me to finish" on the Training tab: on unless the member turned it off. */
+async function finishRemindersOn(env: ReminderEnv, userId: string): Promise<boolean> {
+  const plan = await env.DB.prepare("SELECT state FROM plans WHERE user_id = ?").bind(userId).first<{ state: string }>();
+  if (!plan) return true;
+  try {
+    const state = JSON.parse(plan.state) as { tracking?: { training?: { finishReminders?: unknown } } } | null;
+    return state?.tracking?.training?.finishReminders !== false;
+  } catch {
+    return true;
+  }
+}
+
+async function sendDueWorkoutNudges(env: ReminderEnv, now: Date, budget: number): Promise<RunCounts> {
+  const at = now.getTime();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  // In-progress workouts last changed between the lookback and 10 minutes ago.
+  const { results } = await env.DB.prepare(
+    `SELECT w.user_id, w.id, w.updated_at, json_extract(w.data, '$.name') AS name, n.sent_at, n.sent_count
+     FROM workouts w
+     LEFT JOIN workout_nudges n ON n.user_id = w.user_id AND n.workout_id = w.id
+     WHERE w.updated_at >= ? AND w.updated_at <= ? AND json_extract(w.data, '$.finishedAt') IS NULL`,
+  )
+    .bind(iso(at - NUDGE_LOOKBACK_MIN * 60_000), iso(at - NUDGE_IDLE_MIN * 60_000))
+    .all<OpenWorkoutRow>();
+
+  const jobs: { row: OpenWorkoutRow; n: number; lastChange: number }[] = [];
+  for (const row of results) {
+    const lastChange = Date.parse(row.updated_at);
+    if (!Number.isFinite(lastChange)) continue;
+    const sent = row.sent_at && row.sent_count ? { at: Date.parse(row.sent_at), count: row.sent_count } : null;
+    const n = nudgeDue(lastChange, sent, at);
+    if (n !== null) jobs.push({ row, n, lastChange });
+  }
+
+  const counts: RunCounts = { due: jobs.length, sent: 0, failed: 0, skipped: 0 };
+  const marks: D1PreparedStatement[] = [];
+  const mark = (row: OpenWorkoutRow, count: number) =>
+    marks.push(
+      env.DB.prepare(
+        `INSERT INTO workout_nudges (user_id, workout_id, sent_at, sent_count) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id, workout_id) DO UPDATE SET sent_at = excluded.sent_at, sent_count = excluded.sent_count`,
+      ).bind(row.user_id, row.id, iso(at), count),
+    );
+
+  const todo = jobs.slice(0, budget);
+  const experiences = todo.length > 0 ? await experiencesOf(env, [...new Set(todo.map((j) => j.row.user_id))]) : new Map<string, string>();
+  for (const job of todo) {
+    const experienceId = experiences.get(job.row.user_id);
+    let on = true;
+    try {
+      on = await finishRemindersOn(env, job.row.user_id);
+    } catch {
+      on = true; // can't tell: send as usual
+    }
+    if (!on || !experienceId) {
+      // Turned off, or nowhere to send it: settle this pause so it isn't rechecked every minute.
+      counts.skipped++;
+      mark(job.row, NUDGE_MAX);
+      continue;
+    }
+    const msg = nudgeMessage(job.row.name ?? "", job.n, (at - job.lastChange) / 60_000);
+    const result = await sendWhop(env, experienceId, job.row.user_id, msg);
+    if (result.ok) {
+      counts.sent++;
+      mark(job.row, job.n);
+    } else {
+      counts.failed++;
+      console.error("workout reminder failed", { status: result.status, reason: result.reason, n: job.n });
+    }
+  }
+  // Once an hour, forget reminders about workouts from more than two days ago.
+  if (now.getUTCMinutes() === 0) marks.push(env.DB.prepare("DELETE FROM workout_nudges WHERE sent_at < ?").bind(iso(at - 2 * 86_400_000)));
+  if (marks.length > 0) await env.DB.batch(marks);
+  return counts;
+}
+
 /* --------------------------------- runner --------------------------------- */
 
 /** Everything the minute scheduler does. Returns counts, for logs and tests. */
-export async function sendDueReminders(env: ReminderEnv, now: Date): Promise<{ fasting: RunCounts; checkin: RunCounts }> {
+export async function sendDueReminders(
+  env: ReminderEnv,
+  now: Date,
+): Promise<{ fasting: RunCounts; checkin: RunCounts; workout: RunCounts }> {
   const none: RunCounts = { due: 0, sent: 0, failed: 0, skipped: 0 };
-  if (!secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) return { fasting: none, checkin: none };
+  if (!secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")) return { fasting: none, checkin: none, workout: none };
   const fasting = await sendDueFasting(env, now, MAX_SENDS_PER_RUN);
-  const left = MAX_SENDS_PER_RUN - Math.min(fasting.due, MAX_SENDS_PER_RUN);
+  let left = MAX_SENDS_PER_RUN - Math.min(fasting.due, MAX_SENDS_PER_RUN);
   const checkin = left > 0 ? await sendDueCheckinReminders(env, now, left) : { ...none };
-  return { fasting, checkin };
+  left -= Math.min(checkin.sent + checkin.failed, left);
+  const workout = left > 0 ? await sendDueWorkoutNudges(env, now, left) : { ...none };
+  return { fasting, checkin, workout };
 }

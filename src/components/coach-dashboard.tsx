@@ -30,6 +30,7 @@ import { PhotoGallery } from "@/components/photos-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
+import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
   FLAG_LABELS,
@@ -854,6 +855,7 @@ function MemberDetail({
 
       {/* ------------------------------ training ------------------------------ */}
       <MemberProgramCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+      <MemberWorkoutsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
 
       {/* -------------------------------- food -------------------------------- */}
       <Card>

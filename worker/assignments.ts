@@ -34,8 +34,8 @@ import {
   type MemberAssignment,
 } from "../src/lib/assignments";
 import { COMPANY_ID_PATTERN } from "../src/lib/coach-api";
-import { EXPERIENCE_ID_PATTERN } from "../src/lib/fasting";
 import { companyMembers, type Profile } from "./coach";
+import { experiencesOf } from "./experiences";
 import { sendWhop } from "./reminders";
 import { accessLevel, hasWhopKey, type WhopEnv } from "./whop";
 
@@ -71,27 +71,6 @@ interface AssignmentRow {
   audience: string;
   created_at: string;
   cancelled_at: string | null;
-}
-
-/** Where each member last opened the app, so the notification reaches them there. */
-async function experiencesOf(env: AssignmentEnv, ids: readonly string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (let i = 0; i < ids.length; i += ID_CHUNK) {
-    const chunk = ids.slice(i, i + ID_CHUNK);
-    const marks = chunk.map(() => "?").join(",");
-    const results = await env.DB.batch<{ user_id: string; experience_id: string | null }>(
-      ["coach_sharing", "reminders", "fasting_reminders", "leaderboard"].map((table) =>
-        env.DB.prepare(`SELECT user_id, experience_id FROM ${table} WHERE user_id IN (${marks})`).bind(...chunk),
-      ),
-    );
-    // Earlier tables win: coach_sharing records where they last opened the app.
-    for (const r of results) {
-      for (const row of r.results ?? []) {
-        if (!out.has(row.user_id) && row.experience_id && EXPERIENCE_ID_PATTERN.test(row.experience_id)) out.set(row.user_id, row.experience_id);
-      }
-    }
-  }
-  return out;
 }
 
 async function groupsOf(env: AssignmentEnv, companyId: string): Promise<CoachGroup[]> {

@@ -12,7 +12,7 @@
  * reaches their app soon.
  */
 
-import { sanitizeProgram, sanitizeTraining, type Program, type TrainingSettings } from "../src/lib/training";
+import { sanitizeProgram, sanitizeTraining, type Program, type TrainingSettings, type Workout } from "../src/lib/training";
 import { validateProgramEdit, type MemberTraining, type ProgramEdit } from "../src/lib/program-edits";
 import { coachCheck, experienceOf, isSharingProgress, type SharingEnv } from "./sharing";
 import { sendWhop } from "./reminders";
@@ -82,6 +82,35 @@ export async function coachMemberTraining(env: SharingEnv, viewerId: string, com
     pending,
   };
   return { ok: true, body: { training: body } };
+}
+
+/** How many of a member's most recent workouts the coach sees. */
+const COACH_WORKOUT_LIMIT = 500;
+
+/**
+ * A member's workouts for their coach (newest first, finished and in
+ * progress), with their own exercises so names and charts resolve. Same rule
+ * as their program: only while they share their progress with the coach.
+ */
+export async function coachMemberWorkouts(env: SharingEnv, viewerId: string, companyId: string, memberId: string): Promise<ProgramEditResult> {
+  const c = await coachCheck(env, viewerId, { company: companyId, member: memberId });
+  if ("error" in c) return c.error;
+  if (!(await isSharingProgress(env, c.memberId))) return NOT_SHARING;
+  const [training, rows] = await Promise.all([
+    trainingOf(env, c.memberId),
+    env.DB.prepare("SELECT id, data FROM workouts WHERE user_id = ? ORDER BY date DESC, updated_at DESC LIMIT ?")
+      .bind(c.memberId, COACH_WORKOUT_LIMIT)
+      .all<{ id: string; data: string }>(),
+  ]);
+  const workouts: Workout[] = [];
+  for (const row of rows.results) {
+    try {
+      workouts.push({ ...(JSON.parse(row.data) as Workout), id: row.id });
+    } catch {
+      /* skip a corrupt row */
+    }
+  }
+  return { ok: true, body: { workouts, customExercises: training.customExercises } };
 }
 
 export async function saveMemberProgram(env: SharingEnv, viewerId: string, raw: unknown): Promise<ProgramEditResult> {
