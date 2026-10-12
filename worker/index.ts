@@ -27,6 +27,8 @@
  *   GET    /api/coach/overview?company=biz_…  coach dashboard (admins of that whop only)
  *   GET    /api/measurements       my body measurements
  *   PUT    /api/measurements/:date save one day's measurements   DELETE … remove it
+ *   GET    /api/physique          my past physique analyses
+ *   POST   /api/physique          run one on my saved photos or an uploaded set
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
  *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
@@ -75,6 +77,7 @@
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
+import { analyzePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
 import {
   coachCheckins,
@@ -153,7 +156,7 @@ import { answerFormCheck, askFormCheck, deleteFormCheck, getFormChecks } from ".
 import { FORM_CHECK_ID_PATTERN } from "../src/lib/form-checks";
 import { secretValue } from "./secrets";
 
-export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv, MealPhotoEnv {
+export interface Env extends AuthEnv, FoodEnv, ReminderEnv, CoachEnv, LeaderboardEnv, MealPhotoEnv, PhysiqueEnv {
   DB: D1Database;
   ASSETS: Fetcher;
 }
@@ -250,6 +253,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       userId: user.userId,
       notifications: Boolean(secretValue(env.WHOP_API_KEY, "WHOP_API_KEY")),
       mealPhotos: mealPhotosOn(env),
+      physique: physiqueOn(env),
     });
   }
 
@@ -692,6 +696,12 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const body = await readJson(request);
     if (!body.ok) return body.response;
     return send(await estimateMealPhoto(env, userId, body.value));
+  }
+  if (path === "/api/physique") {
+    if (method === "GET") return send(await listPhysique(env, userId));
+    // Reads its own body: three photos exceed readJson's shared size cap.
+    if (method === "POST") return send(await analyzePhysique(env, userId, request));
+    return error(405, "Method not allowed.");
   }
   if (path === "/api/report") {
     if (method !== "GET") return error(405, "Method not allowed.");

@@ -182,7 +182,7 @@ export function PhotoGallery({
 /* ---------------------------------- card ---------------------------------- */
 
 /** Resize and re-save as JPEG on the device — this also drops location and camera metadata. */
-async function prepareForUpload(file: File): Promise<Blob> {
+export async function prepareForUpload(file: File): Promise<Blob> {
   const photo = await loadPhoto(file);
   try {
     const scale = Math.min(1, PHOTO_MAX_DIMENSION / Math.max(photo.width, photo.height));

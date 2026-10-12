@@ -313,6 +313,19 @@ On the Progress tab, under the weight chart:
 
 **Turning photos on** needs Cloudflare R2, which Cloudflare only enables after a payment method is on file (the free tier covers 10 GB). Once it's enabled: `npx wrangler r2 bucket create leanligercalc-photos`, add `"r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "leanligercalc-photos" }]` to `wrangler.jsonc`, and deploy. Until then the photos card says "Coming soon".
 
+## Physique analysis
+
+**Physique analysis** (`src/lib/physique.ts`, `worker/physique.ts`, `physique-card.tsx`): on the Progress tab under the photos card. A vision model reads the member's front, side and back photos and replies with an estimated body fat **range**, their 2–3 strongest muscle groups, 2–3 target areas, and a plan for the next mesocycle. The prompt calibrates to natural, drug-free standards, refuses medical diagnoses, says so when lighting or clothing limits a read, and frames weaknesses as target areas rather than faults.
+
+Two sources, both `POST /api/physique`:
+
+- `{ "source": "saved" }` — the newest front, side and back already in R2. Answers 409 naming the poses that are missing rather than guessing from two angles.
+- `{ "source": "upload", "images": [...] }` — a one-off set of three, resized on the device like any photo upload, **never added to the gallery**. This route reads its own body because three base64 photos are far larger than `readJson`'s shared cap.
+
+`GET /api/physique` returns the last 20 analyses (newest first) plus today's remaining count, so a member can re-read an earlier breakdown without spending another. Only the reply text is stored (`physique_analyses`), never a copy of the photos.
+
+**Off until the `GEMINI_API_KEY` secret is set** (`npx wrangler secret put GEMINI_API_KEY`, a free key from <https://aistudio.google.com/apikey>); without it the card doesn't show, the same way meal photos work. Each member gets 3 a day (`physique_usage`), counted before the call so retries can't run up the bill. The model is `gemini-3.8-flash` or `PHYSIQUE_MODEL` — Google retires models on its own schedule, so a 404 naming the model means set a current one; list what the key can use with `curl -H "x-goog-api-key: $GEMINI_API_KEY" https://generativelanguage.googleapis.com/v1beta/models`. `GEMINI_API_BASE` exists only to point local tests at a stand-in. Safety filters can refuse the photos outright (`promptFeedback.blockReason`) or cut generation short (`finishReason`); both answer 422 with advice on clothing and lighting rather than a raw provider error. Table from migration `0022`.
+
 ## Today and badges
 
 The **Today** tab (`today-tab.tsx`) is the screen a member opens each morning. A fresh open always starts here; a reload (the tab is in the URL) stays where it was. It reads and writes the same data as the other tabs — nothing new is stored on the server.

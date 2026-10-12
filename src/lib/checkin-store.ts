@@ -40,6 +40,8 @@ export interface SessionInfo {
   notifications?: boolean;
   /** Cloud mode only: meal photo estimates are switched on (an Anthropic key is set). */
   mealPhotos?: boolean;
+  /** Cloud mode only: physique analysis is switched on (a Gemini key is set). */
+  physique?: boolean;
   /** Cloud mode only: the signed-in Whop user, so on-device backups stay with their owner. */
   userId?: string;
 }
@@ -143,12 +145,13 @@ export async function detectSession(): Promise<SessionInfo> {
     const isJson = (res.headers.get("content-type") ?? "").includes("application/json");
     // Static hosting answers /api/session with the HTML 404 page.
     if (!isJson) return { mode: "local", reason: "no-server" };
-    const body = (await res.json()) as { storage?: string; reason?: LocalReason; notifications?: boolean; mealPhotos?: boolean; userId?: unknown };
+    const body = (await res.json()) as { storage?: string; reason?: LocalReason; notifications?: boolean; mealPhotos?: boolean; physique?: boolean; userId?: unknown };
     if (res.ok && body.storage === "cloud") {
       return {
         mode: "cloud",
         notifications: body.notifications === true,
         mealPhotos: body.mealPhotos === true,
+        physique: body.physique === true,
         ...(typeof body.userId === "string" && body.userId ? { userId: body.userId } : {}),
       };
     }
