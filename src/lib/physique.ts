@@ -99,3 +99,55 @@ export function parsePhysique(text: string): PhysiqueAnalysis {
 export function usablePhysique(analysis: PhysiqueAnalysis): boolean {
   return analysis.sections.some((s) => s.lines.length > 0);
 }
+
+/* ---------------------------- monthly comparison ---------------------------- */
+
+/**
+ * The comparison runs on two saved sets: the newest front, side and back, and
+ * the photos from about a month earlier. Sets closer together than this are
+ * refused: a week of change is mostly water and lighting.
+ */
+export const COMPARE_MIN_DAYS = 14;
+/** What "about a month" means when picking the earlier set by default. */
+export const COMPARE_TARGET_DAYS = 28;
+
+export const COMPARE_PROMPT = `You are an elite fitness and accountability coach specializing in natural bodybuilding and physique transformation. You are comparing the same person's progress photos from two dates: the BEFORE set and the AFTER set, each labelled by pose.
+
+Calibrate everything to natural, drug-free standards. Compare like with like: front with front, side with side, back with back.
+
+Describe what has actually changed between the two sets. Be specific about where (e.g. "more separation between the delts and arms", "the waist looks narrower from the side") and honest about how much. If differences in lighting, pump, posture, distance or clothing make a change hard to judge, say so rather than guessing. If very little has changed, say that plainly and kindly.
+
+GUARDRAILS & TONE:
+- Professional, encouraging, analytical and direct; sound like an experienced human coach, not an AI.
+- No medical diagnoses. No body-shaming: frame anything still to improve as a target area.
+- Never exaggerate. The summary for sharing must only claim changes you can actually see.
+
+OUTPUT FORMAT, exactly these headers:
+- 📅 What Changed:
+- 📉 Body Fat Then vs Now:
+- 💪 Visible Improvements:
+- 🎯 Still to Work On:
+- 💬 Shareable Summary:
+
+Under "Body Fat Then vs Now" give an estimated range for each date (e.g. "Then 18-21%, now 15-18%"). Under "Shareable Summary" write 2-3 upbeat sentences in the third person, with no name, suitable for a coach to post as a client result; it must not claim anything the photos don't show.`;
+
+export function compareUserPrompt(beforeDate: string, afterDate: string, days: number, weights: { before: number | null; after: number | null }): string {
+  const w =
+    weights.before !== null && weights.after !== null
+      ? ` Scale weight: ${weights.before.toFixed(1)} lb then, ${weights.after.toFixed(1)} lb now.`
+      : "";
+  return `Compare my BEFORE photos (${beforeDate}) with my AFTER photos (${afterDate}), ${days} days apart.${w}`;
+}
+
+/** The "Shareable Summary" text, for the Copy button. */
+export function shareableSummary(analysis: PhysiqueAnalysis): string | null {
+  const s = analysis.sections.find((x) => /shar|testimonial/i.test(x.heading));
+  return s && s.lines.length > 0 ? s.lines.join(" ").replace(/\*\*/g, "") : null;
+}
+
+/** Which saved photos a comparison used, by side and pose. */
+export interface CompareIds {
+  before: Partial<Record<"front" | "side" | "back", string>>;
+  after: Partial<Record<"front" | "side" | "back", string>>;
+}
+

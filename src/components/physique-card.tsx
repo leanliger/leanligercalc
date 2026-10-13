@@ -52,7 +52,8 @@ function Body({ lines }: { lines: string[] }) {
   );
 }
 
-function Sections({ analysis }: { analysis: Analysis }) {
+/** The model's reply under its headings. Shared with the monthly comparison. */
+export function Sections({ analysis }: { analysis: Pick<Analysis, "sections" | "raw"> }) {
   if (!analysis.sections.length) return <p className="text-sm whitespace-pre-wrap">{analysis.raw}</p>;
   return (
     <div className="space-y-4">

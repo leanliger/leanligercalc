@@ -29,6 +29,7 @@
  *   PUT    /api/measurements/:date save one day's measurements   DELETE … remove it
  *   GET    /api/physique          my past physique analyses
  *   POST   /api/physique          run one on my saved photos or an uploaded set
+ *   POST   /api/physique/compare  compare my newest photos with ones from about a month earlier { before? }
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
  *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
@@ -87,7 +88,7 @@ import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { receiveSteps, stepSyncKey } from "./steps-sync";
 import { coachMemberPhysique } from "./physique-focus";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
-import { analyzePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
+import { analyzePhysique, comparePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
 import {
   coachCheckins,
@@ -732,6 +733,12 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Reads its own body: three photos exceed readJson's shared size cap.
     if (method === "POST") return send(await analyzePhysique(env, userId, request));
     return error(405, "Method not allowed.");
+  }
+  if (path === "/api/physique/compare") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await comparePhysique(env, userId, body.value));
   }
   if (path === "/api/report") {
     if (method !== "GET") return error(405, "Method not allowed.");

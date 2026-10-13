@@ -1,5 +1,6 @@
 /**
  * Physique analysis: POST /api/physique, GET /api/physique
+ * Monthly comparison: POST /api/physique/compare (newest set vs about a month earlier)
  *
  * A member's front, side and back photos go to a vision model, which returns
  * the coaching breakdown in src/lib/physique.ts. Two sources:
@@ -18,12 +19,18 @@
  */
 
 import {
+  COMPARE_MIN_DAYS,
+  COMPARE_PROMPT,
+  COMPARE_TARGET_DAYS,
   PHYSIQUE_DAILY_LIMIT,
   PHYSIQUE_PROMPT,
   PHYSIQUE_USER_PROMPT,
+  compareUserPrompt,
   parsePhysique,
   usablePhysique,
+  type CompareIds,
 } from "../src/lib/physique";
+import { addDays, daysBetween, isValidISODate } from "../src/lib/dates";
 import { POSES, POSE_LABELS, type Pose } from "../src/lib/photos";
 import { photoList, type PhotoEnv } from "./photos";
 import { secretValue } from "./secrets";
@@ -134,10 +141,11 @@ function uploadedImages(raw: unknown): { ok: true; images: PosedImage[] } | { ok
 export async function listPhysique(env: PhysiqueEnv, userId: string): Promise<PhysiqueResult> {
   if (!physiqueOn(env)) return NOT_AVAILABLE;
   const { results } = await env.DB.prepare(
-    "SELECT id, source, photo_date, analysis, created_at FROM physique_analyses WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, source, photo_date, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source != 'compare' ORDER BY created_at DESC LIMIT ?",
   )
     .bind(userId, MAX_HISTORY)
     .all<{ id: string; source: string; photo_date: string | null; analysis: string; created_at: string }>();
+  const comparisons = await listComparisons(env, userId);
 
   const used = await env.DB.prepare("SELECT n FROM physique_usage WHERE user_id = ? AND day = ?")
     .bind(userId, utcDay())
@@ -153,6 +161,7 @@ export async function listPhysique(env: PhysiqueEnv, userId: string): Promise<Ph
         createdAt: r.created_at,
         ...parsePhysique(r.analysis),
       })),
+      comparisons,
       left: Math.max(0, PHYSIQUE_DAILY_LIMIT - (used?.n ?? 0)),
     },
   };
@@ -183,7 +192,47 @@ export async function analyzePhysique(env: PhysiqueEnv, userId: string, request:
   if (!found.ok) return found;
   const photoDate = source === "saved" && "date" in found ? found.date : null;
 
-  // Daily cap, counted before calling out so retries can't run up the bill.
+  // Label each photo so the model knows which angle it is looking at.
+  const parts: unknown[] = [];
+  for (const image of found.images) {
+    parts.push({ text: `${POSE_LABELS[image.pose]} view:` });
+    parts.push({ inlineData: { mimeType: "image/jpeg", data: image.data } });
+  }
+  parts.push({ text: PHYSIQUE_USER_PROMPT });
+
+  const result = await askModel(env, key, userId, parts, PHYSIQUE_PROMPT);
+  if (!result.ok) return result;
+  const { analysis, left } = result;
+
+  const id = crypto.randomUUID().replace(/-/g, "");
+  await env.DB.prepare("INSERT INTO physique_analyses (id, user_id, source, photo_date, analysis) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, userId, source, photoDate, analysis.raw)
+    .run();
+
+  return {
+    ok: true,
+    body: {
+      id,
+      source,
+      photoDate,
+      ...analysis,
+      left,
+    },
+  };
+}
+
+/**
+ * One call to the vision model, with the daily cap counted first (so retries
+ * can't run up the bill) and given back if Google's prepay credit is used up.
+ * Shared by the analysis and the monthly comparison.
+ */
+async function askModel(
+  env: PhysiqueEnv,
+  key: string,
+  userId: string,
+  parts: unknown[],
+  systemPrompt: string,
+): Promise<{ ok: true; analysis: ReturnType<typeof parsePhysique>; left: number } | { ok: false; status: number; error: string }> {
   const day = utcDay();
   const used = await env.DB.prepare("SELECT n FROM physique_usage WHERE user_id = ? AND day = ?")
     .bind(userId, day)
@@ -201,14 +250,6 @@ export async function analyzePhysique(env: PhysiqueEnv, userId: string, request:
     .bind(userId, day)
     .run();
 
-  // Label each photo so the model knows which angle it is looking at.
-  const parts: unknown[] = [];
-  for (const image of found.images) {
-    parts.push({ text: `${POSE_LABELS[image.pose]} view:` });
-    parts.push({ inlineData: { mimeType: "image/jpeg", data: image.data } });
-  }
-  parts.push({ text: PHYSIQUE_USER_PROMPT });
-
   const model = env.PHYSIQUE_MODEL?.trim() || DEFAULT_MODEL;
   const base = env.GEMINI_API_BASE ?? "https://generativelanguage.googleapis.com";
 
@@ -219,7 +260,7 @@ export async function analyzePhysique(env: PhysiqueEnv, userId: string, request:
       headers: { "x-goog-api-key": key, "content-type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
-        systemInstruction: { parts: [{ text: PHYSIQUE_PROMPT }] },
+        systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: { maxOutputTokens: 2048 },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -271,20 +312,127 @@ export async function analyzePhysique(env: PhysiqueEnv, userId: string, request:
   if (!usablePhysique(analysis)) {
     return { ok: false, status: 502, error: "Couldn't make sense of that reply. Try again in a moment." };
   }
+  return { ok: true, analysis, left: Math.max(0, PHYSIQUE_DAILY_LIMIT - (used?.n ?? 0) - 1) };
+}
+
+/* ---------------------------- monthly comparison ---------------------------- */
+
+interface ComparisonRow {
+  id: string;
+  photo_date: string | null;
+  before_date: string | null;
+  photo_ids: string | null;
+  analysis: string;
+  created_at: string;
+}
+
+function toComparison(r: ComparisonRow) {
+  let photoIds: CompareIds = { before: {}, after: {} };
+  try {
+    if (r.photo_ids) photoIds = JSON.parse(r.photo_ids) as CompareIds;
+  } catch {
+    /* keep it empty */
+  }
+  return {
+    id: r.id,
+    beforeDate: r.before_date,
+    afterDate: r.photo_date,
+    createdAt: r.created_at,
+    photoIds,
+    ...parsePhysique(r.analysis),
+  };
+}
+
+export async function listComparisons(env: { DB: D1Database }, userId: string, limit = 12) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, photo_date, before_date, photo_ids, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(userId, limit)
+    .all<ComparisonRow>();
+  return results.map(toComparison);
+}
+
+/** The nearest weigh-in to a date, within a week either side. */
+async function weightNear(env: { DB: D1Database }, userId: string, date: string): Promise<number | null> {
+  const row = await env.DB.prepare(
+    `SELECT weight_lb FROM weigh_ins WHERE user_id = ? AND date BETWEEN ? AND ?
+     ORDER BY ABS(julianday(date) - julianday(?)) LIMIT 1`,
+  )
+    .bind(userId, addDays(date, -7), addDays(date, 7), date)
+    .first<{ weight_lb: number }>();
+  return row?.weight_lb ?? null;
+}
+
+/**
+ * Compare the newest saved set with an earlier one. The newer side is the
+ * newest photo of each pose from the latest set's week; the older side is,
+ * per pose, the photo closest to `before` (default: about a month earlier),
+ * at least COMPARE_MIN_DAYS older. Only poses on both sides are compared.
+ */
+export async function comparePhysique(env: PhysiqueEnv, userId: string, raw: unknown): Promise<PhysiqueResult> {
+  const key = secretValue(env.GEMINI_API_KEY, "GEMINI_API_KEY");
+  if (!key) return NOT_AVAILABLE;
+  if (!env.PHOTOS) return { ok: false, status: 503, error: "Progress photos aren't switched on for this app yet." };
+
+  const all = await photoList(env, userId); // newest first
+  if (all.length === 0) return { ok: false, status: 409, error: "Add progress photos first." };
+  const afterDate = all[0]!.date;
+  const latest = addDays(afterDate, -COMPARE_MIN_DAYS);
+  const requested = (raw as { before?: unknown } | null)?.before;
+  const target = typeof requested === "string" && isValidISODate(requested) && requested <= latest ? requested : addDays(afterDate, -COMPARE_TARGET_DAYS);
+
+  const pairs: { pose: Pose; before: (typeof all)[number]; after: (typeof all)[number] }[] = [];
+  for (const pose of POSES) {
+    const after = all.find((p) => p.pose === pose && p.date >= addDays(afterDate, -6));
+    const older = all.filter((p) => p.pose === pose && p.date <= latest);
+    if (!after || older.length === 0) continue;
+    const before = [...older].sort(
+      (a, b) => Math.abs(daysBetween(a.date, target)) - Math.abs(daysBetween(b.date, target)) || (a.date < b.date ? 1 : -1),
+    )[0]!;
+    pairs.push({ pose, before, after });
+  }
+  if (pairs.length === 0) {
+    return {
+      ok: false,
+      status: 409,
+      error: `A comparison needs the same pose at least ${COMPARE_MIN_DAYS} days apart. Keep adding photos and try again later.`,
+    };
+  }
+
+  const beforeDate = pairs.map((p) => p.before.date).sort()[0]!;
+  const afterSetDate = pairs.map((p) => p.after.date).sort().at(-1)!;
+  const days = daysBetween(beforeDate, afterSetDate);
+  const [wBefore, wAfter] = await Promise.all([weightNear(env, userId, beforeDate), weightNear(env, userId, afterSetDate)]);
+
+  const parts: unknown[] = [];
+  const ids: CompareIds = { before: {}, after: {} };
+  for (const pair of pairs) {
+    for (const side of ["before", "after"] as const) {
+      const meta = pair[side];
+      const obj = await env.PHOTOS.get(objectKey(userId, meta.id));
+      if (!obj) return { ok: false, status: 409, error: "One of your photos couldn't be read. Try uploading it again." };
+      parts.push({ text: `${side === "before" ? "BEFORE" : "AFTER"}: ${POSE_LABELS[pair.pose]} view (${meta.date}):` });
+      parts.push({ inlineData: { mimeType: "image/jpeg", data: toBase64(new Uint8Array(await obj.arrayBuffer())) } });
+      ids[side][pair.pose] = meta.id;
+    }
+  }
+  parts.push({ text: compareUserPrompt(beforeDate, afterSetDate, days, { before: wBefore, after: wAfter }) });
+
+  const result = await askModel(env, key, userId, parts, COMPARE_PROMPT);
+  if (!result.ok) return result;
 
   const id = crypto.randomUUID().replace(/-/g, "");
-  await env.DB.prepare("INSERT INTO physique_analyses (id, user_id, source, photo_date, analysis) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, userId, source, photoDate, analysis.raw)
+  await env.DB.prepare(
+    "INSERT INTO physique_analyses (id, user_id, source, photo_date, before_date, photo_ids, analysis) VALUES (?, ?, 'compare', ?, ?, ?, ?)",
+  )
+    .bind(id, userId, afterSetDate, beforeDate, JSON.stringify(ids), result.analysis.raw)
     .run();
 
   return {
     ok: true,
     body: {
-      id,
-      source,
-      photoDate,
-      ...analysis,
-      left: Math.max(0, PHYSIQUE_DAILY_LIMIT - (used?.n ?? 0) - 1),
+      comparison: { id, beforeDate, afterDate: afterSetDate, createdAt: new Date().toISOString(), photoIds: ids, ...result.analysis },
+      left: result.left,
     },
   };
 }

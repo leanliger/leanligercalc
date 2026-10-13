@@ -11,16 +11,17 @@
  */
 
 import { isSharingWithCoach, type PhotoEnv } from "./photos";
+import { listComparisons } from "./physique";
 import { coachCheck, isSharingProgress, type SharingEnv, type SharingResult } from "./sharing";
 
 export async function coachMemberPhysique(env: SharingEnv & PhotoEnv, viewerId: string, company: string, member: string): Promise<SharingResult> {
   const c = await coachCheck(env, viewerId, { company, member });
   if ("error" in c) return c.error;
   if (!(await isSharingProgress(env, c.memberId)) || !(await isSharingWithCoach(env, c.memberId))) {
-    return { ok: true, body: { shared: false, analysis: null } };
+    return { ok: true, body: { shared: false, analysis: null, comparison: null } };
   }
   const row = await env.DB.prepare(
-    "SELECT id, photo_date, analysis, created_at FROM physique_analyses WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+    "SELECT id, photo_date, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source != 'compare' ORDER BY created_at DESC LIMIT 1",
   )
     .bind(c.memberId)
     .first<{ id: string; photo_date: string | null; analysis: string; created_at: string }>();
@@ -29,6 +30,7 @@ export async function coachMemberPhysique(env: SharingEnv & PhotoEnv, viewerId: 
     body: {
       shared: true,
       analysis: row ? { id: row.id, photoDate: row.photo_date, text: row.analysis, createdAt: row.created_at } : null,
+      comparison: (await listComparisons(env, c.memberId, 1))[0] ?? null,
     },
   };
 }

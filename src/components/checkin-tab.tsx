@@ -36,6 +36,7 @@ import { withPauses } from "@/lib/pause";
 import { ProgressReportLoader } from "@/components/progress-report";
 import { PhotosCard } from "@/components/photos-card";
 import { PhysiqueCard } from "@/components/physique-card";
+import { PhysiqueCompareCard } from "@/components/physique-compare-card";
 import type { Measurement } from "@/lib/measurements";
 import { buildRoadmap } from "@/lib/roadmap";
 import type { CoachMacros } from "@/lib/coach-macros";
@@ -358,6 +359,7 @@ export function CheckinTab({
             <div className="space-y-5">
               <PhotosCard cloud={session.mode === "cloud"} today={today} />
               <PhysiqueCard enabled={session.mode === "cloud" && session.physique === true} />
+              <PhysiqueCompareCard enabled={session.mode === "cloud" && session.physique === true} />
             </div>
           ) : (
             <div className="space-y-5">

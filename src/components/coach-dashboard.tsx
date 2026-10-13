@@ -33,6 +33,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { PhysiqueFocusCard } from "@/components/physique-focus-card";
+import { CoachComparisonCard } from "@/components/physique-compare-card";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -1009,6 +1010,8 @@ function MemberDetail({
           )}
         </CardContent>
       </Card>
+
+      {m.data.photos !== null ? <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} /> : null}
 
       {/* ------------------------------- habits ------------------------------- */}
       <ConsistencyCard
