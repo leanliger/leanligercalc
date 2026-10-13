@@ -345,7 +345,7 @@ The **Today** tab (`today-tab.tsx`) is the screen a member opens each morning. A
 - **Weigh-in:** log today's weight right there, or see it with the trend.
 - **Workout:** resume the one in progress; what was finished today; "Rest day"; otherwise the active program's next day with its first exercises and **Start** (`createWorkout`, the same as the Training tab, pre-filled from last time) — or a link to pick a program.
 - **Food:** calories left (big), eaten vs target, and protein, against today's targets (`src/lib/day-targets.ts`, shared with Nutrition: the roadmap's day, else the weekly carb plan).
-- **Habits:** today's checklist — tick boxes, and −/+ for number goals; a rest day greys out the workout habit.
+- **Habits:** today's checklist — tick boxes, and −/+ for number goals. **Mark as rest day** sits at the top (when a habit is linked to workouts and nothing's been trained today): it excuses the workout habit on the weekly scorecard, up to 3 a week, and counts as today's workout in the header. The workout card shows **Undo** while it's on.
 - **Steps:** today's count against the plan's step target (10,000 when maintenance comes from an activity level); ticks the steps habit at the target.
 - **Fasting:** fasting / eating window / time to eat, with the next meal time. Hidden until a fasting window is set up (Food → Fasting).
 - Each card links to its full tab and sub-section. Accounts with nothing logged see a welcome card pointing to the timeline.

@@ -34,12 +34,16 @@ import { sumMacros, type FoodLog } from "@/lib/food";
 import {
   DEFAULT_STEP_TARGET,
   MAX_DAILY_STEPS,
+  MAX_REST_DAYS_PER_WEEK,
   REST_KEY,
   STEPS_KEY,
   counts,
   dayProgress,
   formatHabitValue,
   isDone,
+  isRestDay,
+  restDaysInWeek,
+  weekStartOf,
   type HabitDef,
   type HabitEntries,
   type HabitLog,
@@ -204,6 +208,14 @@ export function TodayTab(props: TodayTabProps) {
   const eaten = sumMacros(food);
   const progress = dayProgress(habits, entries);
   const rest = entries[REST_KEY] === true;
+  // Rest days excuse the workout habit, up to a few a week (same rule as Progress → Habits).
+  const hasWorkoutHabit = habits.some((h) => h.link === "workout");
+  const restUsed = React.useMemo(() => {
+    const map = new Map(habitLogs.map((l) => [l.date, l.entries]));
+    return restDaysInWeek(map, weekStartOf(today)) - (isRestDay(map.get(today)) ? 1 : 0);
+  }, [habitLogs, today]);
+  const restLimitReached = !rest && restUsed >= MAX_REST_DAYS_PER_WEEK;
+  const setRest = (on: boolean) => updateEntries({ [REST_KEY]: on });
   const live = activeWorkout(workouts);
   const doneToday = workouts.filter((w) => w.finishedAt !== null && w.date === today);
 
@@ -351,6 +363,7 @@ export function TodayTab(props: TodayTabProps) {
         primary={firstAction === "workout"}
         onStart={props.onStartWorkout}
         onOpen={() => onOpen("training")}
+        onUndoRest={() => setRest(false)}
       />
     ),
     food: (
@@ -424,6 +437,29 @@ export function TodayTab(props: TodayTabProps) {
           {habits.length === 0 ? (
             <p className="text-sm text-muted-foreground">No habits set up yet.</p>
           ) : (
+            <>
+            {hasWorkoutHabit && doneToday.length === 0 ? (
+              <button
+                type="button"
+                aria-pressed={rest}
+                disabled={restLimitReached}
+                onClick={() => setRest(!rest)}
+                className={cn(
+                  "mb-2 flex min-h-11 w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                  rest ? "border-primary/50 bg-primary/10" : "border-dashed border-border hover:bg-muted/40",
+                )}
+              >
+                <BedDouble className={cn("h-5 w-5 shrink-0", rest ? "text-primary" : "text-muted-foreground")} />
+                <span className="font-medium">{rest ? "Rest day" : "Mark as rest day"}</span>
+                <span className="tabular ml-auto text-xs text-muted-foreground">
+                  {restLimitReached
+                    ? `${MAX_REST_DAYS_PER_WEEK} used this week`
+                    : `${restUsed + (rest ? 1 : 0)} of ${MAX_REST_DAYS_PER_WEEK} this week`}
+                </span>
+              </button>
+            ) : null}
             <ul className="space-y-0.5">
               {habits.map((h) => {
                 if (!counts(h, entries)) {
@@ -471,6 +507,7 @@ export function TodayTab(props: TodayTabProps) {
                 );
               })}
             </ul>
+            </>
           )}
         </CardContent>
       </Card>
@@ -812,8 +849,10 @@ function WorkoutToday({
   primary,
   onStart,
   onOpen,
+  onUndoRest,
 }: {
   primary: boolean;
+  onUndoRest: () => void;
   live: Workout | null;
   doneToday: Workout[];
   rest: boolean;
@@ -884,10 +923,15 @@ function WorkoutToday({
     );
   } else if (rest) {
     body = (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <BedDouble className="h-4 w-4" />
-        Rest day — recover well.
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <BedDouble className="h-4 w-4" />
+          Rest day — recover well.
+        </p>
+        <Button variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={onUndoRest}>
+          Undo
+        </Button>
+      </div>
     );
   } else if (program && next) {
     body = (
