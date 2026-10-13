@@ -226,10 +226,20 @@ export async function analyzePhysique(env: PhysiqueEnv, userId: string, request:
     });
 
     if (!res.ok) {
-      console.error("physique analysis failed", {
-        status: res.status,
-        body: (await res.text().catch(() => "")).slice(0, 300),
-      });
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+
+      // 402: the Gemini prepay credit is used up, and Google refuses every call
+      // until it is topped up. Nothing was charged and it isn't the member's
+      // doing, so give the analysis back rather than spend one of their few.
+      if (res.status === 402) {
+        console.error("physique analysis paused: Gemini credit is used up — top up in AI Studio → Billing", { detail });
+        await env.DB.prepare("UPDATE physique_usage SET n = MAX(n - 1, 0) WHERE user_id = ? AND day = ?")
+          .bind(userId, day)
+          .run();
+        return { ok: false, status: 503, error: "Physique analysis is paused right now — check back soon." };
+      }
+
+      console.error("physique analysis failed", { status: res.status, body: detail });
       return { ok: false, status: 502, error: "The analysis didn't come back. Try again in a moment." };
     }
 
