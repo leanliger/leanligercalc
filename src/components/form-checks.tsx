@@ -133,7 +133,7 @@ export function FormChecksCard({ availability, custom, onAddCustom, askFor, onAs
 
             {data && data.mine.length > 0 ? (
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                   Your form checks{pendingMine > 0 ? ` · ${pendingMine} waiting` : ""}
                 </p>
                 <ul className="space-y-2">
@@ -203,7 +203,7 @@ function AskForm({
     <form onSubmit={send} className="space-y-3 rounded-lg border border-primary/40 bg-primary/[0.03] p-3" noValidate>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-primary">Form check</p>
+          <p className="text-[12px] font-medium uppercase tracking-wide text-primary">Form check</p>
           <p className="truncate text-sm font-semibold">{exercise.name}</p>
         </div>
         <div className="flex shrink-0 items-center">
@@ -262,7 +262,7 @@ function MyFormCheck({ f, onDeleted }: { f: FormCheck; onDeleted: () => Promise<
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{f.exerciseName}</p>
-          <p className="text-[11px] text-muted-foreground">Sent {day(f.createdAt)}</p>
+          <p className="text-[12px] text-muted-foreground">Sent {day(f.createdAt)}</p>
         </div>
         <Badge variant={reviewed ? "success" : "secondary"} className="shrink-0">
           {reviewed ? "Feedback ready" : "Waiting for coach"}
@@ -271,7 +271,7 @@ function MyFormCheck({ f, onDeleted }: { f: FormCheck; onDeleted: () => Promise<
       {f.question ? <p className="text-xs italic text-muted-foreground">&ldquo;{f.question}&rdquo;</p> : null}
       {reviewed && f.feedback ? (
         <div className="space-y-1 rounded-md bg-muted/40 px-2.5 py-2">
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-success">
+          <p className="flex items-center gap-1.5 text-[12px] font-medium text-success">
             <MessageSquareText className="h-3.5 w-3.5" />
             Coach feedback{f.reviewedAt ? ` · ${day(f.reviewedAt)}` : ""}
           </p>
@@ -360,7 +360,7 @@ function ReviewItem({ f, onDone }: { f: PendingFormCheck; onDone: () => Promise<
             key={s}
             type="button"
             onClick={() => setFeedback((prev) => (prev ? `${prev} ${s}` : s))}
-            className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50"
+            className="rounded-full border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50"
           >
             {s.length > 34 ? `${s.slice(0, 33).trimEnd()}…` : s}
           </button>

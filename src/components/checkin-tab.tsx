@@ -48,9 +48,12 @@ import {
   analyzeProgress,
   predictedWeightOn,
   trendSeries,
+  MIN_SPAN_DAYS,
+  MIN_WEIGH_INS,
   type ProgressAnalysis,
   type Recommendation,
 } from "@/lib/adaptive";
+import { Hint } from "@/components/ui/hint";
 import type { SessionInfo } from "@/lib/checkin-store";
 import { formatLong, formatShort } from "@/lib/dates";
 import { calculateFatLossTimeline } from "@/lib/fat-loss";
@@ -397,12 +400,12 @@ export function CheckinTab({
                 <Scale className="h-4 w-4 text-primary" />
                 Log a weigh-in
               </CardTitle>
-              <CardDescription>
-                Same time each morning — after the bathroom, before food or water.
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={submit} className="space-y-4" noValidate>
+                <Hint id="progress-weigh-in" label="When to weigh in">
+                  Same time each morning: after the bathroom, before food or water.
+                </Hint>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="wi-date">Date</Label>
@@ -456,9 +459,9 @@ export function CheckinTab({
                       kcal
                     </span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <Hint id="progress-weigh-in-calories" label="Why log calories?">
                     Yesterday&apos;s total. Logging it makes the maintenance estimate far more accurate.
-                  </p>
+                  </Hint>
                 </div>
 
                 <div className="space-y-1.5">
@@ -496,6 +499,39 @@ export function CheckinTab({
 
         {/* ------------------------------ right ------------------------------- */}
         <div className="space-y-5">
+          {analysis.status === "no-data" ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-4 px-6 py-10 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Scale className="h-7 w-7" />
+                </span>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-semibold">No weigh-ins yet</h3>
+                  <p className="max-w-sm text-sm text-muted-foreground">
+                    Log a few mornings and your trend line shows up here, smoothed so one salty dinner doesn&apos;t throw it.
+                    After {MIN_WEIGH_INS} weigh-ins over {MIN_SPAN_DAYS}+ days you&apos;ll see how you&apos;re tracking
+                    against the plan.
+                  </p>
+                </div>
+                <ol className="flex gap-1.5" aria-label={`0 of ${MIN_WEIGH_INS} weigh-ins`}>
+                  {Array.from({ length: MIN_WEIGH_INS }, (_, i) => (
+                    <li key={i} className="h-2.5 w-6 rounded-full bg-muted" />
+                  ))}
+                </ol>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const input = document.getElementById("wi-weight");
+                    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    input?.focus({ preventScroll: true });
+                  }}
+                >
+                  <Scale />
+                  Log today&apos;s weight
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
           <Card>
             <CardHeader className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -577,6 +613,7 @@ export function CheckinTab({
               </div>
             </CardContent>
           </Card>
+          )}
 
           {adjustments.length > 0 ? (
             <Card>
@@ -754,7 +791,7 @@ function MyReport({ unit }: { unit: WeightUnit }) {
           <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
             Close report
           </Button>
-          <p className="text-[11px] text-muted-foreground">Take a screenshot to share it.</p>
+          <p className="text-[12px] text-muted-foreground">Take a screenshot to share it.</p>
         </div>
       }
     />

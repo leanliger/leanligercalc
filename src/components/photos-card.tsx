@@ -114,7 +114,7 @@ export function PhotoGallery({
             {[first, latest].map((p, i) => (
               <figure key={p.id} className="space-y-1">
                 <PhotoImage src={srcFor(p)} alt={`${POSE_LABELS[p.pose]}, ${formatShort(p.date)}`} className="aspect-[3/4] w-full" onClick={() => setOpen(p)} />
-                <figcaption className="text-center text-[11px] text-muted-foreground">
+                <figcaption className="text-center text-[12px] text-muted-foreground">
                   {i === 0 ? "First" : "Latest"} · {formatShort(p.date)}
                 </figcaption>
               </figure>
@@ -131,7 +131,7 @@ export function PhotoGallery({
               {list.map((p) => (
                 <figure key={p.id} className="space-y-1">
                   <PhotoImage src={srcFor(p)} alt={`${POSE_LABELS[p.pose]}, ${formatShort(p.date)}`} className="aspect-[3/4] w-full" onClick={() => setOpen(p)} />
-                  <figcaption className="text-center text-[11px] text-muted-foreground">{POSE_LABELS[p.pose]}</figcaption>
+                  <figcaption className="text-center text-[12px] text-muted-foreground">{POSE_LABELS[p.pose]}</figcaption>
                 </figure>
               ))}
             </div>
@@ -358,7 +358,7 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 }}
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Tip: same spot, same lighting, morning, relaxed. Photos are shrunk and re-saved on your phone before upload,
               which also strips location data.
               {state.uploadsLeftToday !== undefined && state.uploadsLeftToday > 0 && state.uploadsLeftToday <= 3

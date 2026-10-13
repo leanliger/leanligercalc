@@ -141,7 +141,7 @@ export function MacroCard({
       </dl>
 
       <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3">
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           {day.fatFloorApplied ? "Fat at floor" : "Fat above floor"}
         </span>
         <CopyButton getText={() => copyText} label="Copy" variant="ghost" />

@@ -404,7 +404,7 @@ export function RoadmapCalendar({
                     key={label}
                     role="columnheader"
                     aria-label={label}
-                    className="pb-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                    className="pb-1 text-center text-[12px] font-medium uppercase tracking-wide text-muted-foreground"
                   >
                     <span className="sm:hidden">{WEEKDAY_LETTER[index]}</span>
                     <span className="hidden sm:inline">{label}</span>
@@ -510,7 +510,7 @@ export function RoadmapCalendar({
                       {d.steady ? null : (
                         <span
                           className={cn(
-                            "w-5 rounded text-center text-[10px] font-bold leading-4",
+                            "w-5 rounded text-center text-[11px] font-bold leading-4",
                             TYPE_BADGE[d.type],
                           )}
                         >
@@ -520,7 +520,7 @@ export function RoadmapCalendar({
                       <span className="tabular ml-auto font-medium">
                         {d.calories.toLocaleString()}
                       </span>
-                      <span className="tabular hidden w-28 text-right text-[11px] text-muted-foreground sm:inline">
+                      <span className="tabular hidden w-28 text-right text-[12px] text-muted-foreground sm:inline">
                         P{d.protein} C{d.carbs} F{d.fat}
                       </span>
                     </button>
@@ -617,7 +617,7 @@ function DayCell({
         <span className="flex items-center gap-1">
           <span
             className={cn(
-              "tabular text-[11px] font-medium leading-5 sm:text-xs",
+              "tabular text-[12px] font-medium leading-5 sm:text-xs",
               // On phones a cell is ~30px of content wide: a padded pill
               // around a two-digit date pushes the day-type badge out of the
               // cell. Underline there, pill only once there is room.
@@ -639,7 +639,7 @@ function DayCell({
           <span
             aria-hidden
             className={cn(
-              "rounded px-1 text-[9px] font-bold leading-4 sm:text-[10px]",
+              "rounded px-1 text-[9px] font-bold leading-4 sm:text-[11px]",
               TYPE_BADGE[day.type],
             )}
           >
@@ -649,16 +649,16 @@ function DayCell({
       </div>
 
       <div className="mt-auto">
-        <div className="tabular text-[11px] font-semibold leading-tight sm:text-sm">
+        <div className="tabular text-[12px] font-semibold leading-tight sm:text-sm">
           {day.calories.toLocaleString()}
         </div>
-        <div className="tabular hidden text-[10px] leading-tight text-muted-foreground sm:block">
+        <div className="tabular hidden text-[11px] leading-tight text-muted-foreground sm:block">
           P{day.protein} C{day.carbs} F{day.fat}
         </div>
         {loggedWeight !== null ? (
           <div
             aria-hidden
-            className="tabular mt-0.5 flex items-center gap-0.5 text-[10px] font-medium leading-tight text-foreground"
+            className="tabular mt-0.5 flex items-center gap-0.5 text-[11px] font-medium leading-tight text-foreground"
           >
             <Scale className="hidden h-2.5 w-2.5 sm:inline" />
             {formatWeight(loggedWeight, unit, 1, false)}
@@ -691,7 +691,7 @@ function Legend({ steady = false }: { steady?: boolean }) {
     { label: "Week needs attention", swatch: <AlertTriangle className="h-3 w-3 text-foreground/80" /> },
   ];
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+    <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[12px] text-muted-foreground">
       {items.map((item) => (
         <span key={item.label} className="flex items-center gap-1.5">
           {item.swatch}
@@ -699,7 +699,7 @@ function Legend({ steady = false }: { steady?: boolean }) {
         </span>
       ))}
       <span className="flex items-center gap-1.5">
-        <span className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
+        <span className="rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground">
           1
         </span>
         Today

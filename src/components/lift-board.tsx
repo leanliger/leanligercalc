@@ -78,7 +78,7 @@ export function Avatar({ name, url }: { name: string; url: string | null }) {
       className="h-8 w-8 shrink-0 rounded-full bg-muted object-cover"
     />
   ) : (
-    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary">
       {initials || "?"}
     </span>
   );
@@ -259,12 +259,12 @@ function BoardRow({
           <span className="truncate text-sm font-medium">{e.name}</span>
           {/* On phones the highlighted row says it; the badge would crowd the name. */}
           {e.isYou ? (
-            <Badge variant="default" className="hidden px-1.5 py-0 text-[10px] sm:inline-flex">
+            <Badge variant="default" className="hidden px-1.5 py-0 text-[11px] sm:inline-flex">
               You
             </Badge>
           ) : null}
         </span>
-        <span className="tabular block text-[11px] text-muted-foreground">
+        <span className="tabular block text-[12px] text-muted-foreground">
           {load1(e.weightLb, unit)} · {formatShort(e.liftedOn)}
         </span>
       </span>
@@ -401,7 +401,7 @@ function SubmitCard({
           <div className="space-y-1.5">
             <Label htmlFor={`${ids}-video`}>Video link</Label>
             <Input id={`${ids}-video`} value={video} onChange={(e) => setVideo(e.target.value)} inputMode="url" placeholder="https://youtube.com/…" />
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               Upload it to YouTube (unlisted is fine), Instagram or Google Drive (&ldquo;anyone with the link&rdquo;), then paste the link.
             </p>
           </div>
@@ -411,7 +411,7 @@ function SubmitCard({
             </Label>
             <Input id={`${ids}-note`} value={note} maxLength={LIFT_NOTE_MAX} onChange={(e) => setNote(e.target.value)} placeholder="Belt, wraps, anything the coach should know" />
           </div>
-          <p className="flex gap-2 rounded-md bg-muted/40 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex gap-2 rounded-md bg-muted/40 p-2.5 text-[12px] leading-relaxed text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Once approved, members of this community see your name, photo, the weight, your ratio and the video. Your
@@ -458,7 +458,7 @@ function MySubmissions({ mine, unit, onChanged }: { mine: MySubmission[]; unit: 
               <li key={m.id} className="space-y-1.5 px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{LIFT_LABELS[m.lift]}</span>
-                  <Badge variant={s.variant} className="px-1.5 py-0 text-[10px]">
+                  <Badge variant={s.variant} className="px-1.5 py-0 text-[11px]">
                     {s.icon}
                     {s.label}
                   </Badge>
@@ -554,7 +554,7 @@ function ReviewItem({ p, unit, onDone }: { p: PendingSubmission; unit: WeightUni
         </div>
         <span className="tabular shrink-0 text-right">
           <span className="block text-sm font-semibold">{formatRatio(p.ratio)}</span>
-          <span className="block text-[11px] text-muted-foreground">
+          <span className="block text-[12px] text-muted-foreground">
             {load1(p.weightLb, unit)} @ {load1(p.bodyweightLb, unit)}
           </span>
         </span>
@@ -566,7 +566,7 @@ function ReviewItem({ p, unit, onDone }: { p: PendingSubmission; unit: WeightUni
           <p className="text-xs font-medium">What&apos;s missing? (sent to the member)</p>
           <div className="flex flex-wrap gap-1.5">
             {REJECT_REASONS.map((r) => (
-              <Button key={r} type="button" variant={reason === r ? "secondary" : "outline"} size="sm" className="h-7 px-2 text-[11px]" onClick={() => setReason(r)}>
+              <Button key={r} type="button" variant={reason === r ? "secondary" : "outline"} size="sm" className="h-7 px-2 text-[12px]" onClick={() => setReason(r)}>
                 {r}
               </Button>
             ))}

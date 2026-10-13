@@ -66,8 +66,8 @@
     --ring: 41 58% 38%;
 
     --macro-protein: 41 58% 34%;
-    --macro-carb: 188 60% 27%;
-    --macro-fat: 18 62% 38%;
+    --macro-carb: 196 70% 30%;
+    --macro-fat: 352 58% 42%;
 
     /* On a light canvas these cannot follow the dark theme's brightness ramp:
        the day colours are used as *text* for the boost/cut percentages, and a
@@ -153,12 +153,12 @@
     --ring: 41 60% 56%;
 
     /* Macros are categorical — three values that must be told apart at a
-       glance in a stacked bar. A gold monochrome ramp would make them
-       indistinguishable, so carbs and fat take hues that flank the gold
-       without fighting it: a cool teal and a warm copper. */
-    --macro-protein: 41 62% 58%;
-    --macro-carb: 188 50% 58%;
-    --macro-fat: 18 65% 60%;
+       glance in the ring and the bars. Gold stays protein; carbs take a clear
+       sky blue and fat a rose, far enough from the gold in hue that the three
+       never read as one muddy band (the old copper sat too close to it). */
+    --macro-protein: 43 85% 60%;
+    --macro-carb: 198 78% 62%;
+    --macro-fat: 350 72% 68%;
 
     /* Day types are ordinal — high through low — so here a gold ramp is the
        right call, and it keeps the brand intact where the eye lands most. */
@@ -197,6 +197,14 @@
 }
 
 @layer utilities {
+  /* Sideways-scrolling rows (section switchers): swipeable, no bar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;

@@ -582,7 +582,7 @@ function TodayCard({
                       Use this
                     </Button>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{t.days.map((d) => d.name).join(" · ")}</p>
+                  <p className="text-[12px] text-muted-foreground">{t.days.map((d) => d.name).join(" · ")}</p>
                 </li>
               ))}
             </ul>
@@ -619,11 +619,11 @@ function TodayCard({
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-primary">{heading}</p>
                   {plan ? (
-                    <button type="button" className="text-[11px] text-muted-foreground underline underline-offset-2" onClick={onShowPlan}>
+                    <button type="button" className="text-[12px] text-muted-foreground underline underline-offset-2" onClick={onShowPlan}>
                       See the plan
                     </button>
                   ) : (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[12px] text-muted-foreground">
                       Day {program.days.findIndex((d) => d.id === next.id) + 1} of {program.days.length}
                     </p>
                   )}
@@ -686,7 +686,7 @@ function TodayCard({
                 : [{ value: String(settings.restSec), label: formatRest(settings.restSec) }]),
             ]}
           />
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             The timer starts when you tick off a set. Program exercises can set their own rest.
           </p>
         </div>
@@ -698,7 +698,7 @@ function TodayCard({
             </label>
             <Switch id={rirId} checked={settings.trackRir} onCheckedChange={onTrackRirChange} />
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Reps in reserve: 0 means all out. It makes the &ldquo;add weight&rdquo; suggestions smarter: easy sets move you up
             faster, all-out ones hold the weight.
           </p>
@@ -711,7 +711,7 @@ function TodayCard({
             </label>
             <Switch id={finishId} checked={settings.finishReminders} onCheckedChange={onFinishRemindersChange} />
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             If a workout is open with nothing logged for {NUDGE_IDLE_MIN} minutes, you get a notification asking if you&apos;re
             done, then one every {NUDGE_REPEAT_MIN} minutes until you tap Finish (up to an hour).
           </p>
@@ -757,7 +757,7 @@ function ProgramsCard({
                     <p className="flex items-center gap-2 truncate text-sm font-medium">
                       {p.name}
                       {isActive ? (
-                        <Badge variant="success" className="px-1.5 py-0 text-[10px]">
+                        <Badge variant="success" className="px-1.5 py-0 text-[11px]">
                           Active
                         </Badge>
                       ) : null}
@@ -860,15 +860,15 @@ function FinishedCard({
       <CardContent className="space-y-3">
         <dl className="tabular grid grid-cols-3 gap-2 text-center">
           <div className="rounded-md bg-background/60 p-2">
-            <dt className="text-[11px] text-muted-foreground">Time</dt>
+            <dt className="text-[12px] text-muted-foreground">Time</dt>
             <dd className="text-sm font-semibold">{s.durationMs === null ? "—" : formatDuration(s.durationMs)}</dd>
           </div>
           <div className="rounded-md bg-background/60 p-2">
-            <dt className="text-[11px] text-muted-foreground">Sets</dt>
+            <dt className="text-[12px] text-muted-foreground">Sets</dt>
             <dd className="text-sm font-semibold">{s.sets}</dd>
           </div>
           <div className="rounded-md bg-background/60 p-2">
-            <dt className="text-[11px] text-muted-foreground">{s.volume > 0 ? "Lifted" : "Reps"}</dt>
+            <dt className="text-[12px] text-muted-foreground">{s.volume > 0 ? "Lifted" : "Reps"}</dt>
             <dd className="text-sm font-semibold">{s.volume > 0 ? formatWork(s, unit) : s.reps}</dd>
           </div>
         </dl>
@@ -937,18 +937,18 @@ function RecentWorkoutsCard({
                   >
                     <span className="flex w-11 shrink-0 flex-col items-center rounded-md bg-muted/60 py-1 text-center leading-tight">
                       <CalendarDays className="mb-0.5 h-3 w-3 text-muted-foreground" aria-hidden />
-                      <span className="tabular text-[11px] font-semibold">{formatShort(w.date)}</span>
+                      <span className="tabular text-[12px] font-semibold">{formatShort(w.date)}</span>
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium">{w.name}</span>
                         {w.finishedAt === null ? (
-                          <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
+                          <Badge variant="warning" className="px-1.5 py-0 text-[11px]">
                             Unfinished
                           </Badge>
                         ) : null}
                         {prs.length > 0 ? (
-                          <Badge variant="default" className="px-1.5 py-0 text-[10px]">
+                          <Badge variant="default" className="px-1.5 py-0 text-[11px]">
                             <Trophy />
                             {prs.length} PR{prs.length === 1 ? "" : "s"}
                           </Badge>

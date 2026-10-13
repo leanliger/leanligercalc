@@ -20,6 +20,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Hint } from "@/components/ui/hint";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { dayTargetFinder } from "@/lib/day-targets";
 import type { CoachMacros } from "@/lib/coach-macros";
@@ -287,6 +288,16 @@ export function MacrosTab({
     onEnsureLoaded(next);
   };
 
+  // Once Add food scrolls out of view, a floating button brings it back.
+  const [addInView, setAddInView] = React.useState(true);
+  React.useEffect(() => {
+    const el = addRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setAddInView(!!e?.isIntersecting), { rootMargin: "0px 0px -96px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [section]);
+
   const openProduct = (p: FoodProduct) => {
     setMode({ kind: "product", product: p });
     addRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -337,6 +348,15 @@ export function MacrosTab({
   return (
     <div className="space-y-5">
       {nav}
+      {!addInView ? (
+        <Button
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 h-12 animate-fade-in rounded-full px-5 shadow-lg sm:bottom-6"
+          onClick={() => addRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        >
+          <Plus />
+          Log food
+        </Button>
+      ) : null}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
         <div className="space-y-5">
           {/* --------------------------- day + targets --------------------------- */}
@@ -376,14 +396,13 @@ export function MacrosTab({
             <CardContent className="space-y-4">
               {target ? (
                 <>
-                  <CalorieSummary eaten={totals.kcal} target={target.calories} />
-                  <MacroDonut eaten={totals} kcal={totals.kcal} target={target} />
+                  <MacroDonut eaten={totals} kcal={totals.kcal} target={target} targetKcal={target.calories} />
                   <div className="space-y-3">
                     <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
                     <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
                     <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     {target.source === "coach"
                       ? "Targets your coach set for you."
                       : target.source === "roadmap"
@@ -408,14 +427,14 @@ export function MacrosTab({
                           </Badge>
                         </div>
                       ) : null}
-                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      <Hint id="food-scorecard">
                         Protein within ±{PROTEIN_TOLERANCE_G} g and calories within ±{CALORIE_TOLERANCE_KCAL} kcal tick
                         those boxes on your{" "}
                         <button type="button" className="underline underline-offset-2" onClick={() => onNavigate("checkin")}>
                           Check-in
                         </button>{" "}
                         scorecard automatically. Once you log food for a day, those two boxes follow this log.
-                      </p>
+                      </Hint>
                     </div>
                   ) : null}
                 </>
@@ -582,7 +601,7 @@ export function MacrosTab({
 
           <MyFoodsCard foods={myFoods} onPick={openProduct} onRemove={onRemoveMyFood} />
 
-          <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex gap-2 text-[12px] leading-relaxed text-muted-foreground">
             {session.mode === "cloud" ? (
               <>
                 <Cloud className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
@@ -641,7 +660,7 @@ function SaveMealForm({
           Cancel
         </Button>
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[12px] text-muted-foreground">
         {full
           ? `You have ${MAX_SAVED_MEALS} saved meals; saving this one replaces the oldest.`
           : "Log it again in one tap from Saved meals. Saving with the same name updates it."}
@@ -661,7 +680,7 @@ function RecentMealsCard({ meals, today, onAdd }: { meals: RecentMeal[]; today: 
           <History className="h-4 w-4 text-primary" />
           Repeat a meal
         </CardTitle>
-        <CardDescription>Meals from the last two weeks. Tap + to log the same foods again, into the same meal.</CardDescription>
+        <Hint id="food-recent-meals">Meals from the last two weeks. Tap + to log the same foods again, into the same meal.</Hint>
       </CardHeader>
       <CardContent>
         <ul className="divide-y divide-border">
@@ -671,7 +690,7 @@ function RecentMealsCard({ meals, today, onAdd }: { meals: RecentMeal[]; today: 
               <li key={`${r.date}-${r.meal}`} className="flex items-center gap-2 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{r.items.map((e) => e.name).join(", ")}</p>
-                  <p className="tabular text-[11px] text-muted-foreground">
+                  <p className="tabular text-[12px] text-muted-foreground">
                     {when(r.date)} · {label} · <MacroLine m={sumMacros(r.items)} />
                   </p>
                 </div>
@@ -726,7 +745,7 @@ function SavedMealsCard({
                 <li key={m.id} className="flex items-center gap-2 py-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{m.name}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">
+                    <p className="truncate text-[12px] text-muted-foreground">
                       {m.items.length} {m.items.length === 1 ? "food" : "foods"} · {Math.round(t.kcal)} kcal · P{Math.round(t.protein)} C
                       {Math.round(t.carbs)} F{Math.round(t.fat)}
                     </p>
@@ -909,7 +928,7 @@ function EntryRow({
               onChange={(e) => setText(e.target.value)}
               className="h-8 pr-16"
             />
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">
               {entry.unit === "serving" ? unitLabel("serving", Number(text)) : entry.unit}
             </span>
           </div>

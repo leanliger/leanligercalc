@@ -148,7 +148,7 @@ export function LeaderboardCard({ availability }: { availability: NotificationSt
                 onValueChange={setMetric}
                 options={(Object.keys(METRIC_LABELS) as LeaderboardMetric[]).map((m) => ({ value: m, label: METRIC_LABELS[m].tab }))}
               />
-              <p className="text-[11px] text-muted-foreground">{METRIC_LABELS[metric].help}</p>
+              <p className="text-[12px] text-muted-foreground">{METRIC_LABELS[metric].help}</p>
 
               {ranked.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
@@ -228,7 +228,7 @@ function Row({ e, metric }: { e: LeaderboardEntry & { rank: number; value: numbe
           className="h-8 w-8 shrink-0 rounded-full bg-muted object-cover"
         />
       ) : (
-        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary">
           {initials || "?"}
         </span>
       )}
@@ -236,18 +236,18 @@ function Row({ e, metric }: { e: LeaderboardEntry & { rank: number; value: numbe
         <span className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium">{e.name}</span>
           {e.isYou ? (
-            <Badge variant="default" className="px-1.5 py-0 text-[10px]">
+            <Badge variant="default" className="px-1.5 py-0 text-[11px]">
               You
             </Badge>
           ) : null}
         </span>
         {metric !== "streak" && e.streak > 0 ? (
-          <span className="tabular inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+          <span className="tabular inline-flex items-center gap-0.5 text-[12px] text-muted-foreground">
             <Flame className="h-3 w-3" aria-hidden />
             {e.streak}-day streak
           </span>
         ) : metric === "streak" && e.best > e.streak ? (
-          <span className="tabular text-[11px] text-muted-foreground">best {e.best}</span>
+          <span className="tabular text-[12px] text-muted-foreground">best {e.best}</span>
         ) : null}
       </span>
       <span className="tabular shrink-0 text-sm font-semibold">{valueText}</span>

@@ -11,7 +11,7 @@ export function ChallengeBoard({ s, today }: { s: ChallengeStandings; today: str
   const status = today < s.startDate ? `Starts ${formatShort(s.startDate)}` : today > s.endDate ? "Finished" : `Ends ${formatShort(s.endDate)}`;
   return (
     <div className="space-y-2">
-      <p className="tabular text-[11px] text-muted-foreground">
+      <p className="tabular text-[12px] text-muted-foreground">
         {formatShort(s.startDate)} – {formatShort(s.endDate)} · {s.weeks} week{s.weeks === 1 ? "" : "s"} · {s.planned} workouts ·{" "}
         {s.entrants} joined · {status}
       </p>

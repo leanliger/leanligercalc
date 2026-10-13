@@ -571,7 +571,7 @@ export function CarbCyclingCalculator({
                 step={1}
                 aria-label="High day carb boost"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Recommended {Math.round(HIGH_BOOST_RANGE.min * 100)}–
                 {Math.round(HIGH_BOOST_RANGE.max * 100)}% more carbs than an average day
               </p>
@@ -592,7 +592,7 @@ export function CarbCyclingCalculator({
                 step={1}
                 aria-label="Low day carb cut"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Recommended {Math.round(LOW_CUT_RANGE.min * 100)}–
                 {Math.round(LOW_CUT_RANGE.max * 100)}% fewer carbs than an average day
               </p>

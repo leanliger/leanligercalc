@@ -60,7 +60,7 @@ export function BadgesCard({ badges }: { badges: readonly Badge[] }) {
                 <BadgeIcon badge={b} size="sm" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{b.title}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">
+                  <span className="block truncate text-[12px] text-muted-foreground">
                     {b.earnedOn ? `Earned ${formatShort(b.earnedOn)}` : b.description}
                   </span>
                 </span>
@@ -73,7 +73,7 @@ export function BadgesCard({ badges }: { badges: readonly Badge[] }) {
 
         {upNext.length > 0 ? (
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Up next</p>
+            <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">Up next</p>
             {upNext.map((b) => (
               <div key={b.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-xs">
@@ -105,10 +105,10 @@ export function BadgesCard({ badges }: { badges: readonly Badge[] }) {
               >
                 <BadgeIcon badge={b} />
                 <span className={cn("text-xs font-medium leading-tight", !b.earned && "text-muted-foreground")}>{b.title}</span>
-                <span className="text-[10px] leading-tight text-muted-foreground">
+                <span className="text-[11px] leading-tight text-muted-foreground">
                   {b.earned ? (b.earnedOn ? formatShort(b.earnedOn) : "Earned") : b.description}
                 </span>
-                {!b.earned ? <span className="tabular text-[10px] text-muted-foreground">{progressText(b)}</span> : null}
+                {!b.earned ? <span className="tabular text-[11px] text-muted-foreground">{progressText(b)}</span> : null}
               </li>
             ))}
           </ul>

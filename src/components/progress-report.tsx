@@ -39,7 +39,7 @@ export function ProgressReportView({
   return (
     <Card className="overflow-hidden">
       <div className="bg-primary/10 px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-primary">Progress report</p>
+        <p className="text-[12px] font-semibold uppercase tracking-widest text-primary">Progress report</p>
         <h2 className="text-xl font-semibold">{name}</h2>
         <p className="tabular text-xs text-muted-foreground">
           {r.from && r.to ? `${formatMedium(r.from)} – ${formatMedium(r.to)} · ${r.weeks} week${r.weeks === 1 ? "" : "s"}` : "Nothing logged yet"}
@@ -60,7 +60,7 @@ export function ProgressReportView({
               <Big label={`Start · ${formatShort(r.weight.startDate)}`} value={`${w(r.weight.startLb)} ${unit}`} />
               <Big label={`Now · ${formatShort(r.weight.latestDate)}`} value={`${w(r.weight.latestLb)} ${unit}`} />
               <div>
-                <p className="text-[11px] text-muted-foreground">Change</p>
+                <p className="text-[12px] text-muted-foreground">Change</p>
                 <p
                   className={cn(
                     "tabular flex items-center gap-1 text-2xl font-bold",
@@ -82,7 +82,7 @@ export function ProgressReportView({
                 </ResponsiveContainer>
               </div>
             ) : null}
-            <p className="tabular text-[11px] text-muted-foreground">
+            <p className="tabular text-[12px] text-muted-foreground">
               Lowest {w(r.weight.lowestLb)} {unit}
               {r.goalLb ? ` · goal ${w(r.goalLb)} ${unit}` : ""} · {r.weighIns} weigh-ins
             </p>
@@ -107,7 +107,7 @@ export function ProgressReportView({
                       alt={`${label}: ${POSE[photo.pose] ?? photo.pose}, ${formatShort(photo.date)}`}
                       className="aspect-[3/4] w-full rounded-md border border-border object-cover"
                     />
-                    <figcaption className="text-center text-[11px] text-muted-foreground">
+                    <figcaption className="text-center text-[12px] text-muted-foreground">
                       {label as string} · {formatShort(photo.date)}
                     </figcaption>
                   </figure>
@@ -123,7 +123,7 @@ export function ProgressReportView({
             <Heading icon={<Ruler className="h-4 w-4" />}>Measurements</Heading>
             <table className="tabular w-full text-sm">
               <thead>
-                <tr className="text-[11px] text-muted-foreground">
+                <tr className="text-[12px] text-muted-foreground">
                   <th className="pb-1 text-left font-medium" />
                   <th className="pb-1 text-right font-medium">Start</th>
                   <th className="pb-1 text-right font-medium">Now</th>
@@ -192,7 +192,7 @@ function Heading({ icon, children }: { icon: React.ReactNode; children: React.Re
 function Big({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
       <p className="tabular text-2xl font-semibold">{value}</p>
     </div>
   );
@@ -205,7 +205,7 @@ function Tally({ icon, value, label }: { icon: React.ReactNode; value: number; l
         <span className="text-primary">{icon}</span>
         {value.toLocaleString()}
       </p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
     </div>
   );
 }

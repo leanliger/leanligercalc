@@ -83,12 +83,12 @@ export function MeasurementsCard({ measurements, weighIns, unit, today, readOnly
                     shownSite === s && c ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
                   )}
                 >
-                  <span className="block text-[11px] text-muted-foreground">{SITE_INFO[s].label}</span>
+                  <span className="block text-[12px] text-muted-foreground">{SITE_INFO[s].label}</span>
                   <span className="tabular block text-sm font-semibold">
                     {c ? `${r1(fromInches(c.latest, unit))} ${lu}` : "—"}
                   </span>
                   {c && c.change !== 0 ? (
-                    <span className="tabular block text-[11px] text-muted-foreground">
+                    <span className="tabular block text-[12px] text-muted-foreground">
                       {c.change > 0 ? "+" : "−"}
                       {r1(Math.abs(fromInches(c.change, unit)))} since {formatShort(c.since)}
                     </span>
@@ -379,7 +379,7 @@ function MeasureInput({ site, unit, value, onChange }: { site: Site; unit: strin
       </Label>
       <div className="relative">
         <Input id={id} type="number" inputMode="decimal" min={0} step="0.1" value={value} placeholder="—" onChange={(e) => onChange(e.target.value)} className="h-9 pr-9" />
-        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{unit}</span>
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">{unit}</span>
       </div>
     </div>
   );

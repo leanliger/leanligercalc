@@ -160,7 +160,7 @@ function WorkoutLog({
                         {w.name || "Workout"}
                         {w.finishedAt === null ? <Badge variant="secondary">In progress</Badge> : null}
                       </span>
-                      <span className="tabular block text-[11px] text-muted-foreground">
+                      <span className="tabular block text-[12px] text-muted-foreground">
                         {formatLong(w.date)} · {s.sets} sets · {formatWork(s, unit)}
                         {s.durationMs ? ` · ${formatDuration(s.durationMs)}` : ""}
                       </span>
@@ -216,7 +216,7 @@ function WorkoutDetail({
               {sets.map((set, j) => (
                 <span
                   key={j}
-                  className={cn("tabular rounded border border-border bg-background px-1.5 py-0.5 text-[11px]")}
+                  className={cn("tabular rounded border border-border bg-background px-1.5 py-0.5 text-[12px]")}
                 >
                   {formatSetEffort(set, unit, e.bodyweight)}
                 </span>

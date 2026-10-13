@@ -39,18 +39,18 @@ function AccessibilitySettings() {
       <div className="flex items-center gap-2.5">
         <label htmlFor={contrastId} className="min-w-0 flex-1 text-sm">
           Stronger contrast
-          <span className="block text-[11px] text-muted-foreground">Darker secondary text and firmer borders.</span>
+          <span className="block text-[12px] text-muted-foreground">Darker secondary text and firmer borders.</span>
         </label>
         <Switch id={contrastId} checked={s.highContrast} onCheckedChange={(highContrast) => change({ highContrast })} />
       </div>
       <div className="flex items-center gap-2.5">
         <label htmlFor={motionId} className="min-w-0 flex-1 text-sm">
           Reduce motion
-          <span className="block text-[11px] text-muted-foreground">Turns off animations.</span>
+          <span className="block text-[12px] text-muted-foreground">Turns off animations.</span>
         </label>
         <Switch id={motionId} checked={s.reduceMotion} onCheckedChange={(reduceMotion) => change({ reduceMotion })} />
       </div>
-      <p className="text-[11px] text-muted-foreground">Saved on this device.</p>
+      <p className="text-[12px] text-muted-foreground">Saved on this device.</p>
     </div>
   );
 }
@@ -209,7 +209,7 @@ export function SettingsMenu({
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Weight unit</p>
             <SegmentedControl ariaLabel="Weight unit" value={unit} onValueChange={onUnitChange} options={UNIT_OPTIONS} />
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               Used for body weight, lifts and measurements (inches with lb, centimetres with kg).
             </p>
           </div>

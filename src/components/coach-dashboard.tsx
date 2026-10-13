@@ -413,7 +413,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
                 {tagsData && tagsData.tags.length > 0 ? (
                   <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">Tags:</span>
+                    <span className="text-[12px] text-muted-foreground">Tags:</span>
                     {tagsData.tags.map((t) => {
                       const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
                       const on = tagFilter === t.id;
@@ -425,7 +425,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                           aria-checked={on}
                           onClick={() => setTagFilter(on ? null : t.id)}
                           className={cn(
-                            "rounded-full border px-2.5 py-0.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "rounded-full border px-2.5 py-0.5 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
                           )}
                         >
@@ -471,7 +471,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   />
                 ) : null}
 
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[12px] text-muted-foreground">
                   Updated {new Date(overview.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
                   Read-only: members&apos; plans and logs can only be changed from their own app. You only see members who
                   share their progress with you.
@@ -616,12 +616,12 @@ function MemberRow({
         {m.flags.length > 0 || m.paused ? (
           <span className="flex flex-wrap gap-1">
             {m.paused ? (
-              <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+              <Badge variant="secondary" className="px-2 py-0 text-[11px]">
                 {pausedLabel(m.paused)}
               </Badge>
             ) : null}
             {m.flags.map((f) => (
-              <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[10px]">
+              <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
                 {FLAG_LABELS[f]}
               </Badge>
             ))}
@@ -727,7 +727,7 @@ function AskButton({
         </Button>
       )}
       {note ? (
-        <span role="status" className="max-w-[14rem] text-right text-[11px] text-muted-foreground">
+        <span role="status" className="max-w-[14rem] text-right text-[12px] text-muted-foreground">
           {note}
         </span>
       ) : null}
@@ -779,7 +779,7 @@ function NotSharingList({
                 <Avatar name={memberName(m)} url={m.avatarUrl} size="h-8 w-8" />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{memberName(m)}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{sharingText(m.sharing)}</span>
+                  <span className="block truncate text-[12px] text-muted-foreground">{sharingText(m.sharing)}</span>
                 </span>
               </button>
               <AskButton m={m} companyId={companyId} today={today} onChange={onChange} />
@@ -924,7 +924,7 @@ function MemberDetail({
             <p className="tabular text-muted-foreground">
               Logging {m.health.logging}/{HEALTH_PARTS.logging} · Adherence {m.health.adherence}/{HEALTH_PARTS.adherence} · Trend {m.health.trend}/{HEALTH_PARTS.trend}
             </p>
-            <p className="text-[11px] text-muted-foreground">Days logged this week, habit scorecard, and weight vs plan.</p>
+            <p className="text-[12px] text-muted-foreground">Days logged this week, habit scorecard, and weight vs plan.</p>
           </div>
         </div>
       ) : null}
@@ -1086,7 +1086,7 @@ function MemberDetail({
         </Card>
       ) : null}
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[12px] text-muted-foreground">
         This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
       </p>
     </div>
@@ -1096,7 +1096,7 @@ function MemberDetail({
 function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border px-3 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
       <p className="font-semibold">{value}</p>
     </div>
   );

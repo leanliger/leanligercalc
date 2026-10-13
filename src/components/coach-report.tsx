@@ -59,11 +59,11 @@ export function CoachReportPanel({ companyId, memberId, memberName, unit }: { co
               Close report
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             They can see the same report in their app at any time. For a testimonial, a screenshot of it works well.
           </p>
           {state.text ? (
-            <p role="status" className={state.ok ? "text-[11px] text-muted-foreground" : "text-[11px] text-destructive"}>
+            <p role="status" className={state.ok ? "text-[12px] text-muted-foreground" : "text-[12px] text-destructive"}>
               {state.text}
             </p>
           ) : null}

@@ -22,7 +22,9 @@ interface SegmentedControlProps<T extends string> {
 /**
  * A radio group styled as a segmented control. Built on native radio inputs
  * rather than buttons so arrow-key navigation and screen-reader semantics come
- * for free.
+ * for free. Options share the width equally, but never shrink below their
+ * label: when they don't fit (five sections on a phone) the row scrolls
+ * sideways instead of wrapping "Weigh-in" onto two lines.
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -39,7 +41,7 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        "grid w-full auto-cols-fr grid-flow-col gap-1 rounded-md border border-border bg-muted/50 p-1",
+        "no-scrollbar flex w-full gap-1 overflow-x-auto rounded-md border border-border bg-muted/50 p-1",
         className,
       )}
     >
@@ -47,7 +49,7 @@ export function SegmentedControl<T extends string>({
         const id = `${groupName}-${option.value}`;
         const selected = option.value === value;
         return (
-          <div key={option.value} className="relative">
+          <div key={option.value} className="relative flex-1 shrink-0">
             <input
               type="radio"
               id={id}
@@ -61,7 +63,7 @@ export function SegmentedControl<T extends string>({
               htmlFor={id}
               title={option.hint}
               className={cn(
-                "flex cursor-pointer flex-col items-center justify-center rounded-sm text-center font-medium transition-colors",
+                "flex h-full cursor-pointer flex-col items-center justify-center whitespace-nowrap rounded-sm text-center font-medium transition-colors",
                 "text-muted-foreground hover:text-foreground",
                 "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-background",
                 size === "sm" ? "px-2 py-1.5 text-xs" : "px-3 py-2 text-sm",
@@ -70,7 +72,7 @@ export function SegmentedControl<T extends string>({
             >
               <span>{option.label}</span>
               {option.hint ? (
-                <span className="mt-0.5 text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 text-[11px] font-normal opacity-70">
                   {option.hint}
                 </span>
               ) : null}

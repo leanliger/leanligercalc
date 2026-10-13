@@ -109,7 +109,7 @@ export function ConsistencyCard({ habits, logs, today, pauses = NO_PAUSES }: Con
                       <span className="min-w-0 flex-1 truncate">{def.name}</span>
                       <StreakBadge days={streak.current} />
                       {streak.best > streak.current ? (
-                        <span className="tabular shrink-0 text-[11px] text-muted-foreground">best {streak.best}</span>
+                        <span className="tabular shrink-0 text-[12px] text-muted-foreground">best {streak.best}</span>
                       ) : null}
                       <span
                         className={cn(
@@ -164,7 +164,7 @@ export function HabitConsistencyList({ habits, logs, today, pauses = NO_PAUSES }
           <div className="flex items-center gap-2 text-sm">
             <span className="min-w-0 flex-1 truncate">{def.name}</span>
             <StreakBadge days={streak.current} />
-            {streak.best > streak.current ? <span className="tabular shrink-0 text-[11px] text-muted-foreground">best {streak.best}</span> : null}
+            {streak.best > streak.current ? <span className="tabular shrink-0 text-[12px] text-muted-foreground">best {streak.best}</span> : null}
             <span className={cn("tabular w-10 shrink-0 text-right text-xs font-semibold", consistency.zone ? ZONE_TEXT[consistency.zone] : "text-muted-foreground")}>
               {consistency.percent === null ? "—" : `${consistency.percent}%`}
             </span>
@@ -200,14 +200,14 @@ function StatBox({
 }) {
   return (
     <div className="space-y-1 rounded-lg border border-border p-3" title={hint}>
-      <p className="text-[11px] font-medium leading-tight text-muted-foreground">{label}</p>
+      <p className="text-[12px] font-medium leading-tight text-muted-foreground">{label}</p>
       <p className="flex items-baseline gap-1">
         <span className={cn("tabular text-2xl font-semibold leading-none", value > 0 ? "text-primary" : "text-foreground")}>
           {value}
         </span>
         <span className="text-xs text-muted-foreground">{unit}</span>
       </p>
-      <p className="text-[11px] leading-snug text-muted-foreground">{sub}</p>
+      <p className="text-[12px] leading-snug text-muted-foreground">{sub}</p>
       <p className="sr-only">{hint}</p>
     </div>
   );
@@ -230,7 +230,7 @@ function TrendChart({ points }: { points: ReturnType<typeof weeklyTrend> }) {
           className="pointer-events-none absolute inset-x-0 border-t border-dashed border-success/60"
           style={{ bottom: `${BELOW_BARS_REM + (WEEKLY_TARGET_PERCENT / 100) * BAR_MAX_REM}rem` }}
         >
-          <span className="absolute -top-1.5 right-0 text-[10px] leading-none text-success">
+          <span className="absolute -top-1.5 right-0 text-[11px] leading-none text-success">
             {WEEKLY_TARGET_PERCENT}%
           </span>
         </div>
@@ -247,7 +247,7 @@ function TrendChart({ points }: { points: ReturnType<typeof weeklyTrend> }) {
                     <div className="h-1 w-full rounded-sm bg-muted" />
                   ) : (
                     <>
-                      <span className="tabular mb-0.5 text-[10px] leading-none text-muted-foreground">{p.percent}</span>
+                      <span className="tabular mb-0.5 text-[11px] leading-none text-muted-foreground">{p.percent}</span>
                       <div
                         className={cn("w-full rounded-t-sm", ZONE_BAR[p.zone!], !p.complete && "opacity-50")}
                         style={{ height: `${(Math.max(p.percent, 3) / 100) * BAR_MAX_REM}rem` }}
@@ -255,7 +255,7 @@ function TrendChart({ points }: { points: ReturnType<typeof weeklyTrend> }) {
                     </>
                   )}
                 </div>
-                <span aria-hidden className="h-4 w-full truncate text-center text-[10px] leading-4 text-muted-foreground">
+                <span aria-hidden className="h-4 w-full truncate text-center text-[11px] leading-4 text-muted-foreground">
                   {p.complete ? formatShort(p.weekStart) : "Now"}
                 </span>
               </li>

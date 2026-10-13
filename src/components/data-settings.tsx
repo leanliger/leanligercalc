@@ -60,14 +60,14 @@ export function DataSettings({ session, count, onDeleteAll }: DataSettingsProps)
           {cloud ? <Cloud className="h-4 w-4 shrink-0 text-success" aria-hidden /> : <HardDrive className="h-4 w-4 shrink-0 text-warning" aria-hidden />}
           {cloud ? "Synced to your Whop account" : "Saved on this device only"}
         </p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
           {cloud
             ? "Your weigh-ins, habits, food, workouts and plan follow you to any device where you open this app in Whop."
             : `${LOCAL_REASONS[session.reason ?? "not-signed-in"]} For now, everything stays in this browser — clearing site data or switching devices loses it.`}
         </p>
       </div>
 
-      <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="flex gap-2 text-[12px] leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         <span>
           Your weight, food and habit logs are health data, stored only to run the app and for your coach to review. Your

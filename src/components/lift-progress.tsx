@@ -143,7 +143,7 @@ export function LiftProgressCard({
                       <ExerciseThumb exerciseId={l.exercise.id} className="h-8 w-8 shrink-0" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{l.exercise.name}</span>
-                        <span className="tabular block text-[11px] text-muted-foreground">
+                        <span className="tabular block text-[12px] text-muted-foreground">
                           Best {round1(fromLb(l.best, unit)).toLocaleString()} {unit} · {l.history.length}{" "}
                           {l.history.length === 1 ? "session" : "sessions"}
                         </span>
@@ -157,7 +157,7 @@ export function LiftProgressCard({
                         >
                           {change > 0.05 ? "+" : change < -0.05 ? "−" : "±"}
                           {round1(Math.abs(fromLb(change, unit)))} {unit}
-                          <span className="block text-[10px] font-normal text-muted-foreground">since {formatShort(l.first.date)}</span>
+                          <span className="block text-[11px] font-normal text-muted-foreground">since {formatShort(l.first.date)}</span>
                         </span>
                       ) : null}
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

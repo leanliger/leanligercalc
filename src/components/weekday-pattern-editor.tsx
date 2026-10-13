@@ -83,7 +83,7 @@ export function WeekdayPatternEditor({
                 style.chip,
               )}
             >
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 {weekday}
               </span>
               <span
@@ -99,7 +99,7 @@ export function WeekdayPatternEditor({
         })}
       </div>
 
-      <p className="tabular text-[11px] text-muted-foreground">
+      <p className="tabular text-[12px] text-muted-foreground">
         {counts.high} high · {counts.medium} medium · {counts.low} low
       </p>
     </div>

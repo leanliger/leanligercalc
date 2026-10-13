@@ -85,7 +85,7 @@ export function AttentionList({
                     <span className="block truncate text-sm font-medium">{m.displayName}</span>
                     <span className="mt-1 flex flex-wrap gap-1">
                       {m.flags.map((f) => (
-                        <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[10px]">
+                        <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
                           {FLAG_LABELS[f]}
                         </Badge>
                       ))}
@@ -176,7 +176,7 @@ export function CoachNotesCard({ companyId, memberId }: { companyId: string; mem
           <Button size="sm" onClick={() => void save()} disabled={!dirty || state === "saving"}>
             {state === "saving" ? "Saving…" : "Save note"}
           </Button>
-          <span className="text-[11px] text-muted-foreground" role="status">
+          <span className="text-[12px] text-muted-foreground" role="status">
             {error ? <span className="text-destructive">{error}</span> : dirty ? "Not saved yet" : saved?.at ? `Saved ${formatShort(saved.at.slice(0, 10))}` : ""}
           </span>
         </div>
@@ -210,7 +210,7 @@ export function CheckinStatsGrid({ stats: s, unit }: { stats: CheckinStats; unit
     <dl className="tabular grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
       {cells.map(([k, v]) => (
         <div key={k} className="min-w-0">
-          <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{k}</dt>
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{k}</dt>
           <dd className="truncate">{v}</dd>
         </div>
       ))}
@@ -226,7 +226,7 @@ export function CheckinRatings({ c }: { c: Checkin }) {
         const v = c.answers.ratings[s.key];
         return (
           <div key={s.key} className="space-y-1 text-center">
-            <p className="text-[10px] text-muted-foreground">{s.label}</p>
+            <p className="text-[11px] text-muted-foreground">{s.label}</p>
             <p className={cn("tabular text-sm font-semibold", v <= 2 ? "text-destructive" : v >= 4 ? "text-success" : "")}>{v}/5</p>
           </div>
         );
@@ -248,7 +248,7 @@ export function CheckinAnswersText({ c }: { c: Checkin }) {
         .filter(([, v]) => v)
         .map(([k, v]) => (
           <div key={k}>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{k}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{k}</p>
             <p className="whitespace-pre-wrap text-sm">{v}</p>
           </div>
         ))}
@@ -331,7 +331,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/40"
                 >
                   <span className="text-sm font-medium">Week of {formatShort(c.weekStart)}</span>
-                  <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-2 text-[12px] text-muted-foreground">
                     sent {formatShort(c.submittedAt.slice(0, 10))}
                     {c.reply !== null || c.replyAudio ? <Badge variant="success">Replied</Badge> : <Badge variant="default">To review</Badge>}
                   </span>
@@ -350,7 +350,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                     ) : null}
                     {c.reply ? (
                       <div className="rounded-md bg-primary/5 p-2.5">
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-primary">Your reply · {formatShort((c.repliedAt ?? "").slice(0, 10))}</p>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-primary">Your reply · {formatShort((c.repliedAt ?? "").slice(0, 10))}</p>
                         <p className="whitespace-pre-wrap text-sm">{c.reply}</p>
                       </div>
                     ) : (
@@ -383,7 +383,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                       </div>
                     )}
                     {message && isOpen ? (
-                      <p role="status" className="text-[11px] text-muted-foreground">
+                      <p role="status" className="text-[12px] text-muted-foreground">
                         {message}
                       </p>
                     ) : null}
@@ -491,7 +491,7 @@ export function MemberMacrosCard({ companyId, memberId, memberName }: { companyI
               </span>
             </p>
             {current.note ? <p className="text-xs text-muted-foreground">&ldquo;{current.note}&rdquo;</p> : null}
-            <p className="text-[11px] text-muted-foreground">Set {formatShort(current.setAt.slice(0, 10))}</p>
+            <p className="text-[12px] text-muted-foreground">Set {formatShort(current.setAt.slice(0, 10))}</p>
           </div>
         ) : null}
         {editing ? (
@@ -551,7 +551,7 @@ export function MemberMacrosCard({ companyId, memberId, memberName }: { companyI
           </div>
         ) : null}
         {message ? (
-          <p role="status" className={cn("text-[11px]", message.ok ? "text-muted-foreground" : "text-destructive")}>
+          <p role="status" className={cn("text-[12px]", message.ok ? "text-muted-foreground" : "text-destructive")}>
             {message.text}
           </p>
         ) : null}

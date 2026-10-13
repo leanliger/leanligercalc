@@ -371,7 +371,7 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
           </p>
         ) : null}
 
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
           Barcode and search data come from{" "}
           <a href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer" className="underline underline-offset-2">
             Open Food Facts
@@ -515,7 +515,7 @@ function BigButton({
     >
       {icon}
       <span className="text-sm font-semibold leading-tight">{label}</span>
-      <span className={cn("text-[11px] leading-tight", primary ? "text-primary-foreground/80" : "text-muted-foreground")}>
+      <span className={cn("text-[12px] leading-tight", primary ? "text-primary-foreground/80" : "text-muted-foreground")}>
         {sub}
       </span>
     </button>
@@ -672,7 +672,7 @@ function ResultList({
                   </span>
                   {basis ? (
                     <span className="block truncate">
-                      <MacroLine m={roundMacros(basis.m)} /> <span className="text-[11px] text-muted-foreground">{basis.per}</span>
+                      <MacroLine m={roundMacros(basis.m)} /> <span className="text-[12px] text-muted-foreground">{basis.per}</span>
                     </span>
                   ) : null}
                 </span>
@@ -777,7 +777,7 @@ function ProductView({
         <p className="text-base font-semibold leading-snug">{product.name}</p>
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {product.brand ? <span>{product.brand}</span> : null}
-          <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+          <Badge variant="secondary" className="px-2 py-0 text-[11px]">
             {SOURCE_LABEL[product.source]}
           </Badge>
           {product.barcode ? <span className="tabular">#{product.barcode}</span> : null}
@@ -1037,7 +1037,7 @@ function ManualView({
           {numberField("fat", "Fat", "g")}
         </div>
         {f.kcal.trim() === "" && autoKcal > 0 ? (
-          <p className="text-[11px] text-muted-foreground">Calories left blank: worked out from the macros ({autoKcal} kcal).</p>
+          <p className="text-[12px] text-muted-foreground">Calories left blank: worked out from the macros ({autoKcal} kcal).</p>
         ) : null}
       </fieldset>
 

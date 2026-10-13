@@ -6,8 +6,12 @@ import { KCAL_PER_G } from "@/lib/units";
 /**
  * Where the day's calories come from: a ring split into protein, carbs and
  * fat by their calories (4 / 4 / 9 kcal per gram), labelled around the
- * outside with leader lines, and the calories eaten in the middle. With
- * nothing logged yet it shows the target's split, faded.
+ * outside with leader lines. With nothing logged yet it shows the target's
+ * split, faded.
+ *
+ * Given a calorie target it is also the day's calorie meter: a thin outer arc
+ * fills toward the target, and the middle shows what's left (or over) instead
+ * of what's eaten, so the Food log needs no separate calorie bar.
  *
  * Plain SVG on a fixed viewBox, so it scales to the card and the labels keep
  * their places at any width.
@@ -49,13 +53,17 @@ export function calorieSplit(g: Grams): Record<SliceKey, number> | null {
   return out;
 }
 
-const W = 380;
+const W = 400;
 const H = 200;
 const CX = W / 2;
 const CY = H / 2;
 const R = 64;
-const RI = 36;
+const RI = 38;
+/** The calorie arc, just outside the slices. */
+const RA = R + 9;
 const LABEL_GAP = 18;
+/** Over the target by more than this shows as over (matches the scorecard's ±100). */
+const OVER_KCAL = 100;
 
 /** A point on a circle, angles in degrees clockwise from 12 o'clock. */
 function at(r: number, deg: number): [number, number] {
@@ -76,6 +84,7 @@ export function MacroDonut({
   eaten,
   kcal,
   target,
+  targetKcal,
 }: {
   /** Grams eaten so far. */
   eaten: Grams;
@@ -83,12 +92,21 @@ export function MacroDonut({
   kcal: number;
   /** The day's target grams, for the comparison line and the empty state. */
   target?: Grams | null;
+  /** The day's calorie target: turns on the outer calorie arc and "left" in the middle. */
+  targetKcal?: number | null;
 }) {
   const eatenSplit = calorieSplit(eaten);
   const targetSplit = target ? calorieSplit(target) : null;
   const split = eatenSplit ?? targetSplit;
   if (!split) return null;
   const faded = !eatenSplit;
+  const meter = targetKcal && targetKcal > 0 ? targetKcal : null;
+  const over = meter !== null && kcal - meter > OVER_KCAL;
+  const filled = meter === null ? 0 : Math.min(kcal / meter, 1);
+  const arc = 2 * Math.PI * RA;
+  // Leader lines start beyond the calorie arc when it's there.
+  const lineFrom = meter !== null ? RA + 5 : R + 2;
+  const lineTo = meter !== null ? RA + 15 : R + 16;
 
   // Slices clockwise from 12 o'clock, then a label per slice beside its middle.
   let angle = 0;
@@ -98,8 +116,8 @@ export function MacroDonut({
     angle = a1;
     const mid = (a0 + a1) / 2;
     const right = mid < 180;
-    const [px, py] = at(R + 2, mid);
-    const [ex, ey] = at(R + 16, mid);
+    const [px, py] = at(lineFrom, mid);
+    const [ex, ey] = at(lineTo, mid);
     return { ...s, a0, a1, pct: split[s.key], right, px, py, ex, ey, ly: ey };
   });
 
@@ -125,9 +143,32 @@ export function MacroDonut({
         viewBox={`0 0 ${W} ${H}`}
         className="mx-auto h-auto w-full max-w-[24rem]"
         role="img"
-        aria-label={faded ? `Target calories by macro: ${describe}` : `Calories by macro: ${describe}`}
+        aria-label={
+          (meter !== null
+            ? `${Math.round(kcal).toLocaleString()} of ${meter.toLocaleString()} calories eaten. `
+            : "") + (faded ? `Target calories by macro: ${describe}` : `Calories by macro: ${describe}`)
+        }
       >
-        <g opacity={faded ? 0.35 : 1}>
+        {meter !== null ? (
+          <g transform={`rotate(-90 ${CX} ${CY})`}>
+            <circle cx={CX} cy={CY} r={RA} fill="none" stroke="hsl(var(--muted))" strokeWidth={6} />
+            {filled > 0 ? (
+              <circle
+                cx={CX}
+                cy={CY}
+                r={RA}
+                fill="none"
+                stroke={over ? "hsl(var(--warning))" : "hsl(var(--primary))"}
+                strokeWidth={6}
+                strokeLinecap="round"
+                strokeDasharray={arc}
+                strokeDashoffset={arc * (1 - filled)}
+                style={{ transition: "stroke-dashoffset 0.6s ease-out" }}
+              />
+            ) : null}
+          </g>
+        ) : null}
+        <g opacity={faded ? 0.55 : 1}>
           {parts.map((p) =>
             p.a1 - p.a0 >= 359.99 ? (
               <g key={p.key}>
@@ -165,14 +206,28 @@ export function MacroDonut({
             </g>
           );
         })}
-        <text x={CX} y={CY - 3} textAnchor="middle" fontSize={17} fontWeight={600} fill="hsl(var(--foreground))" className="tabular">
-          {Math.round(kcal).toLocaleString()}
+        <text
+          x={CX}
+          y={CY - 2}
+          textAnchor="middle"
+          fontSize={19}
+          fontWeight={700}
+          fill={over ? "hsl(var(--warning))" : "hsl(var(--foreground))"}
+          className="tabular"
+        >
+          {(meter !== null ? Math.abs(Math.round(meter - kcal)) : Math.round(kcal)).toLocaleString()}
         </text>
-        <text x={CX} y={CY + 13} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">
-          kcal
+        <text x={CX} y={CY + 14} textAnchor="middle" fontSize={11} fill="hsl(var(--muted-foreground))">
+          {meter === null ? "kcal" : kcal > meter ? "kcal over" : "kcal left"}
         </text>
       </svg>
-      <figcaption className="text-center text-[11px] text-muted-foreground">
+      {meter !== null ? (
+        <p className="tabular text-center text-sm">
+          <span className="font-semibold">{Math.round(kcal).toLocaleString()}</span>
+          <span className="text-muted-foreground"> of {meter.toLocaleString()} kcal eaten</span>
+        </p>
+      ) : null}
+      <figcaption className="text-center text-[12px] text-muted-foreground">
         {faded
           ? "Your target's split. Log food to see yours."
           : targetSplit

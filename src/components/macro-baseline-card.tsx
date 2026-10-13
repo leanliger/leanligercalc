@@ -101,7 +101,7 @@ function SplitRow({ split }: { split: MacroSplit }) {
           <div key={macro.key} className="rounded-md border border-border bg-muted/30 p-2.5">
             <div className="flex items-center gap-1.5">
               <span className={cn("h-2 w-2 rounded-full", macro.dot)} />
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                 {macro.label}
               </span>
             </div>
@@ -109,7 +109,7 @@ function SplitRow({ split }: { split: MacroSplit }) {
               {line.grams}
               <span className="ml-0.5 text-xs font-normal text-muted-foreground">g</span>
             </div>
-            <div className="tabular mt-1 text-[11px] text-muted-foreground">
+            <div className="tabular mt-1 text-[12px] text-muted-foreground">
               {line.calories.toLocaleString()} kcal · {line.percentOfCalories}%
             </div>
           </div>
@@ -183,14 +183,14 @@ export function MacroBaselineCard({
               step={5}
               aria-label="Protein grams per pound of body weight"
             />
-            <div className="flex justify-between text-[11px] text-muted-foreground">
+            <div className="flex justify-between text-[12px] text-muted-foreground">
               <span>0.60 g/lb</span>
               <span className="font-medium text-macro-protein">
                 {proteinPerLb.toFixed(2)} g/lb
               </span>
               <span>1.40 g/lb</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Recommended {PROTEIN_RANGE.min.toFixed(1)}–{PROTEIN_RANGE.max.toFixed(1)}{" "}
               g per pound of body weight.
             </p>
@@ -212,14 +212,14 @@ export function MacroBaselineCard({
               step={1}
               aria-label="Fat as a percentage of total calories"
             />
-            <div className="flex justify-between text-[11px] text-muted-foreground">
+            <div className="flex justify-between text-[12px] text-muted-foreground">
               <span>15%</span>
               <span className="font-medium text-macro-fat">
                 {Math.round(fatPercent * 100)}% of calories
               </span>
               <span>45%</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Recommended {Math.round(FAT_PERCENT_RANGE.min * 100)}–
               {Math.round(FAT_PERCENT_RANGE.max * 100)}% of total daily calories.
             </p>
@@ -233,7 +233,7 @@ export function MacroBaselineCard({
           working={`${maintenance.totalCalories.toLocaleString()} − ${maintenance.protein.calories.toLocaleString()} − ${maintenance.fat.calories.toLocaleString()} = ${maintenance.carbs.calories.toLocaleString()} kcal ÷ 4 = ${maintenance.carbs.grams}g`}
         >
           <SplitRow split={maintenance} />
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             At maintenance — {maintenance.totalCalories.toLocaleString()} kcal per day.
             {dailyTarget && under > 10
               ? ` Your daily target is ${dailyTarget.toLocaleString()} kcal, ${under.toLocaleString()} under it: see Daily targets.`

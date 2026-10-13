@@ -154,7 +154,7 @@ export function ExercisePicker({
                         <span className="block truncate text-sm font-medium">{e.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">{meta(e)}</span>
                       </span>
-                      {added ? <span className="shrink-0 text-[11px] text-muted-foreground">added</span> : <Plus className="h-4 w-4 shrink-0 text-primary" />}
+                      {added ? <span className="shrink-0 text-[12px] text-muted-foreground">added</span> : <Plus className="h-4 w-4 shrink-0 text-primary" />}
                     </button>
                   </li>
                 );
@@ -261,7 +261,7 @@ export function CustomExerciseForm({
         </div>
       </div>
       {equipment === "bodyweight" ? (
-        <p className="text-[11px] text-muted-foreground">Bodyweight: you log reps, plus any added weight.</p>
+        <p className="text-[12px] text-muted-foreground">Bodyweight: you log reps, plus any added weight.</p>
       ) : null}
       <div className="space-y-1.5">
         <Label htmlFor={`${ids}-video`}>
@@ -421,7 +421,7 @@ export function ExerciseLibraryCard({
                           <span className="block truncate text-xs text-muted-foreground">{meta(e)}</span>
                         </span>
                         {s ? (
-                          <span className="shrink-0 text-right text-[11px] leading-tight text-muted-foreground">
+                          <span className="shrink-0 text-right text-[12px] leading-tight text-muted-foreground">
                             <span className="tabular block font-medium text-foreground">
                               {e.bodyweight ? `${s.best} reps` : `${formatLoad(s.best, unit)} ${unit}`}
                             </span>

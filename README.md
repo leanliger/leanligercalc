@@ -79,6 +79,16 @@ src/
 
 Every calculation is a pure function in `src/lib/`. Components never do arithmetic beyond formatting, which means the engines can be unit-tested or reused server-side without touching React.
 
+### Look and feel
+
+- **Text** is one step larger than Tailwind's defaults (`tailwind.config.ts`): 13 px small print, 15 px body; hard-coded 10 / 11 px sizes went up to 11 / 12 px.
+- **Macro colours** are gold protein, sky-blue carbs and rose fat, chosen to be told apart at a glance in both themes (`globals.css`).
+- **Section switchers** (`ui/segmented.tsx`) never squash a label onto two lines; when the options don't fit, the row scrolls sideways.
+- **Explanations** that only need reading once use `ui/hint.tsx`: shown in full the first time, then folded to a small "How this works" link (remembered per device).
+- **Food log:** the ring (`macro-donut.tsx`) doubles as the calorie meter, with an outer arc filling toward the target and calories left in the middle, so there's no separate calorie bar. Once Add food scrolls away, a floating **Log food** button brings it back.
+- **Feedback:** ticks pop in (`animate-pop`), and Settings → Reduce motion turns that off with every other animation.
+- **Footer:** one line ("Estimates, not promises, and not medical advice"), with the full wording behind **Read more**.
+
 ### Speed
 
 The app runs on the member's phone, so speed comes from how much code it downloads and how much it redraws, not from the server.
@@ -330,16 +340,17 @@ Two sources, both `POST /api/physique`:
 
 The **Today** tab (`today-tab.tsx`) is the screen a member opens each morning. A fresh open always starts here; a reload (the tab is in the URL) stays where it was. It reads and writes the same data as the other tabs — nothing new is stored on the server.
 
-- **Header:** the date and "X of N done today" across weigh-in, habits (all of them), food (anything logged), workout (finished, or a rest day) and steps (at target; only when a habit is linked to steps).
+- **Header:** the date, "X of N done today", and a ring per task: weigh-in, workout (finished, or a rest day), food (anything logged; the ring fills toward the calorie target), habits (all of them; fills as they're ticked) and steps (at target; only when a habit is linked to steps). Tapping a ring jumps to its card.
+- **Layout:** what's still to do comes first. A finished task folds to one line under **Done today** (tap it to open the card again, e.g. to untick a habit). Food stays open all day because it's a running total. Only the first unfinished weigh-in or workout gets the gold button, so the page has one obvious next step.
 - **Weigh-in:** log today's weight right there, or see it with the trend.
 - **Workout:** resume the one in progress; what was finished today; "Rest day"; otherwise the active program's next day with its first exercises and **Start** (`createWorkout`, the same as the Training tab, pre-filled from last time) — or a link to pick a program.
-- **Food:** calories and protein eaten vs today's targets (`src/lib/day-targets.ts`, shared with Nutrition: the roadmap's day, else the weekly carb plan).
+- **Food:** calories left (big), eaten vs target, and protein, against today's targets (`src/lib/day-targets.ts`, shared with Nutrition: the roadmap's day, else the weekly carb plan).
 - **Habits:** today's checklist — tick boxes, and −/+ for number goals; a rest day greys out the workout habit.
 - **Steps:** today's count against the plan's step target (10,000 when maintenance comes from an activity level); ticks the steps habit at the target.
-- **Fasting:** fasting / eating window / time to eat, with the next meal time.
+- **Fasting:** fasting / eating window / time to eat, with the next meal time. Hidden until a fasting window is set up (Food → Fasting).
 - Each card links to its full tab and sub-section. Accounts with nothing logged see a welcome card pointing to the timeline.
 
-**Badges** (`src/lib/badges.ts`, `badges-card.tsx`) — 23 milestones worked out from data members already log, so nothing extra is stored and they stay correct if entries are edited or deleted: 1 / 10 / 50 / 100 workouts; first / 10 / 25 PRs (same records as the trophy in the logger); 7 / 30 / 100-day habit streaks (80%+ days) and four Green Zone weeks; 1 / 30 / 100 weigh-ins; 5 / 10 / 20 lb (2 / 5 / 10 kg) down on the weight trend; first measurements; first food logged, 7 days in a row, 30 days; first 10K-step day and 30 of them. The card shows the latest earned (with the date where it's knowable), the two closest to done, and the full set. A **New badge!** banner appears on Today when one is earned; which ones a member has already seen is kept per device in local storage (on the first visit everything already earned counts as seen, so existing members don't get a flood).
+**Badges** (`src/lib/badges.ts`, `badges-card.tsx`) — 23 milestones worked out from data members already log, so nothing extra is stored and they stay correct if entries are edited or deleted: 1 / 10 / 50 / 100 workouts; first / 10 / 25 PRs (same records as the trophy in the logger); 7 / 30 / 100-day habit streaks (80%+ days) and four Green Zone weeks; 1 / 30 / 100 weigh-ins; 5 / 10 / 20 lb (2 / 5 / 10 kg) down on the weight trend; first measurements; first food logged, 7 days in a row, 30 days; first 10K-step day and 30 of them. The card lives on **Ranks → Badges** and shows the latest earned (with the date where it's knowable), the two closest to done, and the full set. A **New badge!** banner appears on Today when one is earned, with a link to Ranks → Badges; which ones a member has already seen is kept per device in local storage (on the first visit everything already earned counts as seen, so existing members don't get a flood).
 
 ## Training
 

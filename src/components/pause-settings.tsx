@@ -48,7 +48,7 @@ export function PauseSettings({ pauses, today, onChange }: PauseSettingsProps) {
         <CirclePause className={cn("h-3.5 w-3.5", current && "text-primary")} aria-hidden />
         Pause mode
       </p>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[12px] leading-relaxed text-muted-foreground">
         Sick or travelling? Pause for up to {MAX_PAUSE_DAYS} days. Your streaks freeze, paused days don&apos;t count for
         or against your score, and reminders stop. Anything you log still saves.
       </p>

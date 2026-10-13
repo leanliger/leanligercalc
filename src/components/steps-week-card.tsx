@@ -112,7 +112,7 @@ export function StepsWeekCard({
             />
           ))}
         </div>
-        <div className="flex gap-2 text-center text-[10px] text-muted-foreground">
+        <div className="flex gap-2 text-center text-[11px] text-muted-foreground">
           {week.map((d, i) => (
             <span key={d.date} className={cn("tabular flex-1", d.date === today && "font-semibold text-foreground")}>
               {DAY_LETTERS[i]}

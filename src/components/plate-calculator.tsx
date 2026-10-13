@@ -78,7 +78,7 @@ function plateWidth(p: number, unit: WeightUnit): number {
 /** Smaller type for longer labels ("2.5", "1.25") so they fit across a plate. */
 function labelSize(p: number): string {
   const len = String(p).length;
-  return len <= 2 ? "text-[10px]" : len === 3 ? "text-[9px]" : "text-[7.5px]";
+  return len <= 2 ? "text-[11px]" : len === 3 ? "text-[9px]" : "text-[7.5px]";
 }
 
 // Full class names, so Tailwind keeps them.

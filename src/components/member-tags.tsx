@@ -33,7 +33,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const loadTags = (companyId: string) => call<TagsData>(`/api/coach/tags?company=${encodeURIComponent(companyId)}`);
 
 export function TagChip({ tag, className }: { tag: MemberTag; className?: string }) {
-  return <span className={cn("inline-flex items-center rounded-full border px-2 py-0 text-[10px] font-medium", TAG_CLASS[tag.color], className)}>{tag.name}</span>;
+  return <span className={cn("inline-flex items-center rounded-full border px-2 py-0 text-[11px] font-medium", TAG_CLASS[tag.color], className)}>{tag.name}</span>;
 }
 
 /** Tags on a member's row. */
@@ -222,9 +222,9 @@ function TagEditor({ companyId, data, onSaved }: { companyId: string; data: Tags
         <Button size="sm" onClick={() => void save()} disabled={!dirty || busy || tags.some((t) => !t.name.trim())}>
           {busy ? "Saving…" : "Save tags"}
         </Button>
-        {message ? <span className={cn("text-[11px]", message.ok ? "text-muted-foreground" : "text-destructive")}>{message.text}</span> : null}
+        {message ? <span className={cn("text-[12px]", message.ok ? "text-muted-foreground" : "text-destructive")}>{message.text}</span> : null}
       </div>
-      <p className="text-[11px] text-muted-foreground">Deleting a tag removes it from every member. Renaming keeps it on them.</p>
+      <p className="text-[12px] text-muted-foreground">Deleting a tag removes it from every member. Renaming keeps it on them.</p>
     </div>
   );
 }

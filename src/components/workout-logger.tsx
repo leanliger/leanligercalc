@@ -187,7 +187,7 @@ export function WorkoutLogger({
         <CardHeader className="space-y-2 p-4 sm:p-6">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1 space-y-0.5">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-primary">
+              <p className="text-[12px] font-medium uppercase tracking-wide text-primary">
                 {live ? "Workout in progress" : `Editing · ${formatLong(workout.date)}`}
               </p>
               <CardTitle className="truncate text-lg">{workout.name}</CardTitle>
@@ -440,7 +440,7 @@ function ExerciseBlock({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-1.5 p-4 pt-1 sm:p-6 sm:pt-1">
-        <div className={cn(ROW_GRID, "px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
+        <div className={cn(ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
           <span className="text-center">Set</span>
           <span>Previous</span>
           <span className="text-center">{bw ? `+${unit}` : unit}</span>
@@ -507,7 +507,7 @@ const ADVICE_STYLE: Record<AdviceKind, { text: string; icon: React.ReactNode }> 
 function RirPicker({ n, value, onChange }: { n: number; value: number | null; onChange: (rir: number | null) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-1 pb-1.5 pl-9">
-      <span className="text-[11px] text-muted-foreground">{value === null ? "Reps left in the tank?" : "Effort:"}</span>
+      <span className="text-[12px] text-muted-foreground">{value === null ? "Reps left in the tank?" : "Effort:"}</span>
       <div role="radiogroup" aria-label={`Set ${n}: reps left in reserve`} className="flex gap-1">
         {RIR_CHOICES.map((r) => {
           const on = value === r;
@@ -520,7 +520,7 @@ function RirPicker({ n, value, onChange }: { n: number; value: number | null; on
               aria-label={r === 0 ? "0, all out" : r >= MAX_RIR ? `${MAX_RIR} or more` : String(r)}
               onClick={() => onChange(on ? null : r)}
               className={cn(
-                "h-6 min-w-[1.75rem] rounded-full border px-1.5 text-[11px] font-medium tabular transition-colors",
+                "h-6 min-w-[1.75rem] rounded-full border px-1.5 text-[12px] font-medium tabular transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 on ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted/50",
               )}
@@ -530,7 +530,7 @@ function RirPicker({ n, value, onChange }: { n: number; value: number | null; on
           );
         })}
       </div>
-      {value !== null ? <span className="text-[11px] text-muted-foreground">{formatRir(value)}</span> : null}
+      {value !== null ? <span className="text-[12px] text-muted-foreground">{formatRir(value)}</span> : null}
     </div>
   );
 }

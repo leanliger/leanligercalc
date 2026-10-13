@@ -385,7 +385,7 @@ export function HabitsCard({
             <p
               role="status"
               aria-live="polite"
-              className={cn("min-h-4 text-right text-[11px]", status === "error" ? "text-destructive" : "text-muted-foreground")}
+              className={cn("min-h-4 text-right text-[12px]", status === "error" ? "text-destructive" : "text-muted-foreground")}
             >
               {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : status === "error" ? "Couldn't save — try again" : ""}
             </p>
@@ -567,7 +567,7 @@ function CountRow({
             }}
             className="h-8 pr-14 text-center"
           />
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">
             {def.unit ?? ""}
           </span>
         </div>
@@ -685,7 +685,7 @@ export function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange
                 />
               </div>
             ) : (
-              <p className="text-[11px] text-muted-foreground">Tick box{h.link ? ` · ${LINK_LABEL[h.link]}` : ""}</p>
+              <p className="text-[12px] text-muted-foreground">Tick box{h.link ? ` · ${LINK_LABEL[h.link]}` : ""}</p>
             )}
           </li>
         ))}
@@ -729,7 +729,7 @@ export function HabitEditor({ habits, onChange }: { habits: HabitDef[]; onChange
             Scorecard
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           Adding or removing habits changes the weekly score&apos;s total. Days already logged are kept.
         </p>
       </div>
@@ -868,7 +868,7 @@ export function WeeklyScorecard({
           {/* Phones: name on its own line, the whole Mon–Sun row beneath it, so
               the full week is visible without sideways scrolling. */}
           <div className="space-y-2.5 sm:hidden">
-            <div className="grid grid-cols-[repeat(7,minmax(0,1fr))_2.75rem] text-center text-[10px] font-medium uppercase text-muted-foreground">
+            <div className="grid grid-cols-[repeat(7,minmax(0,1fr))_2.75rem] text-center text-[11px] font-medium uppercase text-muted-foreground">
               {WEEKDAYS.map((d, i) => (
                 <span key={d} className={cn(score.days[i] === today && "text-primary")}>
                   {d[0]}
@@ -896,7 +896,7 @@ export function WeeklyScorecard({
           <div className="relative scrollbar-thin hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[32rem] border-collapse text-sm">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr className="text-[12px] uppercase tracking-wide text-muted-foreground">
                   <th scope="col" className="py-1.5 pr-2 text-left font-medium">Habit</th>
                   {WEEKDAYS.map((d, i) => (
                     <th key={d} scope="col" className={cn("w-9 py-1.5 text-center font-medium", score.days[i] === today && "text-primary")}>
@@ -1005,7 +1005,7 @@ function WeeklyReviewForm({
         <span
           role="status"
           aria-live="polite"
-          className={cn("text-[11px]", status === "error" ? "text-destructive" : "text-muted-foreground")}
+          className={cn("text-[12px]", status === "error" ? "text-destructive" : "text-muted-foreground")}
         >
           {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : status === "error" ? "Couldn't save" : ""}
         </span>

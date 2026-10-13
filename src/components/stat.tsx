@@ -26,7 +26,7 @@ export function Stat({ label, value, sub, icon, emphasis, compact, className }: 
       <div
         className={cn(
           "flex items-center gap-1.5 font-medium uppercase tracking-wide text-muted-foreground",
-          compact ? "text-[11px]" : "text-xs",
+          compact ? "text-[12px]" : "text-xs",
         )}
       >
         {icon}
@@ -42,7 +42,7 @@ export function Stat({ label, value, sub, icon, emphasis, compact, className }: 
         {value}
       </div>
       {sub ? (
-        <div className={cn("text-muted-foreground", compact ? "mt-0.5 text-[11px] leading-snug" : "mt-1 text-xs")}>{sub}</div>
+        <div className={cn("text-muted-foreground", compact ? "mt-0.5 text-[12px] leading-snug" : "mt-1 text-xs")}>{sub}</div>
       ) : null}
     </div>
   );

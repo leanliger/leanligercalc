@@ -236,7 +236,7 @@ export function ExerciseProgress({
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{formatShort(s.date)}</span>
                         {isRecordSession(s, exercise.bodyweight) ? (
-                          <Badge variant="default" className="px-1.5 py-0 text-[10px]">
+                          <Badge variant="default" className="px-1.5 py-0 text-[11px]">
                             <Trophy />
                             PR
                           </Badge>
@@ -263,9 +263,9 @@ export function ExerciseProgress({
 function Tile({ label, value, sub, emphasis }: { label: string; value: string; sub: string; emphasis?: boolean }) {
   return (
     <div className={cn("space-y-1 rounded-lg border p-3", emphasis ? "border-primary/40 bg-primary/5" : "border-border")}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={cn("tabular text-lg font-semibold leading-tight", emphasis && "text-primary")}>{value}</p>
-      <p className="tabular truncate text-[11px] text-muted-foreground">{sub}</p>
+      <p className="tabular truncate text-[12px] text-muted-foreground">{sub}</p>
     </div>
   );
 }
@@ -384,7 +384,7 @@ function ProgressChart({ history, metric, unit }: { history: ExerciseSession[]; 
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-primary/20" />
         Personal record ({prCount}) · values in {mu}
       </p>

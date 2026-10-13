@@ -20,17 +20,21 @@ interface LeaderboardTabProps {
   /** Latest known bodyweight, to pre-fill lift submissions. */
   bodyweightLb: number | null;
   today: string;
+  /** Every badge, earned and not (moved here from Today). */
+  badges: React.ReactNode;
+  /** Open on this board, e.g. Badges from Today's "new badge" banner. */
+  startOn?: Board;
 }
 
-type Board = "streaks" | "lifts" | "challenges";
+export type Board = "streaks" | "lifts" | "challenges" | "badges";
 
 /** The Ranks tab (id "leaderboard"): habit streaks, or verified lifts. */
-export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today }: LeaderboardTabProps) {
-  const [board, setBoard] = React.useState<Board>("streaks");
+export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today, badges, startOn }: LeaderboardTabProps) {
+  const [board, setBoard] = React.useState<Board>(startOn ?? "streaks");
   // Challenges the member joined; opening Ranks shows them first when there are any.
   const [challenges, setChallenges] = React.useState<ChallengeStandings[] | null>(null);
   const [challengeError, setChallengeError] = React.useState<string | null>(null);
-  const picked = React.useRef(false);
+  const picked = React.useRef(startOn !== undefined);
   React.useEffect(() => {
     let live = true;
     fetch("/api/challenges", { credentials: "same-origin", headers: { accept: "application/json" } })
@@ -59,10 +63,13 @@ export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, t
           { value: "streaks", label: "Habit streaks" },
           { value: "lifts", label: "Lifts" },
           { value: "challenges", label: "Challenges" },
+          { value: "badges", label: "Badges" },
         ]}
-        className="max-w-md"
+        className="max-w-lg"
       />
-      {board === "challenges" ? (
+      {board === "badges" ? (
+        <div className="lg:max-w-xl">{badges}</div>
+      ) : board === "challenges" ? (
         <div className="space-y-5 lg:max-w-2xl">
           {challenges === null ? (
             <Card>
@@ -92,7 +99,7 @@ export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, t
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <ChallengeBoard s={c} today={today} />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     Ranked by workouts from the challenge program finished between the start and end dates. Finish each
                     workout in Training for it to count.
                   </p>

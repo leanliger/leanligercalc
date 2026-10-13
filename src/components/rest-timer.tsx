@@ -196,7 +196,7 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
             {done ? <BellRing className="h-5 w-5" /> : <Timer className="h-5 w-5" />}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[11px] text-muted-foreground" aria-live="polite">
+            <p className="truncate text-[12px] text-muted-foreground" aria-live="polite">
               {done ? "Rest over — next set" : `Rest · ${timer.label}`}
             </p>
             <p className={cn("tabular text-2xl font-semibold leading-tight", done && "text-success")}>{formatRest(remaining)}</p>

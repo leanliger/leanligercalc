@@ -76,7 +76,7 @@ export function RemindersSettings({ prefs, onChange, status }: RemindersSettings
         {anyOn ? <BellRing className="h-3.5 w-3.5 text-primary" aria-hidden /> : <Bell className="h-3.5 w-3.5" aria-hidden />}
         Reminders
       </p>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[12px] leading-relaxed text-muted-foreground">
         {available
           ? "Whop notifications at the times you choose. Fasting reminders are on Food → Fasting."
           : UNAVAILABLE[status.availability as Exclude<NotificationStatus["availability"], "ok">]}

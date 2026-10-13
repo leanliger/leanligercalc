@@ -177,7 +177,7 @@ export function MealPhotoView({
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
                 {estimate.name || "Your meal"}
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 {estimate.confidence === "high" ? "Fairly confident" : estimate.confidence === "medium" ? "Rough estimate" : "Low confidence"}
                 {estimate.note ? `: ${estimate.note}` : "."}
               </p>
@@ -211,7 +211,7 @@ export function MealPhotoView({
                     ] as const
                   ).map(([k, label]) => (
                     <label key={k} className="space-y-0.5">
-                      <span className="block text-center text-[10px] text-muted-foreground">{label}</span>
+                      <span className="block text-center text-[11px] text-muted-foreground">{label}</span>
                       <Input
                         type="number"
                         inputMode="numeric"
@@ -239,7 +239,7 @@ export function MealPhotoView({
               Another photo
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Photo estimates can be off by 20–30%, mostly on portion size and hidden oil. Fix the grams if you know them.
             {left !== null ? ` ${left} photo estimate${left === 1 ? "" : "s"} left today.` : ""}
           </p>

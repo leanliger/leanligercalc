@@ -27,6 +27,9 @@ import type { CheckinSection } from "@/components/checkin-tab";
 import type { NutritionSection } from "@/components/macros-tab";
 import { TodayTab, type TodayDestination } from "@/components/today-tab";
 import { LazyPanel } from "@/components/lazy-panel";
+import { BadgesCard } from "@/components/badges-card";
+import { computeBadges } from "@/lib/badges";
+import type { Board as RanksBoard } from "@/components/leaderboard-tab";
 import type { NotificationStatus } from "@/components/fasting-card";
 import type { ProgressAnalysis, Recommendation } from "@/lib/adaptive";
 import {
@@ -673,6 +676,29 @@ export function AppShell() {
 
   // Bumped to open Settings (the first-week checklist's "Turn on reminders").
   const [settingsRequest, setSettingsRequest] = React.useState(0);
+
+  // Badges live on Ranks → Badges; worked out only while that tab is open.
+  const [ranksStart, setRanksStart] = React.useState<RanksBoard | null>(null);
+  React.useEffect(() => {
+    if (state.activeTab !== "leaderboard") setRanksStart(null);
+  }, [state.activeTab]);
+  const badges = React.useMemo(
+    () =>
+      state.activeTab === "leaderboard" && today
+        ? computeBadges({
+            today,
+            unit: state.unit,
+            habits: state.tracking.habits,
+            habitLogs,
+            weighIns,
+            foodLogs,
+            workouts,
+            measurements,
+            pauses: state.tracking.pauses,
+          })
+        : null,
+    [state.activeTab, today, state.unit, state.tracking.habits, habitLogs, weighIns, foodLogs, workouts, measurements, state.tracking.pauses],
+  );
 
   const openFromToday = React.useCallback(
     (dest: TodayDestination) => {
@@ -1478,7 +1504,7 @@ export function AppShell() {
                   className={cn(
                     "scrollbar-thin sm:relative sm:max-w-full sm:gap-1 sm:overflow-x-auto sm:[&>button]:px-3 md:[&>button]:px-4",
                     "max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-40 max-sm:grid max-sm:grid-cols-6 max-sm:gap-0 max-sm:rounded-none max-sm:border-x-0 max-sm:border-b-0 max-sm:bg-background/95 max-sm:px-1 max-sm:pb-[max(0.25rem,env(safe-area-inset-bottom))] max-sm:pt-1 max-sm:backdrop-blur",
-                    "max-sm:[&>button]:h-14 max-sm:[&>button]:flex-col max-sm:[&>button]:gap-1 max-sm:[&>button]:px-0 max-sm:[&>button]:text-[11px] max-sm:[&_svg]:size-5",
+                    "max-sm:[&>button]:h-14 max-sm:[&>button]:flex-col max-sm:[&>button]:gap-1 max-sm:[&>button]:px-0 max-sm:[&>button]:text-[12px] max-sm:[&_svg]:size-5",
                     "max-sm:[&>button[data-state=active]]:bg-primary/10 max-sm:[&>button[data-state=active]]:text-primary max-sm:[&>button[data-state=active]]:shadow-none",
                     typing && "max-sm:hidden",
                   )}
@@ -1575,6 +1601,10 @@ export function AppShell() {
                   onUseAssignment={useAssignment}
                   onDeclineAssignment={declineAssignment}
                   onOpen={openFromToday}
+                  onOpenBadges={() => {
+                    setRanksStart("badges");
+                    setTab("leaderboard");
+                  }}
                 />
               </TabsContent>
 
@@ -1683,6 +1713,8 @@ export function AppShell() {
                   unit={state.unit}
                   bodyweightLb={weighIns[weighIns.length - 1]?.weightLb ?? state.profile.weight}
                   today={today}
+                  startOn={ranksStart ?? undefined}
+                  badges={badges ? <BadgesCard badges={badges} /> : null}
                 />
               </TabsContent>
 
@@ -1723,18 +1755,27 @@ export function AppShell() {
 
         <footer className="border-t border-border py-6">
           <div className="container space-y-2 text-xs leading-relaxed text-muted-foreground">
-            <p>
-              Projections are models, not promises. Real weight loss is noisy — water,
-              glycogen, sodium, and menstrual cycles all move the scale more in a day than
-              fat does in a week. Track weekly averages and adjust from actual trend data
-              rather than assuming the curve.
-            </p>
-            <p>
-              This tool is for general fitness planning and is not medical or nutritional
-              advice. Talk to a physician or registered dietitian before starting an
-              aggressive diet, especially if you have a history of disordered eating or any
-              medical condition.
-            </p>
+            {/* One line by default; the full wording is a tap away. */}
+            <details className="group">
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                Estimates, not promises, and not medical advice.{" "}
+                <span className="font-medium text-foreground underline underline-offset-2 group-open:hidden">Read more</span>
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p>
+                  Projections are models, not promises. Real weight loss is noisy — water,
+                  glycogen, sodium, and menstrual cycles all move the scale more in a day than
+                  fat does in a week. Track weekly averages and adjust from actual trend data
+                  rather than assuming the curve.
+                </p>
+                <p>
+                  This tool is for general fitness planning and is not medical or nutritional
+                  advice. Talk to a physician or registered dietitian before starting an
+                  aggressive diet, especially if you have a history of disordered eating or any
+                  medical condition.
+                </p>
+              </div>
+            </details>
             <p>
               <a
                 href="/privacy/"

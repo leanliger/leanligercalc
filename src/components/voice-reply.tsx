@@ -33,7 +33,7 @@ export function VoicePlayer({ src, seconds, label }: { src: string; seconds: num
   }, [src]);
   return (
     <div className="space-y-1">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-primary">
+      <p className="flex items-center gap-1.5 text-[12px] font-medium text-primary">
         <Mic className="h-3 w-3" />
         {label} · {Math.round(seconds)} s
       </p>
@@ -229,7 +229,7 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
           </Button>
         </div>
       )}
-      {error ? <p className={cn("text-[11px] text-destructive")}>{error}</p> : null}
+      {error ? <p className={cn("text-[12px] text-destructive")}>{error}</p> : null}
     </div>
   );
 }

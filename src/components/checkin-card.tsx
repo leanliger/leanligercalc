@@ -162,7 +162,7 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
               />
               {preview ? (
                 <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                     Added for you · {formatShort(preview.from)} – {formatShort(preview.to)}
                   </p>
                   <CheckinStatsGrid stats={preview} unit={unit} />
@@ -183,7 +183,7 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                   </Button>
                 ) : null}
               </div>
-              {!complete ? <p className="text-[11px] text-muted-foreground">Rate all five to send it.</p> : null}
+              {!complete ? <p className="text-[12px] text-muted-foreground">Rate all five to send it.</p> : null}
             </div>
           ) : null}
 
@@ -202,12 +202,12 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                     >
                       Week of {formatShort(c.weekStart)}
                       {c.reply || c.replyAudio ? (
-                        <span className="flex items-center gap-1 text-[11px] text-primary">
+                        <span className="flex items-center gap-1 text-[12px] text-primary">
                           <MessageSquare className="h-3 w-3" />
                           Coach replied
                         </span>
                       ) : (
-                        <span className="text-[11px] text-muted-foreground">No reply</span>
+                        <span className="text-[12px] text-muted-foreground">No reply</span>
                       )}
                     </button>
                     {open ? (
@@ -232,7 +232,7 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
 function CoachReply({ c }: { c: Checkin }) {
   return (
     <div className="space-y-2 rounded-md bg-primary/5 p-2.5">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-primary">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-primary">
         Your coach · {formatShort((c.repliedAt ?? "").slice(0, 10))}
       </p>
       {c.replyAudio ? <VoicePlayer src={`/api/checkins/voice/${c.weekStart}`} seconds={c.replyAudio.seconds} label="Voice reply" /> : null}
@@ -246,7 +246,7 @@ function RatingRow({ label, low, high, value, onChange }: { label: string; low: 
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between text-sm">
         <span className="font-medium">{label}</span>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           1 {low} · 5 {high}
         </span>
       </div>

@@ -84,7 +84,7 @@ export function FirstWeekCard({ done, onGo }: { done: Record<FirstWeekStep, bool
                     {s.title}
                     <span className="sr-only">{isDone ? " (done)" : " (to do)"}</span>
                   </span>
-                  {isNext ? <span className="block text-[11px] text-muted-foreground">{s.how}</span> : null}
+                  {isNext ? <span className="block text-[12px] text-muted-foreground">{s.how}</span> : null}
                 </span>
                 {!isDone ? (
                   <Button variant={isNext ? "default" : "ghost"} size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => onGo(s.id)}>

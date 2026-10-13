@@ -35,7 +35,7 @@ export interface CoachAccessProps {
 
 function WhatsShared({ className }: { className?: string }) {
   return (
-    <ul className={cn("space-y-0.5 text-[11px] text-muted-foreground", className)}>
+    <ul className={cn("space-y-0.5 text-[12px] text-muted-foreground", className)}>
       {SHARED_ITEMS.map((item) => (
         <li key={item} className="flex gap-1.5">
           <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
@@ -67,13 +67,13 @@ export function CoachAccessSettings({ available, sharing, error, onChange }: Coa
         Coach access
       </p>
       {!available ? (
-        <p className="text-[11px] leading-relaxed text-muted-foreground">Available when you open this app from inside Whop.</p>
+        <p className="text-[12px] leading-relaxed text-muted-foreground">Available when you open this app from inside Whop.</p>
       ) : (
         <>
           {sharing?.requestedAt && !shared ? (
             <div className="space-y-2 rounded-md border border-primary/50 bg-primary/10 px-3 py-2.5">
               <p className="text-sm font-medium">Your coach asked to see your progress</p>
-              <p className="text-[11px] text-muted-foreground">Asked {formatShort(sharing.requestedAt.slice(0, 10))}.</p>
+              <p className="text-[12px] text-muted-foreground">Asked {formatShort(sharing.requestedAt.slice(0, 10))}.</p>
               <div className="flex gap-2">
                 <Button size="sm" className="flex-1" disabled={busy} onClick={() => void set(true)}>
                   Share
@@ -91,13 +91,13 @@ export function CoachAccessSettings({ available, sharing, error, onChange }: Coa
               </label>
               <Switch id={id} checked={shared} disabled={busy || sharing === null} onCheckedChange={(v) => void set(v)} />
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               {shared
                 ? `Shared${sharing?.sharedAt ? ` since ${formatShort(sharing.sharedAt.slice(0, 10))}` : ""}. Your coach can see:`
                 : "Off: your coach sees only your name. Turn it on and your coach can see:"}
             </p>
             <WhatsShared />
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               Progress photos have their own switch. Turn this off any time and your coach loses access straight away.
             </p>
           </div>

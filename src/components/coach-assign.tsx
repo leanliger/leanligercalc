@@ -352,7 +352,7 @@ function NewAssignment({
                         >
                           <span className="block truncate text-sm font-semibold">{sp.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">{sp.program.days.map((d) => d.name).join(" · ")}</span>
-                          <span className="block text-[11px] text-muted-foreground">
+                          <span className="block text-[12px] text-muted-foreground">
                             {sp.weekdays ? sp.weekdays.map((d) => WEEKDAY_SHORT[d]).join(" · ") : `${sp.program.days.length} days`}
                             {sp.weeks ? ` · ${sp.weeks} weeks` : ""} · saved {formatShort(sp.updatedAt.slice(0, 10))}
                           </span>
@@ -412,7 +412,7 @@ function NewAssignment({
             <div className="rounded-lg border border-border p-3">
               <HabitEditor habits={habits} onChange={setHabits} />
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Members who use it switch to exactly these habits. Their past ticks and streaks stay.
             </p>
           </div>
@@ -580,7 +580,7 @@ function NewAssignment({
             Send {kind === "program" ? "program" : "habits"}
           </Button>
           {!ready ? (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               {kind === "program" && !programReady
                 ? "Pick a template or add at least one exercise."
                 : kind === "program" && !scheduleReady
@@ -646,7 +646,7 @@ function MemberPicker({
           ))
         )}
       </ul>
-      {!single ? <p className="tabular text-[11px] text-muted-foreground">{selected.length} selected</p> : null}
+      {!single ? <p className="tabular text-[12px] text-muted-foreground">{selected.length} selected</p> : null}
     </div>
   );
 }
@@ -673,7 +673,7 @@ function SentList({ companyId, assignments, onChanged }: { companyId: string; as
                   {a.kind === "program" ? <Dumbbell className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> : <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{a.title}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">
+                    <p className="truncate text-[12px] text-muted-foreground">
                       {a.audience} · {formatShort(a.createdAt.slice(0, 10))}
                     </p>
                   </div>

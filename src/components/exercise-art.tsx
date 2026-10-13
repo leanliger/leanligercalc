@@ -43,7 +43,7 @@ export function ExerciseDrawings({ exerciseId, name }: { exerciseId: string; nam
           </div>
         ))}
       </div>
-      <figcaption className="text-[10px] leading-snug text-muted-foreground">
+      <figcaption className="text-[11px] leading-snug text-muted-foreground">
         Drawings:{" "}
         <a href={ART_CREDIT.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
           {ART_CREDIT.title}

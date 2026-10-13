@@ -231,7 +231,7 @@ function ScheduledProgram({
             <div role="grid" aria-label={`${formatMonthYear(month)} training plan`} className="space-y-1">
               <div role="row" className="grid grid-cols-7 gap-1">
                 {WEEKDAY_SHORT.map((label, i) => (
-                  <div key={label} role="columnheader" aria-label={label} className="pb-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div key={label} role="columnheader" aria-label={label} className="pb-1 text-center text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                     <span className="sm:hidden">{WEEKDAY_LETTER[i]}</span>
                     <span className="hidden sm:inline">{label}</span>
                   </div>
@@ -250,7 +250,7 @@ function ScheduledProgram({
                           key={iso}
                           role="gridcell"
                           className={cn(
-                            "min-h-14 rounded-md border border-transparent p-1 text-[11px] text-muted-foreground/50 sm:min-h-20 sm:p-1.5",
+                            "min-h-14 rounded-md border border-transparent p-1 text-[12px] text-muted-foreground/50 sm:min-h-20 sm:p-1.5",
                             iso === today && "border-border text-foreground",
                           )}
                         >
@@ -272,11 +272,11 @@ function ScheduledProgram({
                             iso === selected && "outline outline-2 outline-offset-1 outline-foreground/60",
                           )}
                         >
-                          <span className="flex w-full items-center justify-between text-[11px] font-semibold">
+                          <span className="flex w-full items-center justify-between text-[12px] font-semibold">
                             {n}
                             {s.status === "done" ? (s.moved ? <ArrowLeftRight className="h-3 w-3" /> : <Check className="h-3 w-3" />) : s.status === "missed" ? <X className="h-3 w-3" /> : null}
                           </span>
-                          <span className="line-clamp-2 text-[10px] font-medium leading-tight sm:text-[11px]">{s.day.name}</span>
+                          <span className="line-clamp-2 text-[11px] font-medium leading-tight sm:text-[12px]">{s.day.name}</span>
                         </button>
                       </div>
                     );
@@ -284,7 +284,7 @@ function ScheduledProgram({
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-success/50 bg-success/15" /> Done</span>
               <span className="flex items-center gap-1"><ArrowLeftRight className="h-3 w-3" /> Done on another day</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-primary bg-primary/15" /> Today</span>
@@ -395,7 +395,7 @@ function SessionDetail({
   return (
     <Card>
       <CardHeader className="space-y-1 pb-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
           {formatLong(s.date)} · workout {s.index + 1}
         </p>
         <CardTitle className="flex flex-wrap items-center gap-2">

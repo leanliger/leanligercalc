@@ -150,7 +150,7 @@ export function WaterCard({ today, unit, habits, habitLogs, onSaveHabits }: Wate
                 )}
               >
                 {full ? <Check className="h-5 w-5" /> : <GlassWater className="h-5 w-5 opacity-60" />}
-                <span className="tabular text-[11px] font-medium">{i + 1}</span>
+                <span className="tabular text-[12px] font-medium">{i + 1}</span>
               </button>
             );
           })}
@@ -180,7 +180,7 @@ export function WaterCard({ today, unit, habits, habitLogs, onSaveHabits }: Wate
         </div>
 
         <div className="space-y-1.5 border-t border-border pt-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
             Week of {formatShort(weekStart)}
           </p>
           <ul className="grid grid-cols-7 gap-1.5">
@@ -192,10 +192,10 @@ export function WaterCard({ today, unit, habits, habitLogs, onSaveHabits }: Wate
                     style={{ height: `${Math.min(100, (d.bottles / WATER_GOAL_BOTTLES) * 100)}%` }}
                   />
                 </div>
-                <span className={cn("text-[10px]", d.date === date ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                <span className={cn("text-[11px]", d.date === date ? "font-semibold text-foreground" : "text-muted-foreground")}>
                   {WEEKDAYS[i]}
                 </span>
-                <span className="tabular text-[10px] text-muted-foreground">{d.future ? "" : d.bottles}</span>
+                <span className="tabular text-[11px] text-muted-foreground">{d.future ? "" : d.bottles}</span>
               </li>
             ))}
           </ul>

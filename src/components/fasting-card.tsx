@@ -350,7 +350,7 @@ function TimerView({ meals }: { meals: MealTime[] }) {
             <span role="timer" aria-label={`${formatDuration(nextIn)} until ${nextText}`} className="tabular text-2xl font-semibold leading-none">
               {formatCountdown(nextIn)}
             </span>
-            <span className="mt-1.5 text-[11px] leading-tight text-muted-foreground">
+            <span className="mt-1.5 text-[12px] leading-tight text-muted-foreground">
               {status.phase === "fasting" ? "until you eat" : "to next meal"}
             </span>
           </Ring>

@@ -280,7 +280,7 @@ export function FatLossCalculator({
               aria-label="Weekly fat loss rate as a percentage of body weight"
             />
 
-            <div className="flex justify-between text-[11px] text-muted-foreground">
+            <div className="flex justify-between text-[12px] text-muted-foreground">
               <span>0.25% · slowest</span>
               <span>1.00% · ceiling</span>
             </div>
@@ -295,11 +295,11 @@ export function FatLossCalculator({
                   className="flex-col gap-0 py-1.5 h-auto"
                 >
                   <span>{preset.label}</span>
-                  <span className="text-[10px] font-normal opacity-80">
+                  <span className="text-[11px] font-normal opacity-80">
                     {(preset.rate * 100).toFixed(2)}%
                   </span>
                   {presetDeficits[preset.value] !== null ? (
-                    <span className="tabular text-[10px] font-normal opacity-80">
+                    <span className="tabular text-[11px] font-normal opacity-80">
                       −{presetDeficits[preset.value]!.toLocaleString()} kcal/day
                     </span>
                   ) : null}
@@ -419,7 +419,7 @@ export function FatLossCalculator({
                     <dt>Maintenance</dt>
                     <dd>{Math.round(maintenance.total).toLocaleString()} kcal</dd>
                   </div>
-                  <p className="pt-1 text-[11px] text-muted-foreground">
+                  <p className="pt-1 text-[12px] text-muted-foreground">
                     Every 1,000 extra daily steps burns about {Math.round(kcalPerThousandSteps(profile.weight))} kcal.
                   </p>
                 </dl>
@@ -443,7 +443,7 @@ export function FatLossCalculator({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
                   One guess for steps and training together. Switch to <strong>Steps and training</strong> for an
                   estimate built from your actual day — your targets will update when you do.
                 </p>
