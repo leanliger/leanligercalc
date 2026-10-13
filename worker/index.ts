@@ -43,6 +43,7 @@
  *   GET    /api/coach/programs?company=…      coaches: saved programs; POST to save, PUT/DELETE /api/coach/programs/:id
  *   GET    /api/coach/member-training?company=…&member=…  coaches: a member's programs; PUT to save an edit
  *   GET    /api/coach/member-workouts?company=…&member=…  coaches: a member's workouts (newest 500)
+ *   GET    /api/coach/member-physique?company=…&member=…  coaches: a member's latest physique analysis (photo sharing only)
  *   …      notes, check-ins and coach-set macros: see coaching.ts
  *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
  *   GET    /api/assignments                   members: assignments waiting for me
@@ -84,6 +85,7 @@
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { receiveSteps, stepSyncKey } from "./steps-sync";
+import { coachMemberPhysique } from "./physique-focus";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import { analyzePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
@@ -649,6 +651,12 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       return result.ok ? json(result.body) : error(result.status, result.error);
     }
     return error(405, "Method not allowed.");
+  }
+
+  if (path === "/api/coach/member-physique") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const result = await coachMemberPhysique(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
+    return result.ok ? json(result.body) : error(result.status, result.error);
   }
 
   /* ---------------------- notes, check-ins, macros ---------------------- */

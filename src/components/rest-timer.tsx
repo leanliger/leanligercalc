@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { BellRing, Minus, Plus, SkipForward, Timer } from "lucide-react";
+import { BellRing, Minimize2, Minus, Plus, SkipForward, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useGymMode } from "@/components/gym-mode";
 import { REST_PRESETS, formatRest } from "@/lib/training";
 import { cn } from "@/lib/utils";
 
@@ -166,10 +167,16 @@ export function useRestTimer(): RestTimer {
   return { timer, now, start, adjust, setLength, skip };
 }
 
-/** The bar pinned to the bottom of the screen while resting. */
+/** The bar pinned to the bottom of the screen while resting (full screen in gym mode). */
 export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (seconds: number) => void }) {
   const { timer, now } = rest;
+  const [gym] = useGymMode();
+  // Gym mode's full-screen timer can be shrunk to the bar for this one rest.
+  const [shrunkFor, setShrunkFor] = React.useState<number | null>(null);
   if (!timer) return null;
+  if (gym && shrunkFor !== timer.startedAt) {
+    return <GymRest rest={rest} onPreset={onPreset} onShrink={() => setShrunkFor(timer.startedAt)} />;
+  }
   const length = Math.round((timer.endsAt - timer.startedAt) / 1000);
   const remaining = Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
   const done = remaining === 0;
@@ -241,6 +248,90 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Gym mode: the rest takes the whole screen. A countdown big enough to read
+ * from the bench, and buttons sized for a chalky thumb. "Shrink" drops back to
+ * the bar for this rest.
+ */
+function GymRest({ rest, onPreset, onShrink }: { rest: RestTimer; onPreset?: (seconds: number) => void; onShrink: () => void }) {
+  const { timer, now } = rest;
+  if (!timer) return null;
+  const length = Math.round((timer.endsAt - timer.startedAt) / 1000);
+  const remaining = Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
+  const done = remaining === 0;
+  const pct = timer.endsAt > timer.startedAt ? Math.min(100, ((now - timer.startedAt) / (timer.endsAt - timer.startedAt)) * 100) : 100;
+  return (
+    <div
+      role="timer"
+      aria-label="Rest timer"
+      className="fixed inset-0 z-50 flex flex-col bg-background px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-base text-muted-foreground" aria-live="polite">
+          {done ? "Rest over" : `Rest · ${timer.label}`}
+        </p>
+        <Button variant="ghost" size="sm" className="h-11 shrink-0 px-3" onClick={onShrink}>
+          <Minimize2 />
+          Shrink
+        </Button>
+      </div>
+
+      <div className="flex flex-1 flex-col items-center justify-center gap-6">
+        <p
+          className={cn(
+            "tabular font-bold leading-none tracking-tight",
+            "text-[clamp(6rem,30vw,12rem)]",
+            done ? "text-success" : "text-foreground",
+          )}
+        >
+          {formatRest(remaining)}
+        </p>
+        <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted" aria-hidden>
+          <div className={cn("h-full rounded-full transition-[width] duration-200", done ? "bg-success" : "bg-primary")} style={{ width: `${pct}%` }} />
+        </div>
+        {!done ? (
+          <div className="flex w-full max-w-md gap-2" role="group" aria-label="Rest length">
+            {REST_PRESETS.map((sec) => (
+              <Button
+                key={sec}
+                variant={length === sec ? "secondary" : "outline"}
+                className={cn("h-12 flex-1 px-1 text-base tabular", length === sec && "ring-2 ring-primary/50")}
+                aria-pressed={length === sec}
+                onClick={() => {
+                  rest.setLength(sec);
+                  onPreset?.(sec);
+                }}
+              >
+                {formatRest(sec)}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {done ? (
+        <Button className="h-20 w-full text-2xl font-semibold" onClick={rest.skip}>
+          <BellRing className="!h-7 !w-7" />
+          Next set
+        </Button>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          <Button variant="outline" className="h-20 text-2xl font-semibold" onClick={() => rest.adjust(-15)} aria-label="15 seconds less">
+            −15
+          </Button>
+          <Button variant="outline" className="h-20 text-2xl font-semibold" onClick={() => rest.adjust(15)} aria-label="15 seconds more">
+            +15
+          </Button>
+          <Button className="h-20 text-xl font-semibold" onClick={rest.skip}>
+            <SkipForward className="!h-6 !w-6" />
+            Skip
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

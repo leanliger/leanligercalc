@@ -6,6 +6,8 @@ import { BarPicker, LoadTypePicker, PlateResult, useBar, type LoadType } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { useGymMode } from "@/components/gym-mode";
 import { ConfirmButton } from "@/components/confirm-button";
 import { ExercisePicker } from "@/components/exercise-library";
 import { ExerciseThumb } from "@/components/exercise-art";
@@ -49,6 +51,8 @@ import { fromLb, toLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 const ROW_GRID = "grid grid-cols-[1.75rem_minmax(0,1fr)_4.5rem_3.75rem_2.5rem] items-center gap-1.5";
+/** Gym mode: thumb-sized boxes and a big done button; "Previous" is left out (it's in "Last time" above). */
+const ROW_GRID_GYM = "grid grid-cols-[1.75rem_minmax(0,1.3fr)_minmax(0,1fr)_4.5rem] items-center gap-2";
 
 function useNow(intervalMs: number, active: boolean): number {
   const [now, setNow] = React.useState(() => Date.now());
@@ -61,18 +65,28 @@ function useNow(intervalMs: number, active: boolean): number {
 }
 
 /** Keep the screen awake during a workout, where the browser allows it. */
-function useWakeLock(active: boolean): void {
+/** Whether the screen is being kept on: "on", "blocked" (refused, e.g. inside Whop's frame) or "unsupported". */
+type WakeLockStatus = "idle" | "on" | "blocked" | "unsupported";
+
+function useWakeLock(active: boolean): WakeLockStatus {
+  const [status, setStatus] = React.useState<WakeLockStatus>("idle");
   React.useEffect(() => {
-    if (!active || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    if (!active) return setStatus("idle");
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return setStatus("unsupported");
     let lock: WakeLockSentinel | null = null;
     let stopped = false;
     const request = async () => {
       try {
         const next = await navigator.wakeLock.request("screen");
         if (stopped) void next.release();
-        else lock = next;
+        else {
+          lock = next;
+          setStatus("on");
+          next.addEventListener?.("release", () => !stopped && setStatus("idle"));
+        }
       } catch {
-        /* not allowed here (e.g. inside an iframe without permission) */
+        // Not allowed here (e.g. inside an iframe without permission).
+        if (!stopped) setStatus("blocked");
       }
     };
     const onVisible = () => {
@@ -86,6 +100,7 @@ function useWakeLock(active: boolean): void {
       void lock?.release().catch(() => {});
     };
   }, [active]);
+  return status;
 }
 
 export interface WorkoutLoggerProps {
@@ -129,7 +144,9 @@ export function WorkoutLogger({
 }: WorkoutLoggerProps) {
   const live = mode === "live";
   const now = useNow(15_000, live);
-  useWakeLock(live);
+  const wake = useWakeLock(live);
+  const [gymOn, setGym] = useGymMode();
+  const gym = live && gymOn;
   const [picking, setPicking] = React.useState(false);
   const [finishError, setFinishError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -197,11 +214,28 @@ export function WorkoutLogger({
                 {summary.volume > 0 ? " lifted" : ""}
               </p>
             </div>
-            <Button onClick={finish} disabled={busy} className="shrink-0">
+            <Button onClick={finish} disabled={busy} className={cn("shrink-0", gym && "h-12 px-5 text-base")}>
               {live ? <Flag /> : <Check />}
               {live ? "Finish" : "Done"}
             </Button>
           </div>
+          {live ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border px-3 py-2">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Switch checked={gymOn} onCheckedChange={setGym} aria-label="Gym mode" />
+                Gym mode
+              </label>
+              <span className="text-xs text-muted-foreground">
+                {!gymOn
+                  ? "Big buttons and a full-screen rest timer, for chalky hands."
+                  : wake === "on"
+                    ? "Screen stays on while you train."
+                    : wake === "idle"
+                      ? "Keeping your screen on…"
+                    : "Your phone may still lock here: set Auto-Lock to Never while you train (iPhone Settings → Display & Brightness)."}
+              </span>
+            </div>
+          ) : null}
           {finishError ? (
             <p role="alert" className="text-xs text-destructive">
               {finishError}
@@ -229,6 +263,7 @@ export function WorkoutLogger({
       {workout.exercises.map((e, i) => (
         <ExerciseBlock
           key={`${e.exerciseId}-${i}`}
+          gym={gym}
           exercise={e}
           index={i}
           count={workout.exercises.length}
@@ -309,6 +344,7 @@ export function WorkoutLogger({
 /* -------------------------------------------------------------------------- */
 
 function ExerciseBlock({
+  gym,
   exercise,
   index,
   count,
@@ -326,6 +362,8 @@ function ExerciseBlock({
   trackRir,
   swap,
 }: {
+  /** Gym mode: bigger everything. */
+  gym: boolean;
   exercise: WorkoutExercise;
   index: number;
   count: number;
@@ -440,9 +478,9 @@ function ExerciseBlock({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-1.5 p-4 pt-1 sm:p-6 sm:pt-1">
-        <div className={cn(ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
+        <div className={cn(gym ? ROW_GRID_GYM : ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
           <span className="text-center">Set</span>
-          <span>Previous</span>
+          {gym ? null : <span>Previous</span>}
           <span className="text-center">{bw ? `+${unit}` : unit}</span>
           <span className="text-center">Reps</span>
           <span className="text-center">Done</span>
@@ -450,6 +488,7 @@ function ExerciseBlock({
         {exercise.sets.map((s, i) => (
           <SetRow
             key={`${i}-${unit}`}
+            gym={gym}
             n={i + 1}
             set={s}
             prev={last[i] ?? null}
@@ -464,14 +503,14 @@ function ExerciseBlock({
           />
         ))}
         <div className="flex items-center gap-1 pt-1">
-          <Button variant="ghost" size="sm" className="h-8 px-2" onClick={addSet} disabled={exercise.sets.length >= MAX_SETS}>
+          <Button variant={gym ? "outline" : "ghost"} size="sm" className={gym ? "h-12 px-4 text-base" : "h-8 px-2"} onClick={addSet} disabled={exercise.sets.length >= MAX_SETS}>
             <Plus />
             Add set
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-muted-foreground"
+            className={cn(gym ? "h-12 px-4 text-base" : "h-8 px-2", "text-muted-foreground")}
             onClick={() => onChange({ ...exercise, sets: exercise.sets.slice(0, -1) })}
             disabled={exercise.sets.length === 0}
           >
@@ -618,6 +657,7 @@ function SwapPicker({ exercise, options, onDone }: { exercise: WorkoutExercise; 
 }
 
 function SetRow({
+  gym,
   n,
   set,
   prev,
@@ -628,6 +668,7 @@ function SetRow({
   onChange,
   onDone,
 }: {
+  gym: boolean;
   n: number;
   set: WorkoutSet;
   prev: DoneSet | null;
@@ -689,8 +730,8 @@ function SetRow({
 
   return (
     <div className={cn("rounded-md transition-colors", set.done && "bg-success/10")}>
-    <div className={cn(ROW_GRID, "px-1 py-1")}>
-      <span className="flex justify-center text-xs font-semibold tabular">
+    <div className={cn(gym ? ROW_GRID_GYM : ROW_GRID, "px-1 py-1")}>
+      <span className={cn("flex justify-center font-semibold tabular", gym ? "text-base" : "text-xs")}>
         {pr ? (
           <span title="Personal record" className="text-primary">
             <Trophy className="h-4 w-4" aria-hidden />
@@ -700,7 +741,7 @@ function SetRow({
           n
         )}
       </span>
-      <span className="tabular truncate text-xs text-muted-foreground">{prev ? formatSet(prev, unit, bodyweight) : "—"}</span>
+      {gym ? null : <span className="tabular truncate text-xs text-muted-foreground">{prev ? formatSet(prev, unit, bodyweight) : "—"}</span>}
       <Input
         value={weight}
         onChange={(e) => changeWeight(e.target.value)}
@@ -708,7 +749,7 @@ function SetRow({
         enterKeyHint="next"
         placeholder={bodyweight ? "0" : unit}
         aria-label={`Set ${n} ${bodyweight ? "added weight" : "weight"} (${unit})`}
-        className="h-9 px-1.5 text-center"
+        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : "h-9")}
       />
       <Input
         ref={repsRef}
@@ -719,7 +760,7 @@ function SetRow({
         placeholder="reps"
         aria-label={`Set ${n} reps`}
         aria-invalid={missing || undefined}
-        className={cn("h-9 px-1.5 text-center", missing && "border-destructive ring-1 ring-destructive")}
+        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : "h-9", missing && "border-destructive ring-1 ring-destructive")}
       />
       <button
         type="button"
@@ -728,12 +769,13 @@ function SetRow({
         aria-label={`Set ${n} done`}
         onClick={toggle}
         className={cn(
-          "flex h-9 w-full items-center justify-center rounded-md border transition-colors",
+          "flex w-full items-center justify-center rounded-md border transition-colors",
+          gym ? "h-14" : "h-9",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
           set.done ? "border-success bg-success text-success-foreground" : "border-border hover:bg-muted/50",
         )}
       >
-        <Check className={cn("h-4 w-4", !set.done && "opacity-30")} />
+        <Check className={cn(gym ? "h-7 w-7" : "h-4 w-4", !set.done && "opacity-30", set.done && "animate-pop")} />
       </button>
     </div>
     {set.done && trackRir ? <RirPicker n={n} value={typeof set.rir === "number" ? set.rir : null} onChange={(rir) => onChange({ ...set, rir })} /> : null}

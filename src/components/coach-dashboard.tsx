@@ -32,6 +32,7 @@ import { PhotoGallery } from "@/components/photos-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
+import { PhysiqueFocusCard } from "@/components/physique-focus-card";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -859,6 +860,8 @@ function MemberDetail({
   onStopped: (sharing: MemberSharing) => void;
 }) {
   const [stopError, setStopError] = React.useState<string | null>(null);
+  // Bumped when the physique focus card sends an edit, so the program card shows it.
+  const [programVersion, setProgramVersion] = React.useState(0);
   const p = m.progress;
   const status = STATUS_LABEL[p?.status ?? (m.hasPlan ? "no-data" : "no-plan")] ?? STATUS_LABEL["no-data"]!;
   const weighIns = [...m.data.weighIns].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -1016,7 +1019,13 @@ function MemberDetail({
       />
 
       {/* ------------------------------ training ------------------------------ */}
-      <MemberProgramCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+      <MemberProgramCard key={programVersion} companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+      <PhysiqueFocusCard
+        companyId={companyId}
+        memberId={m.data.userId}
+        memberName={m.displayName}
+        onSent={() => setProgramVersion((n) => n + 1)}
+      />
       <MemberWorkoutsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
 
       {/* -------------------------------- food -------------------------------- */}
