@@ -14,7 +14,7 @@ export const metadata: Metadata = {
  * changes what is stored or who it's shared with, update this page in the
  * same change — and bump EFFECTIVE_DATE.
  */
-const EFFECTIVE_DATE = "October 7, 2026";
+const EFFECTIVE_DATE = "October 13, 2026";
 const BUSINESS = "Lean Liger Fitness & Coaching";
 const CONTACT_EMAIL = "lean.liger.fitness@gmail.com";
 
@@ -76,6 +76,11 @@ export default function PrivacyPage() {
               one, we store the image with its date and pose (front, side or back). See &ldquo;Progress photos&rdquo;
               below.
             </li>
+            <li>
+              <strong>Physique analyses — only if you run one:</strong> the written breakdown (estimated body fat range,
+              strengths, target areas and plan), its date, and the date of the photos it used. We don&apos;t store a
+              second copy of the photos.
+            </li>
             <li>Calorie adjustments you accept from check-ins.</li>
             <li>Daily habits you tick, any daily step counts you enter, rest days, and your weekly self-audit notes.</li>
             <li>
@@ -121,7 +126,8 @@ export default function PrivacyPage() {
             <strong>What we don&apos;t collect.</strong> No advertising or analytics trackers, no tracking cookies, and no
             contact lists. The barcode scanner uses your camera only while it is open: camera images are read on your
             device to find the barcode and are <strong>never uploaded or stored</strong>. The same applies to photos you
-            take of a barcode.
+            take of a barcode. A meal photo you use for a calorie estimate is sent to Google for that one estimate (see
+            &ldquo;Who else sees it&rdquo;) and is not stored by us.
           </p>
         </Section>
 
@@ -134,8 +140,9 @@ export default function PrivacyPage() {
             <li>
               <strong>Private by default.</strong> Only you can see your photos. Your coach can see them only while you have
               &ldquo;Share my photos with my coach&rdquo; switched on (it starts off), and you can switch it off at any time,
-              which stops access immediately. Photos are never shown to other members, never appear on the leaderboard,
-              and are never sent to any other service.
+              which stops access immediately. Photos are never shown to other members and never appear on the
+              leaderboard. They are never sent to any other service, except Google when you ask for a physique analysis
+              (below).
             </li>
             <li>
               <strong>Stripped before upload.</strong> Your phone shrinks each photo and saves a fresh copy before it&apos;s
@@ -148,6 +155,12 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Photos are only available inside Whop</strong>, and are never stored in your browser.
+            </li>
+            <li>
+              <strong>Physique analysis is optional too.</strong> Only when you tap &ldquo;Analyze my photos&rdquo; (or pick
+              a one-off set) are your front, side and back photos sent to Google&apos;s Gemini service, which writes the
+              breakdown. A one-off set is used for that analysis only and is not added to your photos. We keep the written
+              breakdown so you can read it again; you can remove it with &ldquo;Delete all my data&rdquo;.
             </li>
           </List>
         </Section>
@@ -268,6 +281,12 @@ export default function PrivacyPage() {
               Food Facts receives your IP address.
             </li>
             <li>
+              <strong>Google (Gemini)</strong> reads photos to produce a physique analysis or a meal photo estimate, only
+              when you ask for one. We send the photos and our instructions, nothing that identifies you. Under our paid
+              Gemini plan, Google does not use them to improve its products and keeps them only for a limited time to
+              detect abuse.
+            </li>
+            <li>
               <strong>YouTube</strong> (or the site of a video link you added) opens in a new tab only when you tap
               &ldquo;Watch a demo&rdquo; on an exercise. Nothing is sent to it before you tap.
             </li>
@@ -291,7 +310,7 @@ export default function PrivacyPage() {
             <li>
               <strong>Delete everything:</strong> open <strong>Settings</strong> (the gear at the top left) and use{" "}
               <strong>&ldquo;Delete all my data&rdquo;</strong>, then confirm. This permanently removes your weigh-ins, habits, weekly
-              notes, measurements, progress photos, food logs, saved foods, workouts, plan and training programs, notification
+              notes, measurements, progress photos, physique analyses, food logs, saved foods, workouts, plan and training programs, notification
               settings, leaderboard entry and lift submissions.
             </li>
             <li>

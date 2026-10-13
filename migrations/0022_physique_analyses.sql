@@ -8,7 +8,7 @@
 --
 -- physique_usage caps how many a member can run in one UTC day, counted before
 -- the model is called so retries cannot run up the bill. Same approach as
--- meal_photo_usage (0004_food.sql).
+-- meal_photo_usage (0020_tags_meal_photos.sql).
 
 CREATE TABLE physique_usage (
   user_id TEXT NOT NULL,

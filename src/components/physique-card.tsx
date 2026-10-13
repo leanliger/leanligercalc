@@ -181,7 +181,7 @@ export function PhysiqueCard({ enabled }: { enabled: boolean }) {
         <p className="text-xs text-muted-foreground">
           &quot;Analyze my photos&quot; uses the newest {POSES.map((p) => POSE_LABELS[p].toLowerCase()).join(", ")} photo
           you&apos;ve saved. A one-off set is {POSES.length} photos picked together, in that order, and is never added to
-          your gallery. Photos go to Google for the analysis and are not kept there.
+          your gallery. Photos go to Google for the analysis only; Google doesn't use them to train or improve its products.
         </p>
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

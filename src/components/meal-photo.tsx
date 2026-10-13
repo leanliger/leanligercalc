@@ -9,7 +9,7 @@ import type { MealEstimate, MealEstimateItem } from "@/lib/meal-photo";
 import { cn } from "@/lib/utils";
 
 /**
- * Add food → Photo: photograph a plate, get Claude's estimate of each food
+ * Add food → Photo: photograph a plate, get Gemini's estimate of each food
  * (worker/meal-photo.ts), fix anything that's off, then log them all. The
  * photo is shrunk on the phone before it's sent and isn't kept.
  */

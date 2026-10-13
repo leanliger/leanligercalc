@@ -1125,6 +1125,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_notes WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM member_tags WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM meal_photo_usage WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM physique_analyses WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM physique_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),

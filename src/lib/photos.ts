@@ -5,7 +5,8 @@
  * (which also strips location and other metadata), then kept in private
  * Cloudflare R2 storage. Only the member can see them, and their coach only if
  * the member switches on "Share photos with my coach". They never appear on
- * the leaderboard or go to any other service.
+ * the leaderboard or go to any other service, except Google when the member
+ * asks for a physique analysis (worker/physique.ts).
  *
  * Shared by the browser and the Worker.
  */

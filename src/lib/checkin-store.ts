@@ -38,7 +38,7 @@ export interface SessionInfo {
   reason?: LocalReason;
   /** Cloud mode only: the server can send Whop notifications (API key set). */
   notifications?: boolean;
-  /** Cloud mode only: meal photo estimates are switched on (an Anthropic key is set). */
+  /** Cloud mode only: meal photo estimates are switched on (a Gemini key is set). */
   mealPhotos?: boolean;
   /** Cloud mode only: physique analysis is switched on (a Gemini key is set). */
   physique?: boolean;

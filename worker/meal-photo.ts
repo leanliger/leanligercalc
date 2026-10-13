@@ -1,13 +1,14 @@
 /**
  * Meal photo estimate: POST /api/meal-photo { image, mediaType }
  *
- * A member photographs a plate; Claude (Anthropic's API) looks at it and
- * returns its best guess at the foods, amounts and macros, which the member
- * checks and adjusts before anything is logged. The photo is sent to Anthropic
- * for this one request and is never stored here.
+ * A member photographs a plate; Gemini (Google's API) looks at it and returns
+ * its best guess at the foods, amounts and macros, which the member checks and
+ * adjusts before anything is logged. The photo is sent to Google for this one
+ * request and is never stored here.
  *
- * Needs the ANTHROPIC_API_KEY secret (set in the Cloudflare dashboard). Without
- * it the feature is off and the app hides the Photo button. Each member gets
+ * Needs the GEMINI_API_KEY secret — the same one physique analysis uses
+ * (worker/physique.ts), so both draw on one Gemini credit balance. Without it
+ * the feature is off and the app hides the Photo button. Each member gets
  * MEAL_PHOTO_DAILY_LIMIT estimates a day, to keep the cost predictable.
  */
 
@@ -16,24 +17,24 @@ import { secretValue } from "./secrets";
 
 export interface MealPhotoEnv {
   DB: D1Database;
-  /** Anthropic API key. Secret; the feature is off without it. */
-  ANTHROPIC_API_KEY?: string;
-  /** Optional model override. */
+  /** Google AI Studio key. Secret; the feature is off without it. */
+  GEMINI_API_KEY?: string;
+  /** Optional model override, e.g. when Google retires the default. */
   MEAL_PHOTO_MODEL?: string;
-  /** Override for tests only (a local stand-in for Anthropic's API). */
-  ANTHROPIC_API_BASE?: string;
+  /** Override for tests only (a local stand-in for Google's API). */
+  GEMINI_API_BASE?: string;
 }
 
 export type MealPhotoResult = { ok: true; body: unknown } | { ok: false; status: number; error: string };
 
-const DEFAULT_MODEL = "claude-sonnet-5-5";
+const DEFAULT_MODEL = "gemini-3.8-flash";
 const MAX_IMAGE_CHARS = 450_000; // base64; the app sends ~100–250 KB
 const TIMEOUT_MS = 30_000;
 
-export const mealPhotosOn = (env: MealPhotoEnv) => Boolean(secretValue(env.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY"));
+export const mealPhotosOn = (env: MealPhotoEnv) => Boolean(secretValue(env.GEMINI_API_KEY, "GEMINI_API_KEY"));
 
 export async function estimateMealPhoto(env: MealPhotoEnv, userId: string, raw: unknown): Promise<MealPhotoResult> {
-  const key = secretValue(env.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY");
+  const key = secretValue(env.GEMINI_API_KEY, "GEMINI_API_KEY");
   if (!key) return { ok: false, status: 503, error: "Photo estimates aren't switched on for this app yet." };
   const b = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const image = typeof b.image === "string" ? b.image : "";
@@ -54,32 +55,50 @@ export async function estimateMealPhoto(env: MealPhotoEnv, userId: string, raw: 
     .bind(userId, day)
     .run();
 
+  const model = env.MEAL_PHOTO_MODEL?.trim() || DEFAULT_MODEL;
+  const base = env.GEMINI_API_BASE ?? "https://generativelanguage.googleapis.com";
+
   let text = "";
   try {
-    const res = await fetch(`${env.ANTHROPIC_API_BASE ?? "https://api.anthropic.com"}/v1/messages`, {
+    const res = await fetch(`${base}/v1beta/models/${model}:generateContent`, {
       method: "POST",
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: { "x-goog-api-key": key, "content-type": "application/json" },
       body: JSON.stringify({
-        model: env.MEAL_PHOTO_MODEL?.trim() || DEFAULT_MODEL,
-        max_tokens: 1024,
-        messages: [
+        contents: [
           {
             role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-              { type: "text", text: MEAL_PHOTO_PROMPT },
-            ],
+            parts: [{ inlineData: { mimeType: mediaType, data: image } }, { text: MEAL_PHOTO_PROMPT }],
           },
         ],
+        // JSON mode keeps the reply parseable; the budget leaves room for the
+        // model's reasoning, which counts against it, ahead of the JSON itself.
+        generationConfig: { maxOutputTokens: 2048, responseMimeType: "application/json" },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) {
-      console.error("meal photo estimate failed", { status: res.status, body: (await res.text().catch(() => "")).slice(0, 300) });
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+
+      // 402: the Gemini prepay credit is used up (shared with physique
+      // analysis). Nothing was charged, so give the estimate back.
+      if (res.status === 402) {
+        console.error("meal photo estimate paused: Gemini credit is used up — top up in AI Studio → Billing", { detail });
+        await env.DB.prepare("UPDATE meal_photo_usage SET n = MAX(n - 1, 0) WHERE user_id = ? AND day = ?").bind(userId, day).run();
+        return { ok: false, status: 503, error: "Photo estimates are paused right now — search or quick-add instead, and check back soon." };
+      }
+
+      console.error("meal photo estimate failed", { status: res.status, body: detail });
       return { ok: false, status: 502, error: "The estimate didn't come back. Try again in a moment." };
     }
-    const body = (await res.json()) as { content?: { type: string; text?: string }[] };
-    text = (body.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
+    const body = (await res.json()) as {
+      promptFeedback?: { blockReason?: string };
+      candidates?: { finishReason?: string; content?: { parts?: { text?: string }[] } }[];
+    };
+    if (body.promptFeedback?.blockReason) {
+      console.error("meal photo estimate refused", { blocked: body.promptFeedback.blockReason });
+      return { ok: false, status: 422, error: "That photo couldn't be read. Try another one." };
+    }
+    text = (body.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
   } catch (e) {
     console.error("meal photo estimate error", e instanceof Error ? e.message : String(e));
     return { ok: false, status: 502, error: "The estimate didn't come back. Try again in a moment." };

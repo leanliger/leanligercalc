@@ -1,5 +1,5 @@
 /**
- * Meal photo estimates (worker/meal-photo.ts): what Claude is asked, and the
+ * Meal photo estimates (worker/meal-photo.ts): what Gemini is asked, and the
  * checks on what comes back before the member sees it.
  */
 
