@@ -61,6 +61,6 @@ export function rankEntries(rows: Omit<ChallengeEntry, "rank">[]): ChallengeEntr
 export function challengeMessage(title: string, startDate: string, weeks: number): { title: string; content: string } {
   return {
     title: `Your coach started a challenge: ${title}`,
-    content: `${weeks} week${weeks === 1 ? "" : "s"} from ${startDate}. Open Prep Calculator to join: you get the program and a spot on the leaderboard.`,
+    content: `${weeks} week${weeks === 1 ? "" : "s"} from ${startDate}. Open Lean Stature System to join: you get the program and a spot on the leaderboard.`,
   };
 }

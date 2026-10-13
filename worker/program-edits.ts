@@ -136,7 +136,7 @@ export async function saveMemberProgram(env: SharingEnv, viewerId: string, raw: 
   if (experienceId) {
     const sent = await sendWhop(env, experienceId, c.memberId, {
       title: "Your coach updated your program",
-      content: `Open Prep Calculator to see the changes to ${v.program.name}.`,
+      content: `Open Lean Stature System to see the changes to ${v.program.name}.`,
     });
     notified = sent.ok;
     if (!sent.ok) console.error("program edit notification failed", { status: sent.status, reason: sent.reason });

@@ -140,5 +140,5 @@ export function computeCheckinStats(
 
 /** Whop notification when the coach replies. */
 export function checkinReplyMessage(): { title: string; content: string } {
-  return { title: "Your coach replied to your check-in", content: "Open Prep Calculator → Progress → Check-in to read it." };
+  return { title: "Your coach replied to your check-in", content: "Open Lean Stature System → Progress → Check-in to read it." };
 }

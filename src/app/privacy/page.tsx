@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { Activity } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Prep Calculator",
-  description: "How Prep Calculator by Lean Liger Fitness & Coaching collects, uses, stores and deletes your data.",
+  title: "Privacy Policy — Lean Stature System",
+  description: "How Lean Stature System by Lean Liger Fitness & Coaching collects, uses, stores and deletes your data.",
 };
 
 /**
@@ -41,7 +41,7 @@ export default function PrivacyPage() {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Activity className="h-5 w-5" />
           </span>
-          <span className="text-sm font-semibold sm:text-base">Prep Calculator</span>
+          <span className="text-sm font-semibold sm:text-base">Lean Stature System</span>
         </div>
       </header>
 
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Privacy Policy</h1>
           <p className="text-sm text-muted-foreground">Effective {EFFECTIVE_DATE}</p>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Prep Calculator is provided by {BUSINESS} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) to members of our programs on
+            Lean Stature System is provided by {BUSINESS} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) to members of our programs on
             Whop. This policy explains what information the app collects, why, where it is kept, who it is shared with, and
             how you can delete it. The short version: we only keep what you enter so the app can work for you, we never
             sell it or use it for advertising, and you can delete all of it at any time.
@@ -380,7 +380,7 @@ export default function PrivacyPage() {
 
       <footer className="border-t border-border py-6">
         <p className="container max-w-3xl text-xs text-muted-foreground">
-          © 2026 {BUSINESS}. Prep Calculator provides general fitness planning information and is not medical or
+          © 2026 {BUSINESS}. Lean Stature System provides general fitness planning information and is not medical or
           nutritional advice.
         </p>
       </footer>

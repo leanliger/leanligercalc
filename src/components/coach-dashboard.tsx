@@ -141,7 +141,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
       if (!res.ok || !body) {
         setError(
           res.status === 401
-            ? "Open the coach dashboard from your Whop dashboard (Apps → Prep Calculator) so Whop can confirm it's you."
+            ? "Open the coach dashboard from your Whop dashboard (Apps → Lean Stature System) so Whop can confirm it's you."
             : (body?.error ?? "Couldn't load the dashboard. Try again."),
         );
       } else {
@@ -238,7 +238,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold leading-tight sm:text-base">Coach dashboard</h1>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">Prep Calculator · your members at a glance</p>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">Lean Stature System · your members at a glance</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={() => void load()} disabled={loading} aria-label="Refresh">

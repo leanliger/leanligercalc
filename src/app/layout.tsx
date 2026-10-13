@@ -4,9 +4,9 @@ import "./globals.css";
 import { A11Y_SCRIPT } from "@/lib/accessibility";
 
 export const metadata: Metadata = {
-  title: "Prep Calculator — Fat Loss Timeline & Carb Cycling",
+  title: "Lean Stature System",
   description:
-    "Reverse-engineer contest prep duration from a safe weekly fat loss rate, then build a carb cycling plan whose weekly totals average out exactly.",
+    "Your fat loss plan, food log, training and daily non-negotiables in one place, with your coach alongside.",
 };
 
 export const viewport: Viewport = {

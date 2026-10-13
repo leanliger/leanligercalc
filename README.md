@@ -1,4 +1,6 @@
-# Prep Calculator
+# Lean Stature System
+
+_Formerly Prep Calculator. The Worker, database and repository keep the old `leanligercalc` / `prep-calculator` names, so URLs and data are unchanged._
 
 Five integrated tools for contest prep and body recomposition planning, plus a **Today** home screen that pulls them together:
 

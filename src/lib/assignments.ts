@@ -157,11 +157,11 @@ export function assignmentMessage(kind: AssignmentKind, title: string): { title:
   return kind === "program"
     ? {
         title: `Your coach sent you a program: ${title}`,
-        content: "Open Prep Calculator to add it to your training. It becomes your active program; your own programs stay.",
+        content: "Open Lean Stature System to add it to your training. It becomes your active program; your own programs stay.",
       }
     : {
         title: `Your coach set new daily habits: ${title}`,
-        content: "Open Prep Calculator to switch to them. Your past ticks and streaks stay.",
+        content: "Open Lean Stature System to switch to them. Your past ticks and streaks stay.",
       };
 }
 

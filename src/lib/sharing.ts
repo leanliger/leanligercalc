@@ -83,6 +83,6 @@ export function requestMessage(): { title: string; content: string } {
   return {
     title: "Your coach asked to see your progress",
     content:
-      "Open Prep Calculator to share your weigh-ins, habits and food totals with your coach, or choose Not now. You can turn it off any time in Settings.",
+      "Open Lean Stature System to share your weigh-ins, habits and food totals with your coach, or choose Not now. You can turn it off any time in Settings.",
   };
 }

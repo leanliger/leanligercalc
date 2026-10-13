@@ -349,7 +349,7 @@ export async function shareReport(env: SharingEnv, viewerId: string, raw: unknow
   if (!exp) return { ok: false, status: 409, error: "They haven't opened the app in your whop yet, so there's nowhere to notify them." };
   const sent = await sendWhop(env, exp, c.memberId, {
     title: "Your coach shared your progress report",
-    content: "See how far you've come: open Prep Calculator → Progress → Check-in → My progress report.",
+    content: "See how far you've come: open Lean Stature System → Progress → Check-in → My progress report.",
   });
   if (!sent.ok) return { ok: false, status: 502, error: "Whop didn't send the notification. Try again in a moment." };
   return { ok: true, body: { notified: true } };

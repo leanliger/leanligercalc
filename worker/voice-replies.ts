@@ -61,7 +61,7 @@ export async function uploadVoiceReply(env: Env, viewerId: string, url: URL, req
   if (exp) {
     const sent = await sendWhop(env, exp, c.memberId, {
       title: "Your coach sent you a voice reply",
-      content: "Listen in Prep Calculator → Progress → Check-in.",
+      content: "Listen in Lean Stature System → Progress → Check-in.",
     });
     notified = sent.ok;
     if (!sent.ok) console.error("voice reply notification failed", { status: sent.status, reason: sent.reason });

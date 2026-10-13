@@ -1447,10 +1447,10 @@ export function AppShell() {
               </span>
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold leading-tight sm:text-base">
-                  Prep Calculator
+                  Lean Stature System
                 </h1>
                 <p className="hidden truncate text-xs text-muted-foreground sm:block">
-                  Fat loss timelines and carb cycling for contest prep
+                  Plan, food, training and habits in one place
                 </p>
               </div>
             </div>
