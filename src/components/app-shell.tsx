@@ -708,6 +708,18 @@ export function AppShell() {
       }
       if (dest === "weigh-in") navigateFor.weighIn("checkin");
       else if (dest === "habits") navigateFor.habits("checkin");
+      else if (dest === "step-sync") {
+        navigateFor.habits("checkin");
+        // Once Progress → Habits has drawn (its code may still be loading).
+        let tries = 0;
+        const find = () => {
+          const el = document.getElementById("step-sync");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          else if (++tries < 20) window.setTimeout(find, 100);
+        };
+        window.setTimeout(find, 50);
+        return;
+      }
       else if (dest === "food" || dest === "fasting") {
         setNutritionSection(dest);
         setTab("macros");
@@ -877,6 +889,23 @@ export function AppShell() {
     }));
   }, []);
 
+
+  // Steps synced from an iPhone Shortcut land on the server while the app is
+  // in the background; reload habit days when it comes back (at most once a minute).
+  React.useEffect(() => {
+    if (!ready || session.mode !== "cloud") return;
+    let last = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 60_000) return;
+      last = Date.now();
+      storeRef.current
+        ?.listHabits()
+        .then((logs) => setHabitLogs(logs))
+        .catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [ready, session.mode]);
 
   const saveHabitDay = React.useCallback(
     async (log: HabitLog) => {
@@ -1654,6 +1683,7 @@ export function AppShell() {
                       <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
                     }
                     weighIns={weighIns}
+                    adjustments={state.tracking.adjustments}
                   />
                 )}
               </TabsContent>

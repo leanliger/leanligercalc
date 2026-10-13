@@ -35,6 +35,8 @@ import { WarningList } from "@/components/warnings";
 import { CopyButton } from "@/components/copy-button";
 import { WeightCurveChart } from "@/components/weight-curve-chart";
 import { MilestoneTable } from "@/components/milestone-table";
+import { AfterGoalCard } from "@/components/after-goal-card";
+import type { CalorieAdjustment } from "@/lib/tracking";
 import {
   MAX_RATE,
   MIN_RATE,
@@ -69,6 +71,8 @@ interface FatLossCalculatorProps {
   profileSlot: React.ReactNode;
   /** Logged weigh-ins, drawn as dots on the projected curve. */
   weighIns?: readonly { date: string; weightLb: number }[];
+  /** Check-in calorie changes: the reverse diet starts from the last week's real target. */
+  adjustments: readonly CalorieAdjustment[];
 }
 
 const MODE_OPTIONS: readonly { value: TimelineMode; label: string; hint: string }[] = [
@@ -100,6 +104,7 @@ export function FatLossCalculator({
   unit,
   profileSlot,
   weighIns,
+  adjustments,
 }: FatLossCalculatorProps) {
   // Recalculated on every keystroke — the whole simulation is well under a
   // millisecond. Drawing is what costs; see `chart` below.
@@ -604,6 +609,10 @@ export function FatLossCalculator({
             </div>
           </CardContent>
         </Card>
+
+        {result.feasible ? (
+          <AfterGoalCard profile={profile} inputs={inputs} result={result} adjustments={adjustments} unit={unit} onChange={onChange} />
+        ) : null}
 
         <Card>
           <CardHeader>

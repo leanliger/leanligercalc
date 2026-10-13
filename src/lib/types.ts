@@ -99,6 +99,14 @@ export interface FatLossInputs {
   tdeeOverride: number | null;
   /** Model progressive metabolic adaptation across the diet. */
   includeMetabolicAdaptation: boolean;
+  /**
+   * What happens once the goal is reached (src/lib/reverse-diet.ts): a reverse
+   * diet back up to maintenance, straight to maintenance, or stay on the last
+   * week's calories.
+   */
+  afterGoal: "reverse" | "maintain" | "stay";
+  /** Reverse diet: kcal/day added each week. */
+  reverseStep: number;
 }
 
 /** One projected week of the diet. */

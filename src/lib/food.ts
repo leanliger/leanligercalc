@@ -406,7 +406,10 @@ export const OFF_PRODUCT_FIELDS = [
   "code",
   "product_name",
   "product_name_en",
+  // Thai products are often only named in Thai (e.g. Singha water: "น้ำดื่มสิงห์").
+  "product_name_th",
   "generic_name",
+  "generic_name_th",
   "abbreviated_product_name",
   "brands",
   "serving_size",
@@ -434,7 +437,9 @@ export function normalizeOffProduct(raw: unknown, barcode: string): FoodProduct 
   const name =
     cleanText(p.product_name, FOOD_NAME_MAX) ??
     cleanText(p.product_name_en, FOOD_NAME_MAX) ??
+    cleanText(p.product_name_th, FOOD_NAME_MAX) ??
     cleanText(p.generic_name, FOOD_NAME_MAX) ??
+    cleanText(p.generic_name_th, FOOD_NAME_MAX) ??
     cleanText(p.abbreviated_product_name, FOOD_NAME_MAX);
   const brandsRaw = Array.isArray(p.brands) ? p.brands.join(",") : p.brands;
   const brand = cleanText(typeof brandsRaw === "string" ? brandsRaw.split(",")[0] : null, FOOD_BRAND_MAX);

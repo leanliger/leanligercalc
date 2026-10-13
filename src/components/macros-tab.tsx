@@ -407,6 +407,8 @@ export function MacrosTab({
                       ? "Targets your coach set for you."
                       : target.source === "roadmap"
                       ? "Targets from your Roadmap for this day."
+                      : target.source === "after"
+                      ? `Your plan is done: ${(target.label ?? "maintenance").toLowerCase()}, set on Plan → Timeline.`
                       : "This day is outside your Roadmap, so targets come from Plan → Macros."}
                   </p>
                   {linked.length > 0 ? (

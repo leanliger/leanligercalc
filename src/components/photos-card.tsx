@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Camera, ImageOff, Loader2, Lock, Trash2, Users, X } from "lucide-react";
+import { Camera, ImageOff, ImagePlus, Loader2, Lock, Trash2, Users, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,8 @@ import { loadPhoto } from "@/lib/barcode-reader";
 import { formatShort } from "@/lib/dates";
 import { MAX_PHOTO_UPLOADS_PER_DAY, PHOTO_MAX_DIMENSION, POSES, POSE_LABELS, type PhotoMeta, type Pose } from "@/lib/photos";
 import { cn } from "@/lib/utils";
+import { PhotoCompare } from "@/components/photo-compare";
+import { PoseCamera } from "@/components/pose-camera";
 
 /* ------------------------------ image loading ------------------------------ */
 
@@ -70,7 +72,7 @@ export function PhotoImage({ src, alt, className, onClick }: { src: string; alt:
 
 /* --------------------------------- gallery --------------------------------- */
 
-/** Photos by date, plus a first-vs-latest comparison per pose. Shared with the coach view. */
+/** Photos by date, plus before/after (slider, side by side, timelapse) per pose. Shared with the coach view. */
 export function PhotoGallery({
   photos,
   srcFor,
@@ -81,12 +83,6 @@ export function PhotoGallery({
   onDelete?: (p: PhotoMeta) => Promise<void>;
 }) {
   const [open, setOpen] = React.useState<PhotoMeta | null>(null);
-  const posesWithTwo = POSES.filter((pose) => photos.filter((p) => p.pose === pose).length >= 2);
-  const [comparePose, setComparePose] = React.useState<Pose>(posesWithTwo[0] ?? "front");
-  const pose = posesWithTwo.includes(comparePose) ? comparePose : posesWithTwo[0];
-  const ofPose = pose ? photos.filter((p) => p.pose === pose).sort((a, b) => (a.date < b.date ? -1 : 1)) : [];
-  const first = ofPose[0];
-  const latest = ofPose[ofPose.length - 1];
 
   const byDate = new Map<string, PhotoMeta[]>();
   for (const p of [...photos].sort((a, b) => (a.date < b.date ? 1 : -1))) {
@@ -95,33 +91,7 @@ export function PhotoGallery({
 
   return (
     <div className="space-y-4">
-      {pose && first && latest ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-muted-foreground">First vs latest</p>
-            {posesWithTwo.length > 1 ? (
-              <SegmentedControl
-                ariaLabel="Compare pose"
-                size="sm"
-                value={pose}
-                onValueChange={setComparePose}
-                options={posesWithTwo.map((p) => ({ value: p, label: POSE_LABELS[p] }))}
-                className="w-auto"
-              />
-            ) : null}
-          </div>
-          <div className="grid max-w-sm grid-cols-2 gap-2">
-            {[first, latest].map((p, i) => (
-              <figure key={p.id} className="space-y-1">
-                <PhotoImage src={srcFor(p)} alt={`${POSE_LABELS[p.pose]}, ${formatShort(p.date)}`} className="aspect-[3/4] w-full" onClick={() => setOpen(p)} />
-                <figcaption className="text-center text-[12px] text-muted-foreground">
-                  {i === 0 ? "First" : "Latest"} · {formatShort(p.date)}
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <PhotoCompare photos={photos} srcFor={srcFor} />
 
       <div className="space-y-3">
         {[...byDate.entries()].map(([date, list]) => (
@@ -213,6 +183,12 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
   const [pose, setPose] = React.useState<Pose>("front");
   const [busy, setBusy] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const [camera, setCamera] = React.useState(false);
+  const [canUseCamera, setCanUseCamera] = React.useState(false);
+  React.useEffect(() => setCanUseCamera(typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia), []);
+  // The guide is the newest photo of the chosen pose, loaded only while the camera is open.
+  const guidePhoto = state?.photos.filter((p) => p.pose === pose).sort((a, b) => (a.date < b.date ? 1 : -1))[0] ?? null;
+  const guide = usePhotoUrl(camera && guidePhoto ? `/api/photos/${guidePhoto.id}` : null);
   const dateId = React.useId();
   const shareId = React.useId();
 
@@ -230,23 +206,27 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
     if (cloud) void load();
   }, [cloud, load]);
 
+  /** Upload a ready JPEG; throws with a message to show. */
+  const send = async (blob: Blob) => {
+    const res = await fetch(`/api/photos?date=${date}&pose=${pose}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "image/jpeg", accept: "application/json" },
+      body: blob,
+    });
+    const body = (await res.json().catch(() => null)) as { photo?: PhotoMeta; uploadsLeftToday?: number; error?: string } | null;
+    // Out of uploads today (429) or storage full (507): turn adding off until things change.
+    if (res.status === 429) setState((prev) => (prev ? { ...prev, uploadsLeftToday: 0 } : prev));
+    if (res.status === 507) setState((prev) => (prev ? { ...prev, storageFull: true } : prev));
+    if (!res.ok || !body?.photo) throw new Error(body?.error ?? "Upload failed. Try again.");
+    setState((prev) => (prev ? { ...prev, photos: [body.photo!, ...prev.photos], uploadsLeftToday: body.uploadsLeftToday ?? prev.uploadsLeftToday } : prev));
+  };
+
   const upload = async (file: File) => {
     setBusy(true);
     setError(null);
     try {
-      const blob = await prepareForUpload(file);
-      const res = await fetch(`/api/photos?date=${date}&pose=${pose}`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "image/jpeg", accept: "application/json" },
-        body: blob,
-      });
-      const body = (await res.json().catch(() => null)) as { photo?: PhotoMeta; uploadsLeftToday?: number; error?: string } | null;
-      // Out of uploads today (429) or storage full (507): turn "Add photo" off until things change.
-      if (res.status === 429) setState((prev) => (prev ? { ...prev, uploadsLeftToday: 0 } : prev));
-      if (res.status === 507) setState((prev) => (prev ? { ...prev, storageFull: true } : prev));
-      if (!res.ok || !body?.photo) throw new Error(body?.error ?? "Upload failed. Try again.");
-      setState((prev) => (prev ? { ...prev, photos: [body.photo!, ...prev.photos], uploadsLeftToday: body.uploadsLeftToday ?? prev.uploadsLeftToday } : prev));
+      await send(await prepareForUpload(file));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed. Try again.");
     } finally {
@@ -340,9 +320,21 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 options={POSES.map((p) => ({ value: p, label: POSE_LABELS[p] }))}
                 className="w-auto min-w-[12rem] flex-1"
               />
-              <Button type="button" size="sm" disabled={busy || state.storageFull || state.uploadsLeftToday === 0} onClick={() => fileRef.current?.click()}>
-                {busy ? <Loader2 className="animate-spin" /> : <Camera />}
-                {busy ? "Uploading…" : "Add photo"}
+              {canUseCamera ? (
+                <Button type="button" size="sm" disabled={busy || state.storageFull || state.uploadsLeftToday === 0} onClick={() => setCamera(true)}>
+                  <Camera />
+                  Take photo
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant={canUseCamera ? "outline" : "default"}
+                disabled={busy || state.storageFull || state.uploadsLeftToday === 0}
+                onClick={() => fileRef.current?.click()}
+              >
+                {busy ? <Loader2 className="animate-spin" /> : canUseCamera ? <ImagePlus /> : <Camera />}
+                {busy ? "Uploading…" : canUseCamera ? "Choose photo" : "Add photo"}
               </Button>
               <input
                 ref={fileRef}
@@ -358,9 +350,25 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 }}
               />
             </div>
+            {camera ? (
+              <PoseCamera
+                poseLabel={POSE_LABELS[pose]}
+                guideUrl={guide.url}
+                onClose={() => setCamera(false)}
+                onFallback={(reason) => {
+                  setCamera(false);
+                  setError(`${reason} Use Choose photo instead.`);
+                }}
+                onCapture={async (blob) => {
+                  await send(blob);
+                  setCamera(false);
+                }}
+              />
+            ) : null}
             <p className="text-[12px] text-muted-foreground">
-              Tip: same spot, same lighting, morning, relaxed. Photos are shrunk and re-saved on your phone before upload,
-              which also strips location data.
+              Tip: same spot, same lighting, morning, relaxed. Take photo shows your last {POSE_LABELS[pose].toLowerCase()} photo
+              faintly over the camera so you can line up. Photos are shrunk and re-saved on your phone before upload, which also
+              strips location data.
               {state.uploadsLeftToday !== undefined && state.uploadsLeftToday > 0 && state.uploadsLeftToday <= 3
                 ? ` ${state.uploadsLeftToday} more today.`
                 : ""}

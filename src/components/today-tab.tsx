@@ -77,7 +77,7 @@ import { FirstWeekCard } from "@/components/first-week-card";
 import { DEFAULT_FAT_LOSS_INPUTS, DEFAULT_PROFILE } from "@/lib/defaults";
 
 /** Where Today's links go. */
-export type TodayDestination = "weigh-in" | "habits" | "food" | "fasting" | "training" | "timeline" | "reminders";
+export type TodayDestination = "weigh-in" | "habits" | "step-sync" | "food" | "fasting" | "training" | "timeline" | "reminders";
 
 const SAVE_DEBOUNCE_MS = 400;
 const SEEN_BADGES_KEY = "prep-calculator:badges-seen:v1";
@@ -530,6 +530,13 @@ export function TodayTab(props: TodayTabProps) {
           </div>
           <Bar value={steps ?? 0} target={stepTarget} className={stepsDone ? "bg-success" : "bg-primary"} />
           <QuickSteps value={steps} onChange={logSteps} />
+          <button
+            type="button"
+            onClick={() => onOpen("step-sync")}
+            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Sync steps from your iPhone automatically
+          </button>
         </CardContent>
       </Card>
     ) : null,

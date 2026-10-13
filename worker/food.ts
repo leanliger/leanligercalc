@@ -101,7 +101,7 @@ async function offSearch(q: string): Promise<FoodProduct[]> {
     q,
     page_size: String(SEARCH_RESULTS),
     langs: "en",
-    fields: "code,product_name,product_name_en,brands,nutriments",
+    fields: "code,product_name,product_name_en,product_name_th,brands,nutriments",
   });
   const res = await upstream(`https://search.openfoodfacts.org/search?${params}`);
   if (!res.ok) throw new UpstreamError(`off search ${res.status}`);

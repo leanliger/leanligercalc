@@ -185,7 +185,9 @@ function PlanWeekLine({ week, unit, onOpenTimeline }: { week: PlanWeek; unit: We
     week.when === "before"
       ? `Your plan starts ${formatShort(week.startDate)}: these are its first week`
       : week.when === "after"
-        ? `Your plan finished ${formatShort(week.goalDate)}: these are its last week`
+        ? week.afterLabel
+          ? `Your plan finished ${formatShort(week.goalDate)}: ${week.afterLabel.toLowerCase()}, set on the Timeline`
+          : `Your plan finished ${formatShort(week.goalDate)}: these are its last week`
         : `Week ${week.index + 1} of ${week.count} of your plan`;
   const weight = week.index > 0 ? ` · planned weight ${formatWeight(week.weight, unit)}` : "";
   return (

@@ -61,6 +61,7 @@
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
  *   DELETE /api/me                 delete everything stored about me
+ *   GET/POST/DELETE /api/steps-sync/key  my iPhone step sync key (see steps-sync.ts)
  *
  * The user id only ever comes from a verified Whop token (see auth.ts) and is
  * never read from a request body or URL.
@@ -71,11 +72,18 @@
  *   GET    /api/food/barcode/:code product details for a barcode
  *   GET    /api/food/search?q=     search products by name
  *
+ * One route is signed with a member's step sync key instead of a Whop token,
+ * because it's called by an Apple Shortcut on their phone; the key can only
+ * set a day's step count (steps-sync.ts):
+ *
+ *   POST   /api/steps-sync         { steps, date }
+ *
  * A Cron Trigger also runs every minute to send fasting, check-in and
  * "Finished your workout?" notifications through Whop (see reminders.ts).
  */
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
+import { receiveSteps, stepSyncKey } from "./steps-sync";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import { analyzePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
@@ -235,6 +243,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return foodResponse(await lookupBarcode(env, path.slice("/api/food/barcode/".length)));
   }
 
+  /* -------------- iPhone step sync (signed with its own key) -------------- */
+
+  if (path === "/api/steps-sync") {
+    const r = await receiveSteps(env, request);
+    return json(r.body, r.status);
+  }
+
   const user = await authenticate(request, env);
 
   if (path === "/api/session") {
@@ -315,6 +330,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
 
     return error(405, "Method not allowed.");
+  }
+
+  /* ---------------------------- step sync key ---------------------------- */
+
+  if (path === "/api/steps-sync/key") {
+    const r = await stepSyncKey(env, userId, method, request.url);
+    return json(r.body, r.status);
   }
 
   /* ------------------------------- habits ------------------------------- */
@@ -1127,6 +1149,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM meal_photo_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM physique_analyses WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM physique_usage WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM step_tokens WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),

@@ -23,6 +23,7 @@ import { maintenanceBreakdown } from "./activity";
 import { addDays, daysBetween } from "./dates";
 import { calculateFatLossTimeline } from "./fat-loss";
 import { weekCalorieTarget } from "./roadmap";
+import { afterGoalDay, afterGoalLabel, afterGoalPlan } from "./reverse-diet";
 import type { CalorieAdjustment } from "./tracking";
 import type { BiometricProfile, CarbCyclingInputs, FatLossInputs } from "./types";
 
@@ -45,6 +46,8 @@ export interface PlanWeek {
   /** Projected weight (lb) and body fat (%) that week. */
   weight: number;
   bodyFat: number;
+  /** After the plan, when there's a reverse diet or maintenance: which, in words. */
+  afterLabel: string | null;
 }
 
 /** This week of the Timeline's plan (by `today`), or null while it has no plan. */
@@ -63,6 +66,24 @@ export function currentPlanWeek(
   const index = Math.min(Math.max(Math.floor(offset / 7), 0), count - 1);
   const row = t.projection[index];
   if (!row || !(row.tdee > 0) || !(row.targetCalories > 0)) return null;
+  // Past the goal with a reverse or maintenance set: that phase's numbers, at the end weight.
+  const after = when === "after" ? afterGoalPlan(profile, fatLoss, t, adjustments) : null;
+  const afterDay = after && today ? afterGoalDay(after, today) : null;
+  if (after && afterDay) {
+    return {
+      index,
+      count,
+      when,
+      startDate,
+      goalDate: addDays(startDate, count * 7),
+      tdee: after.maintenance,
+      dailyCalories: afterDay.calories,
+      adjustment: 0,
+      weight: after.weight,
+      bodyFat: after.bodyFat,
+      afterLabel: afterGoalLabel(after, afterDay),
+    };
+  }
   const { target, adjustment } = weekCalorieTarget(row, addDays(startDate, index * 7), adjustments);
   return {
     index,
@@ -75,6 +96,7 @@ export function currentPlanWeek(
     adjustment,
     weight: row.weight,
     bodyFat: row.bodyFat,
+    afterLabel: null,
   };
 }
 

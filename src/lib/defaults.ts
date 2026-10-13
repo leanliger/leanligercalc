@@ -33,6 +33,8 @@ export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
   trainingDays: 4,
   tdeeOverride: null,
   includeMetabolicAdaptation: true,
+  afterGoal: "reverse",
+  reverseStep: 100,
 };
 
 export const DEFAULT_CARB_INPUTS: CarbCyclingInputs = {

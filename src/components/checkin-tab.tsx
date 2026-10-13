@@ -29,6 +29,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { HabitConsistencyList } from "@/components/consistency-card";
 import { CONSISTENCY_WINDOW_DAYS, dailyStreak, greenWeekStreak } from "@/lib/streaks";
 import { StepsWeekCard } from "@/components/steps-week-card";
+import { StepSyncCard } from "@/components/step-sync-card";
 import { MeasurementsCard } from "@/components/measurements-card";
 import { CheckinCard } from "@/components/checkin-card";
 import { withPauses } from "@/lib/pause";
@@ -330,6 +331,9 @@ export function CheckinTab({
                 weightLb={weighIns[weighIns.length - 1]?.weightLb ?? profile.weight}
               />
             ) : null}
+            <div id="step-sync" className="scroll-mt-20">
+              <StepSyncCard cloud={session.mode === "cloud"} />
+            </div>
           </div>
         </div>
       </div>

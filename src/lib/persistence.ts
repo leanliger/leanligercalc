@@ -41,6 +41,7 @@ import { DEFAULT_TRAINING, sanitizeTraining, type TrainingSettings } from "./tra
 import { sanitizePauses, type PausePeriod } from "./pause";
 import { sanitizeSavedMeals, type SavedMeal } from "./saved-meals";
 import { STEP_LIMITS, TRAINING_DAY_LIMITS } from "./activity";
+import { REVERSE_STEP_LIMITS } from "./reverse-diet";
 
 // Bumped from v1: biometrics moved out of the two input objects and into a
 // shared profile, so old payloads no longer deserialise correctly.
@@ -168,6 +169,10 @@ export function sanitizeFatLoss(raw: Partial<Record<keyof FatLossInputs, unknown
       raw.includeMetabolicAdaptation,
       d.includeMetabolicAdaptation,
     ),
+    // Plans saved before this existed get a reverse diet: staying in a
+    // deficit after the goal was never the intent, just the only option.
+    afterGoal: oneOf<FatLossInputs["afterGoal"]>(raw.afterGoal, ["reverse", "maintain", "stay"], d.afterGoal),
+    reverseStep: Math.round(num(raw.reverseStep, d.reverseStep, REVERSE_STEP_LIMITS.min, REVERSE_STEP_LIMITS.max)),
   };
 }
 
@@ -284,6 +289,8 @@ const URL_KEYS = {
   td: "trainingDays",
   tdo: "tdeeOverride",
   ma: "includeMetabolicAdaptation",
+  ag: "afterGoal",
+  rs: "reverseStep",
   tdee: "tdee",
   g: "goal",
   dct: "dailyCalorieTarget",
@@ -304,7 +311,7 @@ type UrlKey = keyof typeof URL_KEYS;
 
 const PROFILE_KEYS: UrlKey[] = ["w", "h", "a", "s", "bfo"];
 const FAT_LOSS_KEYS: UrlKey[] = [
-  "gt", "tw", "tbf", "r", "fd", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma",
+  "gt", "tw", "tbf", "r", "fd", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma", "ag", "rs",
 ];
 const CARB_KEYS: UrlKey[] = [
   "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "wp", "cc",
