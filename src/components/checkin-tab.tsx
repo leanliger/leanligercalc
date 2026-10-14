@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { Stat } from "@/components/stat";
 import { ProgressChart } from "@/components/progress-chart";
+import { WeeklyIntakeChart } from "@/components/weekly-intake-chart";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { HabitConsistencyList } from "@/components/consistency-card";
@@ -91,6 +92,8 @@ interface CheckinTabProps {
   onRemoveAdjustment: (id: string) => void;
   /** Food logs, so the protein and calorie habits can show what's been eaten. */
   foodLogs: FoodLog[];
+  /** Load older food logs back to a date (for the weekly calories chart). */
+  onEnsureFoodLoaded?: (date: string) => void;
   measurements: Measurement[];
   onSaveMeasurement: (m: Measurement) => Promise<void>;
   onDeleteMeasurement: (date: string) => Promise<void>;
@@ -149,6 +152,7 @@ export function CheckinTab({
   onApplyAdjustment,
   onRemoveAdjustment,
   foodLogs,
+  onEnsureFoodLoaded,
   measurements,
   onSaveMeasurement,
   onDeleteMeasurement,
@@ -620,6 +624,12 @@ export function CheckinTab({
             </CardContent>
           </Card>
           )}
+
+          <Card>
+            <CardContent className="p-4 sm:p-6">
+              <WeeklyIntakeChart foodLogs={foodLogs} weighIns={weighIns} unit={unit} today={today} onNeedFrom={onEnsureFoodLoaded} />
+            </CardContent>
+          </Card>
 
           {adjustments.length > 0 ? (
             <Card>

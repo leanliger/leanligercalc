@@ -1771,6 +1771,7 @@ export function AppShell() {
                   onApplyAdjustment={applyAdjustment}
                   onRemoveAdjustment={removeAdjustment}
                   foodLogs={foodLogs}
+                  onEnsureFoodLoaded={ensureFoodLoaded}
                   measurements={measurements}
                   onSaveMeasurement={saveMeasurement}
                   onDeleteMeasurement={deleteMeasurement}

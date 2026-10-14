@@ -324,6 +324,8 @@ builds the static export, applies migrations to a local database, and runs the r
 
 Body weight and food logs are health data. Members can delete everything from Settings (the gear at the top left, behind an "Are you sure?" step; `data-settings.tsx`) at any time (`DELETE /api/me` removes their weigh-ins, habits, reviews, food logs, saved foods, measurements, photos, workouts, lift submissions and plan). The privacy policy is at **`/privacy/`** (`src/app/privacy/page.tsx`), linked from the footer and the Settings panel. Every statement in it describes what the code actually does — when a feature changes what is stored or who it is shared with, update the policy in the same change and bump its effective date.
 
+**Weekly weigh-ins vs calories** (`weekly-intake-chart.tsx`, `src/lib/weekly-intake.ts`; Progress → Weigh-in, under Plan vs actual): for the last 8, 12 or 26 Monday–Sunday weeks, a bar for the average logged day (days with food only) stacked protein / fat / carbs by their calories (4 / 9 / 4) on the right axis, and the week's average weigh-in as a line on the left axis. Weeks without food have no bar; the line joins across weeks without weigh-ins. The tooltip shows grams, calories and how many food days and weigh-ins the week rests on. Picking a longer range loads older food logs (`onEnsureFoodLoaded`).
+
 ## Measurements and progress photos
 
 On the Progress tab, under the weight chart:
