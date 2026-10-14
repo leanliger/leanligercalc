@@ -328,7 +328,14 @@ export function MacrosTab({
       <div className="space-y-5">
         {nav}
         <div className="lg:max-w-xl">
-          <WaterCard today={today} unit={unit} habits={habits} habitLogs={habitLogs} onSaveHabits={onSaveHabits} />
+          <WaterCard
+            today={today}
+            unit={unit}
+            habits={habits}
+            habitLogs={habitLogs}
+            onSaveHabits={onSaveHabits}
+            notifications={session.mode === "cloud" && session.notifications === true}
+          />
         </div>
       </div>
     );

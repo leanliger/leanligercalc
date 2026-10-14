@@ -32,6 +32,7 @@
  *   POST   /api/physique/compare  compare my newest photos with ones from about a month earlier { before? }
  *   GET/PUT /api/testimonial-consent      may my coach use my comparisons as testimonials { allowed }
  *   POST   /api/food/label              read a nutrition label photo { image, mediaType } (see label-photo.ts)
+ *   GET/PUT/DELETE /api/water-reminders  my hydration reminders (see water-reminders.ts)
  *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
@@ -96,6 +97,7 @@ import { sendCompareNudges } from "./compare-nudges";
 import { readLabelPhoto } from "./label-photo";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
+import { sendDueWaterReminders, waterReminders } from "./water-reminders";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import { analyzePhysique, comparePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
@@ -731,6 +733,15 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!body.ok) return body.response;
     return send(await setMemberTags(env, userId, body.value));
   }
+  if (path === "/api/water-reminders") {
+    let body: unknown = null;
+    if (method === "PUT") {
+      const b = await readJson(request);
+      if (!b.ok) return b.response;
+      body = b.value;
+    }
+    return send(await waterReminders(env, userId, method, body));
+  }
   if (path === "/api/food/label") {
     if (method !== "POST") return error(405, "Method not allowed.");
     // Its own size check: a label photo is larger than readJson's shared cap allows.
@@ -1212,6 +1223,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM testimonial_consent WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM compare_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM photo_day_nudges WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM water_reminders WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM ai_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
@@ -1269,8 +1281,16 @@ export default {
         })
         .catch((e) => console.error("fasting reminders crashed", e)),
     );
-    // "Your monthly comparison is ready": every 15 minutes is plenty.
     const when = new Date(controller.scheduledTime);
+    // Hydration reminders: every minute, like the other timed reminders.
+    ctx.waitUntil(
+      sendDueWaterReminders(env, when)
+        .then((r) => {
+          if (r.due > 0) console.log("water reminders", r);
+        })
+        .catch((e) => console.error("water reminders crashed", e)),
+    );
+    // "Your monthly comparison is ready": every 15 minutes is plenty.
     if (when.getUTCMinutes() % 15 === 0) {
       ctx.waitUntil(
         sendCompareNudges(env, when)
