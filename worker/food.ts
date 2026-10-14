@@ -7,17 +7,19 @@
  * validation, a per-IP rate limit, and a shared cache so each product is
  * fetched from upstream once rather than once per member.
  *
- *   Open Food Facts         always on, no key
- *   USDA FoodData Central   only when the USDA_API_KEY secret is set
+ *   USDA FoodData Central   the only source; needs the USDA_API_KEY secret
+ *
+ * USDA has no barcode endpoint, so a barcode is searched among its branded
+ * foods and only an exact GTIN match counts. Its branded foods are mostly
+ * sold in the US; anything else is "not found", and the member types the
+ * label in once (my foods).
  */
 
 import {
   BARCODE_PATTERN,
   barcodeCandidates,
   hasNutrition,
-  normalizeOffProduct,
   normalizeUsdaFood,
-  OFF_PRODUCT_FIELDS,
   sameBarcode,
   type FoodProduct,
 } from "../src/lib/food";
@@ -82,40 +84,6 @@ async function cachePut(env: FoodEnv, key: string, value: unknown): Promise<void
     .run();
 }
 
-/* ------------------------------ Open Food Facts ----------------------------- */
-
-async function offProduct(code: string): Promise<FoodProduct | null> {
-  const res = await upstream(
-    `https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_PRODUCT_FIELDS}`,
-  );
-  // Unknown products come back as 404 with { status: 0 }.
-  if (res.status === 404) return null;
-  if (!res.ok) throw new UpstreamError(`off ${res.status}`);
-  const body = (await res.json()) as { status?: number; product?: unknown };
-  if (body.status !== 1 || !body.product) return null;
-  return normalizeOffProduct(body.product, code);
-}
-
-async function offSearch(q: string): Promise<FoodProduct[]> {
-  const params = new URLSearchParams({
-    q,
-    page_size: String(SEARCH_RESULTS),
-    langs: "en",
-    fields: "code,product_name,product_name_en,product_name_th,brands,nutriments",
-  });
-  const res = await upstream(`https://search.openfoodfacts.org/search?${params}`);
-  if (!res.ok) throw new UpstreamError(`off search ${res.status}`);
-  const body = (await res.json()) as { hits?: unknown[] };
-  const out: FoodProduct[] = [];
-  for (const hit of body.hits ?? []) {
-    const code = (hit as { code?: unknown })?.code;
-    if (typeof code !== "string" || !BARCODE_PATTERN.test(code)) continue;
-    const p = normalizeOffProduct(hit, code);
-    if (p && hasNutrition(p) && !p.name.startsWith("Unnamed")) out.push(p);
-  }
-  return out;
-}
-
 /* ---------------------------------- USDA --------------------------------- */
 
 async function usdaSearch(
@@ -151,8 +119,31 @@ async function usdaSearch(
 
 /** USDA has no barcode endpoint: search the digits, then insist on an exact match. */
 async function usdaByBarcode(env: FoodEnv, code: string): Promise<FoodProduct | null> {
-  const hits = await usdaSearch(env, code, ["Branded"], 5);
-  return hits.find((p) => p.barcode && sameBarcode(p.barcode, code)) ?? null;
+  // USDA's search matches the GTIN only as it's stored, usually zero-padded to
+  // 14 digits ("00016000275287") while a scan reads "016000275287". Try the
+  // usual paddings (and a UPC-E code's long form), most likely first.
+  const forms: string[] = [];
+  for (const candidate of barcodeCandidates(code)) {
+    const bare = candidate.replace(/^0+/, "");
+    for (const f of [bare.padStart(14, "0"), candidate, bare.padStart(13, "0"), bare.padStart(12, "0")]) {
+      if (!forms.includes(f)) forms.push(f);
+    }
+  }
+  // One form failing (USDA sometimes rejects a query) doesn't sink the others;
+  // only if every form failed is it "the database didn't answer".
+  let failed = 0;
+  for (const form of forms) {
+    try {
+      const hits = await usdaSearch(env, form, ["Branded"], 5);
+      const match = hits.find((p) => p.barcode && sameBarcode(p.barcode, code));
+      if (match) return match;
+    } catch (e) {
+      failed++;
+      console.error("usda barcode form failed", { digits: form.length, reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (failed === forms.length) throw new UpstreamError("usda barcode: every form failed");
+  return null;
 }
 
 /* -------------------------------- handlers -------------------------------- */
@@ -168,37 +159,25 @@ export async function rateLimited(env: FoodEnv, request: Request): Promise<boole
   return !success;
 }
 
+const NO_KEY: FoodResult = { ok: false, status: 503, error: "The food database isn't set up for this app yet." };
+
 export async function lookupBarcode(env: FoodEnv, code: string): Promise<FoodResult> {
   if (!BARCODE_PATTERN.test(code)) return { ok: false, status: 422, error: "Barcode must be 8–14 digits." };
+  if (!env.USDA_API_KEY) return NO_KEY;
 
-  const cacheKey = `bc:${code}`;
+  // Its own key prefix: nothing cached from Open Food Facts (bc:) or by the first
+  // USDA-only lookup, which missed padded GTINs (usda:bc:), is served again.
+  const cacheKey = `usda2:bc:${code}`;
   const cached = await cacheGet<{ product: FoodProduct | null }>(env, cacheKey, (v) =>
     v.product ? FOUND_TTL : MISSING_TTL,
   );
   if (cached) return { ok: true, body: cached };
 
   let product: FoodProduct | null = null;
-  let failures = 0;
-  for (const candidate of barcodeCandidates(code)) {
-    try {
-      product = await offProduct(candidate);
-    } catch {
-      failures++;
-    }
-    if (product) break;
-  }
-  // A product with no nutrition still helps (its name pre-fills the form),
-  // but USDA may have the numbers.
-  if (!product || !hasNutrition(product)) {
-    try {
-      const fromUsda = await usdaByBarcode(env, code);
-      if (fromUsda) product = { ...fromUsda, barcode: code };
-    } catch {
-      failures++;
-    }
-  }
-
-  if (!product && failures > 0) {
+  try {
+    const found = await usdaByBarcode(env, code);
+    if (found) product = { ...found, barcode: code };
+  } catch {
     // Don't cache "not found" when we never got a real answer.
     return { ok: false, status: 502, error: "The food database didn't answer. Try again.", upstream: true };
   }
@@ -217,21 +196,22 @@ export async function searchFoods(env: FoodEnv, raw: string): Promise<FoodResult
     return { ok: false, status: 422, error: `Search for ${SEARCH_MIN}–${SEARCH_MAX} characters.` };
   }
 
-  const cacheKey = `q:${env.USDA_API_KEY ? "u:" : ""}${q}`;
+  if (!env.USDA_API_KEY) return NO_KEY;
+
+  const cacheKey = `usda:q:${q}`;
   const cached = await cacheGet<{ results: FoodProduct[] }>(env, cacheKey, () => SEARCH_TTL);
   if (cached) return { ok: true, body: cached };
 
   // Whole foods first (USDA reference data), then packaged products.
-  const [generic, off, branded] = await Promise.allSettled([
-    usdaSearch(env, q, ["Foundation", "SR Legacy"], 6),
-    offSearch(q),
-    usdaSearch(env, q, ["Branded"], 6),
+  const [generic, branded] = await Promise.allSettled([
+    usdaSearch(env, q, ["Foundation", "SR Legacy"], 8),
+    usdaSearch(env, q, ["Branded"], 14),
   ]);
-  const settled = [generic, off, branded];
+  const settled = [generic, branded];
   // Log which source failed and its status (never the key or the query).
   settled.forEach((r, i) => {
     if (r.status === "rejected") {
-      console.error("food search source failed", { source: ["usda-generic", "off", "usda-branded"][i], reason: String(r.reason?.message ?? r.reason) });
+      console.error("food search source failed", { source: ["usda-generic", "usda-branded"][i], reason: String(r.reason?.message ?? r.reason) });
     }
   });
   if (settled.every((s) => s.status === "rejected")) {

@@ -1,15 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { CalendarRange, Loader2, Lock, Sparkles } from "lucide-react";
+import { CalendarRange, Download, ImageIcon, Loader2, Lock, Quote, Share2, Sparkles, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { CopyButton } from "@/components/copy-button";
 import { PhotoImage } from "@/components/photos-card";
 import { Sections } from "@/components/physique-card";
 import { addDays, daysBetween, formatShort } from "@/lib/dates";
-import { POSES, POSE_LABELS, type PhotoMeta } from "@/lib/photos";
+import { POSES, POSE_LABELS, type PhotoMeta, type Pose } from "@/lib/photos";
 import { COMPARE_MIN_DAYS, COMPARE_TARGET_DAYS, shareableSummary, type CompareIds, type PhysiqueSection } from "@/lib/physique";
+import { bodyFatSeries, compareStatChips, type BodyFatPoint, type CompareStats } from "@/lib/physique-stats";
+import { drawComparisonImage } from "@/lib/share-image";
+import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export interface Comparison {
@@ -18,19 +22,191 @@ export interface Comparison {
   afterDate: string | null;
   createdAt: string;
   photoIds: CompareIds;
+  stats?: CompareStats | null;
   sections: PhysiqueSection[];
   raw: string;
 }
 
+/* ------------------------------ share image ------------------------------ */
+
 /**
- * One comparison: the two sets side by side (one pose at a time), the
- * write-up, and the shareable summary with a Copy button. Used by the member's
- * card and, read-only, on the coach's view of that member.
+ * The branded before/after image, made on the device. Share uses the phone's
+ * share sheet where the page is allowed to; otherwise Save, and on iPhones
+ * pressing and holding the preview saves it too.
  */
-export function ComparisonView({ c, srcFor }: { c: Comparison; srcFor: (photoId: string) => string }) {
+function ShareImageButton({ c, pose, srcFor, unit }: { c: Comparison; pose: Pose; srcFor: (id: string) => string; unit: WeightUnit }) {
+  const [busy, setBusy] = React.useState(false);
+  const [image, setImage] = React.useState<{ blob: Blob; url: string } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => () => {
+    if (image) URL.revokeObjectURL(image.url);
+  }, [image]);
+
+  const make = async () => {
+    const b = c.photoIds.before[pose];
+    const a = c.photoIds.after[pose];
+    if (!b || !a) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const get = async (id: string) => {
+        const res = await fetch(srcFor(id), { credentials: "same-origin" });
+        if (!res.ok) throw new Error("One of the photos couldn't be loaded. It may have been deleted.");
+        return res.blob();
+      };
+      const [before, after] = await Promise.all([get(b), get(a)]);
+      const days = c.beforeDate && c.afterDate ? daysBetween(c.beforeDate, c.afterDate) : null;
+      const blob = await drawComparisonImage({
+        before,
+        after,
+        beforeLabel: `Before · ${c.beforeDate ? formatShort(c.beforeDate) : ""}`,
+        afterLabel: `After · ${c.afterDate ? formatShort(c.afterDate) : ""}`,
+        title: days ? `${days}-day transformation` : "Transformation",
+        chips: compareStatChips(c.stats ?? null, unit),
+        summary: shareableSummary(c),
+      });
+      setImage({ blob, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't make the image.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const file = image ? new File([image.blob], "lean-stature-transformation.jpg", { type: "image/jpeg" }) : null;
+  const canShare = !!file && typeof navigator !== "undefined" && !!navigator.canShare?.({ files: [file] });
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => void make()} disabled={busy}>
+        {busy ? <Loader2 className="animate-spin" /> : <ImageIcon />}
+        {busy ? "Making image…" : "Share image"}
+      </Button>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+      {image ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Your transformation image"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black p-4"
+          onClick={() => setImage(null)}
+        >
+          <div className="flex w-full max-w-sm justify-end">
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setImage(null)} aria-label="Close">
+              <X />
+            </Button>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- generated on the device */}
+          <img
+            src={image.url}
+            alt="Before and after transformation"
+            className="max-h-[65dvh] w-auto max-w-full rounded-md"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="flex flex-wrap justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {canShare ? (
+              <Button
+                onClick={() =>
+                  void navigator.share({ files: [file!], title: "My transformation" }).catch(() => {
+                    /* cancelled */
+                  })
+                }
+              >
+                <Share2 />
+                Share
+              </Button>
+            ) : null}
+            <a
+              href={image.url}
+              download="lean-stature-transformation.jpg"
+              className={buttonVariants({ variant: canShare ? "outline" : "default" })}
+            >
+              <Download />
+              Save image
+            </a>
+          </div>
+          <p className="max-w-sm text-center text-xs text-white/70">
+            On iPhone, you can also press and hold the image and choose Save to Photos.
+          </p>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/* ------------------------------ body fat chart ------------------------------ */
+
+/** Estimated body fat ranges over time: a bar from low to high per date, joined through the middles. */
+export function BodyFatChart({ points }: { points: BodyFatPoint[] }) {
+  if (points.length < 2) return null;
+  const W = 320;
+  const H = 140;
+  const padL = 30;
+  const padR = 10;
+  const padT = 10;
+  const padB = 24;
+  const lo = Math.floor(Math.min(...points.map((p) => p.low)) - 1);
+  const hi = Math.ceil(Math.max(...points.map((p) => p.high)) + 1);
+  const t0 = new Date(points[0]!.date).getTime();
+  const t1 = new Date(points[points.length - 1]!.date).getTime();
+  const x = (d: string) => padL + ((new Date(d).getTime() - t0) / Math.max(t1 - t0, 1)) * (W - padL - padR);
+  const y = (v: number) => padT + ((hi - v) / Math.max(hi - lo, 1)) * (H - padT - padB);
+  const mids = points.map((p) => `${x(p.date)},${y((p.low + p.high) / 2)}`).join(" ");
+  const ticks = [lo, Math.round((lo + hi) / 2), hi];
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  return (
+    <figure className="space-y-1">
+      <figcaption className="text-xs font-medium text-muted-foreground">Estimated body fat over time</figcaption>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-auto w-full max-w-sm"
+        role="img"
+        aria-label={`Estimated body fat from ${first.low}–${first.high}% on ${formatShort(first.date)} to ${last.low}–${last.high}% on ${formatShort(last.date)}`}
+      >
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="hsl(var(--border))" strokeWidth={1} />
+            <text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">
+              {t}%
+            </text>
+          </g>
+        ))}
+        <polyline points={mids} fill="none" stroke="hsl(var(--primary))" strokeWidth={1.5} strokeDasharray="3 3" />
+        {points.map((p) => (
+          <g key={p.date}>
+            <line x1={x(p.date)} x2={x(p.date)} y1={y(p.high)} y2={y(p.low)} stroke="hsl(var(--primary))" strokeWidth={8} strokeLinecap="round" opacity={0.45} />
+            <circle cx={x(p.date)} cy={y((p.low + p.high) / 2)} r={3.5} fill="hsl(var(--primary))" />
+          </g>
+        ))}
+        <text x={padL} y={H - 6} fontSize={10} fill="hsl(var(--muted-foreground))">
+          {formatShort(first.date)}
+        </text>
+        <text x={W - padR} y={H - 6} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">
+          {formatShort(last.date)}
+        </text>
+      </svg>
+    </figure>
+  );
+}
+
+/* ------------------------------ one comparison ------------------------------ */
+
+/**
+ * One comparison: the two sets side by side (one pose at a time), the measured
+ * changes, the write-up, and the shareable summary with Copy and a share
+ * image. Used by the member's card, the coach's view of that member, and the
+ * coach's Testimonials list.
+ */
+export function ComparisonView({ c, srcFor, unit }: { c: Comparison; srcFor: (photoId: string) => string; unit: WeightUnit }) {
   const poses = POSES.filter((p) => c.photoIds.before[p] && c.photoIds.after[p]);
-  const [pose, setPose] = React.useState(poses[0] ?? "front");
+  const [pose, setPose] = React.useState<Pose>(poses[0] ?? "front");
   const summary = shareableSummary(c);
+  const chips = compareStatChips(c.stats ?? null, unit);
   const before = c.photoIds.before[pose];
   const after = c.photoIds.after[pose];
   const days = c.beforeDate && c.afterDate ? daysBetween(c.beforeDate, c.afterDate) : null;
@@ -77,12 +253,24 @@ export function ComparisonView({ c, srcFor }: { c: Comparison; srcFor: (photoId:
           </div>
         </div>
       ) : null}
+      {chips.length > 0 ? (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Measured changes">
+          {chips.map((chip) => (
+            <li key={chip} className="tabular rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium">
+              {chip}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <Sections analysis={c} />
       {summary ? (
         <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
           <p className="text-xs font-semibold text-primary">For a check-in or testimonial</p>
           <p className="text-sm leading-relaxed">{summary}</p>
-          <CopyButton getText={() => summary} label="Copy summary" className="h-8" />
+          <div className="flex flex-wrap items-start gap-2">
+            <CopyButton getText={() => summary} label="Copy summary" className="h-8" />
+            {before && after ? <ShareImageButton c={c} pose={pose} srcFor={srcFor} unit={unit} /> : null}
+          </div>
         </div>
       ) : null}
       <p className="text-xs text-muted-foreground">An estimate from photos, not a measurement or medical advice.</p>
@@ -90,33 +278,44 @@ export function ComparisonView({ c, srcFor }: { c: Comparison; srcFor: (photoId:
   );
 }
 
+/* ------------------------------ member card ------------------------------ */
+
+interface AnalysisLite {
+  photoDate: string | null;
+  createdAt?: string;
+  sections: PhysiqueSection[];
+}
+
 /**
  * Progress → Photos: once a month, compare the newest front / side / back with
  * the set from about a month earlier (worker/physique.ts → comparePhysique).
  * Uses one of the day's physique analyses.
  */
-export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
+export function PhysiqueCompareCard({ enabled, unit }: { enabled: boolean; unit: WeightUnit }) {
   const [photos, setPhotos] = React.useState<PhotoMeta[] | null>(null);
+  const [analyses, setAnalyses] = React.useState<AnalysisLite[]>([]);
   const [comparisons, setComparisons] = React.useState<Comparison[]>([]);
   const [shownId, setShownId] = React.useState<string | null>(null);
   const [left, setLeft] = React.useState<number | null>(null);
   const [before, setBefore] = React.useState<string | null>(null);
+  const [consent, setConsent] = React.useState<boolean | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!enabled) return;
     let live = true;
+    const get = (path: string) =>
+      fetch(path, { credentials: "same-origin", headers: { accept: "application/json" } }).then((r) => (r.ok ? r.json() : null));
     void (async () => {
       try {
-        const [p, a] = await Promise.all([
-          fetch("/api/photos", { credentials: "same-origin", headers: { accept: "application/json" } }).then((r) => r.json()),
-          fetch("/api/physique", { credentials: "same-origin", headers: { accept: "application/json" } }).then((r) => r.json()),
-        ]);
+        const [p, a, t] = await Promise.all([get("/api/photos"), get("/api/physique"), get("/api/testimonial-consent")]);
         if (!live) return;
-        setPhotos((p as { photos?: PhotoMeta[] }).photos ?? []);
-        setComparisons((a as { comparisons?: Comparison[] }).comparisons ?? []);
-        setLeft((a as { left?: number }).left ?? null);
+        setPhotos((p as { photos?: PhotoMeta[] } | null)?.photos ?? []);
+        setAnalyses((a as { analyses?: AnalysisLite[] } | null)?.analyses ?? []);
+        setComparisons((a as { comparisons?: Comparison[] } | null)?.comparisons ?? []);
+        setLeft((a as { left?: number } | null)?.left ?? null);
+        setConsent((t as { allowed?: boolean } | null)?.allowed ?? false);
       } catch {
         if (live) setPhotos([]);
       }
@@ -126,6 +325,7 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
     };
   }, [enabled]);
 
+  const series = React.useMemo(() => bodyFatSeries(analyses, comparisons), [analyses, comparisons]);
   if (!enabled || photos === null) return null;
 
   const dates = [...new Set(photos.map((p) => p.date))].sort().reverse();
@@ -139,7 +339,7 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
       : null;
   const chosen = before && options.includes(before) ? before : defaultBefore;
   const last = comparisons[0] ?? null;
-  // A month since the last comparison, and newer photos than it used: time for this month's.
+  // Newer photos than the last comparison used, far enough on: time for this month's.
   const due = !!newest && !!chosen && (!last?.afterDate || (newest > last.afterDate && daysBetween(last.afterDate, newest) >= COMPARE_MIN_DAYS));
   const shown = comparisons.find((c) => c.id === shownId) ?? last;
 
@@ -165,6 +365,21 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
     }
   };
 
+  const changeConsent = async (allowed: boolean) => {
+    const prev = consent;
+    setConsent(allowed);
+    const res = await fetch("/api/testimonial-consent", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ allowed }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setConsent(prev);
+      setError("Couldn't save that. Try again.");
+    }
+  };
+
   return (
     <Card className={cn(due && "border-primary/50")}>
       <CardHeader>
@@ -173,7 +388,8 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
           Monthly comparison
         </CardTitle>
         <CardDescription>
-          What changed between your newest photos and the ones from about a month before, with a short summary you can share.
+          What changed between your newest photos and the ones from about a month before, checked against your weight, tape
+          measurements and lifts, with a short summary and an image you can share.
           {left !== null ? ` ${left} ${left === 1 ? "analysis" : "analyses"} left today.` : ""}
         </CardDescription>
       </CardHeader>
@@ -184,7 +400,7 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
           <p className="text-sm text-muted-foreground">
             Your first comparison unlocks with photos taken on or after{" "}
             <span className="font-medium text-foreground">{formatShort(addDays(dates[dates.length - 1]!, COMPARE_MIN_DAYS))}</span>.
-            Same spot, same lighting, same poses.
+            Same spot, same lighting, same poses. We&apos;ll send a notification when it&apos;s ready.
           </p>
         ) : (
           <>
@@ -226,6 +442,23 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
           </p>
         ) : null}
 
+        {consent !== null ? (
+          <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2.5">
+            <Quote className={cn("mt-0.5 h-4 w-4 shrink-0", consent ? "text-primary" : "text-muted-foreground")} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">My coach may use my comparisons as testimonials</p>
+              <p className="text-xs text-muted-foreground">
+                {consent
+                  ? "On: your coach can share your before/after and summary (no name) to show results. Needs photo sharing on too. Turn off any time."
+                  : "Off: your comparisons stay between you and your coach."}
+              </p>
+            </div>
+            <Switch checked={consent} onCheckedChange={(v) => void changeConsent(v)} aria-label="Allow testimonials" />
+          </div>
+        ) : null}
+
+        <BodyFatChart points={series} />
+
         {shown ? (
           <div className="space-y-3 border-t border-border pt-4">
             {comparisons.length > 1 ? (
@@ -244,7 +477,7 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
                 </select>
               </label>
             ) : null}
-            <ComparisonView key={shown.id} c={shown} srcFor={(id) => `/api/photos/${id}`} />
+            <ComparisonView key={shown.id} c={shown} srcFor={(id) => `/api/photos/${id}`} unit={unit} />
           </div>
         ) : null}
       </CardContent>
@@ -252,9 +485,24 @@ export function PhysiqueCompareCard({ enabled }: { enabled: boolean }) {
   );
 }
 
-/** Coach dashboard → a member: their newest comparison, when they share photos. */
-export function CoachComparisonCard({ companyId, memberId, memberName }: { companyId: string; memberId: string; memberName: string }) {
-  const [c, setC] = React.useState<Comparison | null>(null);
+/* ------------------------------ coach ------------------------------ */
+
+const coachPhoto = (companyId: string, memberId: string) => (id: string) =>
+  `/api/coach/photo?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}&id=${encodeURIComponent(id)}`;
+
+/** Coach dashboard → a member: their newest comparison and body fat chart, when they share photos. */
+export function CoachComparisonCard({
+  companyId,
+  memberId,
+  memberName,
+  unit,
+}: {
+  companyId: string;
+  memberId: string;
+  memberName: string;
+  unit: WeightUnit;
+}) {
+  const [data, setData] = React.useState<{ comparison: Comparison | null; bodyFat: BodyFatPoint[] } | null>(null);
   React.useEffect(() => {
     let live = true;
     fetch(`/api/coach/member-physique?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}`, {
@@ -262,13 +510,15 @@ export function CoachComparisonCard({ companyId, memberId, memberName }: { compa
       headers: { accept: "application/json" },
     })
       .then((r) => (r.ok ? r.json() : null))
-      .then((b: { comparison?: Comparison | null } | null) => live && setC(b?.comparison ?? null))
+      .then((b: { comparison?: Comparison | null; bodyFat?: BodyFatPoint[] } | null) =>
+        live && setData(b ? { comparison: b.comparison ?? null, bodyFat: b.bodyFat ?? [] } : null),
+      )
       .catch(() => {});
     return () => {
       live = false;
     };
   }, [companyId, memberId]);
-  if (!c) return null;
+  if (!data || (!data.comparison && data.bodyFat.length < 2)) return null;
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -278,13 +528,92 @@ export function CoachComparisonCard({ companyId, memberId, memberName }: { compa
         </CardTitle>
         <CardDescription>Their newest photo comparison, for check-ins and (with their OK) testimonials.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ComparisonView
-          c={c}
-          srcFor={(id) =>
-            `/api/coach/photo?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}&id=${encodeURIComponent(id)}`
-          }
-        />
+      <CardContent className="space-y-4">
+        <BodyFatChart points={data.bodyFat} />
+        {data.comparison ? <ComparisonView c={data.comparison} srcFor={coachPhoto(companyId, memberId)} unit={unit} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Coach dashboard → Testimonials: members who said yes (and share photos),
+ * each with their newest comparison: summary to copy and a share image.
+ */
+export function CoachTestimonials({ companyId, names, unit }: { companyId: string; names: Map<string, string>; unit: WeightUnit }) {
+  const [items, setItems] = React.useState<{ memberId: string; comparison: Comparison }[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [open, setOpen] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let live = true;
+    fetch(`/api/coach/testimonials?company=${encodeURIComponent(companyId)}`, { credentials: "same-origin", headers: { accept: "application/json" } })
+      .then(async (r) => {
+        const b = (await r.json().catch(() => null)) as { testimonials?: { memberId: string; comparison: Comparison }[]; error?: string } | null;
+        if (!r.ok || !b?.testimonials) throw new Error(b?.error ?? "Couldn't load testimonials.");
+        if (live) setItems(b.testimonials);
+      })
+      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : "Couldn't load testimonials."));
+    return () => {
+      live = false;
+    };
+  }, [companyId]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2">
+          <Quote className="h-4 w-4 text-primary" />
+          Testimonials
+        </CardTitle>
+        <CardDescription>
+          Only members who switched on &ldquo;My coach may use my comparisons as testimonials&rdquo; and share their photos. If they
+          turn either off, they leave this list. Summaries are written without names.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : items === null ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No one yet. Members find the switch under Progress → Photos → Monthly comparison; it&apos;s worth mentioning in a check-in.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {items.map(({ memberId, comparison: c }) => {
+              const name = names.get(memberId) ?? "A member";
+              const summary = shareableSummary(c);
+              const chips = compareStatChips(c.stats ?? null, unit);
+              const isOpen = open === memberId;
+              return (
+                <li key={memberId} className="space-y-2 rounded-lg border border-border p-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-semibold">{name}</p>
+                    <p className="tabular text-xs text-muted-foreground">
+                      {c.beforeDate ? formatShort(c.beforeDate) : "?"} → {c.afterDate ? formatShort(c.afterDate) : "?"}
+                    </p>
+                  </div>
+                  {chips.length ? <p className="tabular text-xs text-primary">{chips.join(" · ")}</p> : null}
+                  {summary ? <p className="text-sm leading-relaxed text-muted-foreground">{summary}</p> : null}
+                  {isOpen ? (
+                    <ComparisonView c={c} srcFor={coachPhoto(companyId, memberId)} unit={unit} />
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {summary ? <CopyButton getText={() => summary} label="Copy summary" className="h-8" /> : null}
+                      <Button variant="outline" size="sm" onClick={() => setOpen(memberId)}>
+                        <ImageIcon />
+                        Photos and image
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

@@ -273,12 +273,10 @@ export default function PrivacyPage() {
               your rank, or the admin&apos;s reason).
             </li>
             <li>
-              <strong>Open Food Facts</strong> and <strong>USDA FoodData Central</strong> provide nutrition data. When you
-              scan, type a barcode or search for a food, the barcode or search words are sent to them so we can look the
-              food up. These requests are made by our server and do not include your identity. Results are cached and
-              shared between members to avoid repeat lookups; the cache contains only barcodes, search words and product
-              details. If our server can&apos;t reach Open Food Facts, your browser may ask it directly, in which case Open
-              Food Facts receives your IP address.
+              <strong>USDA FoodData Central</strong> provides nutrition data. When you scan, type a barcode or search for a
+              food, the barcode or search words are sent to it so we can look the food up. These requests are made by our
+              server and do not include your identity. Results are cached and shared between members to avoid repeat
+              lookups; the cache contains only barcodes, search words and product details.
             </li>
             <li>
               <strong>Google (Gemini)</strong> reads photos to produce a physique analysis or a meal photo estimate, only

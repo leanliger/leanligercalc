@@ -30,6 +30,8 @@
  *   GET    /api/physique          my past physique analyses
  *   POST   /api/physique          run one on my saved photos or an uploaded set
  *   POST   /api/physique/compare  compare my newest photos with ones from about a month earlier { before? }
+ *   GET/PUT /api/testimonial-consent      may my coach use my comparisons as testimonials { allowed }
+ *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
  *   GET    /api/coach/photo?company&member&id  a shared member photo (admins only)
@@ -87,6 +89,8 @@
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { receiveSteps, stepSyncKey } from "./steps-sync";
 import { coachMemberPhysique } from "./physique-focus";
+import { coachTestimonials, getConsent, setConsent } from "./testimonials";
+import { sendCompareNudges } from "./compare-nudges";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import { analyzePhysique, comparePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
@@ -734,6 +738,19 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method === "POST") return send(await analyzePhysique(env, userId, request));
     return error(405, "Method not allowed.");
   }
+  if (path === "/api/testimonial-consent") {
+    if (method === "GET") return send(await getConsent(env, userId));
+    if (method === "PUT") {
+      const body = await readJson(request);
+      if (!body.ok) return body.response;
+      return send(await setConsent(env, userId, body.value));
+    }
+    return error(405, "Method not allowed.");
+  }
+  if (path === "/api/coach/testimonials") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachTestimonials(env, userId, q("company")));
+  }
   if (path === "/api/physique/compare") {
     if (method !== "POST") return error(405, "Method not allowed.");
     const body = await readJson(request);
@@ -1165,6 +1182,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM physique_analyses WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM physique_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM step_tokens WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM testimonial_consent WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM compare_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
@@ -1221,5 +1240,16 @@ export default {
         })
         .catch((e) => console.error("fasting reminders crashed", e)),
     );
+    // "Your monthly comparison is ready": every 15 minutes is plenty.
+    const when = new Date(controller.scheduledTime);
+    if (when.getUTCMinutes() % 15 === 0) {
+      ctx.waitUntil(
+        sendCompareNudges(env, when)
+          .then((r) => {
+            if (r.due > 0) console.log("compare nudges", r);
+          })
+          .catch((e) => console.error("compare nudges crashed", e)),
+      );
+    }
   },
 } satisfies ExportedHandler<Env>;

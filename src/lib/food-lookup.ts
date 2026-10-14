@@ -1,15 +1,10 @@
 /**
- * Browser side of the food database: barcode lookups and name search.
- *
- * Both go through the Worker (/api/food/*), which caches results for every
- * member. If the Worker can't answer — it's busy, Open Food Facts refused it,
- * or there is no Worker at all (a static preview) — barcode lookups fall back
- * to asking Open Food Facts directly from the browser, which it allows.
- * Name search has no such fallback: Open Food Facts' search service doesn't
- * accept requests from other websites.
+ * Browser side of the food database: barcode lookups and name search, both
+ * through the Worker (/api/food/*), which asks USDA FoodData Central and
+ * caches results for every member. Nothing is fetched from anywhere else.
  */
 
-import { barcodeCandidates, normalizeOffProduct, OFF_PRODUCT_FIELDS, type FoodProduct } from "./food";
+import type { FoodProduct } from "./food";
 
 export type LookupOutcome =
   | { kind: "found"; product: FoodProduct }
@@ -53,36 +48,16 @@ function rethrowIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 }
 
-async function lookupDirect(code: string, signal?: AbortSignal): Promise<LookupOutcome> {
-  try {
-    for (const candidate of barcodeCandidates(code)) {
-      const reply = await fetchJson(
-        `https://world.openfoodfacts.org/api/v2/product/${candidate}.json?fields=${OFF_PRODUCT_FIELDS}`,
-        signal,
-      );
-      if (reply.status === 404) continue;
-      if (!reply.ok || !reply.json) return { kind: "error", message: "The food database didn't answer. Try again." };
-      const body = reply.body as { status?: number; product?: unknown };
-      const product = body.status === 1 ? normalizeOffProduct(body.product, candidate) : null;
-      if (product) return { kind: "found", product: { ...product, barcode: code } };
-    }
-    return { kind: "missing" };
-  } catch {
-    rethrowIfAborted(signal);
-    return { kind: "error", message: "Couldn't reach the food database. Check your connection." };
-  }
-}
-
 export async function lookupBarcode(code: string, signal?: AbortSignal): Promise<LookupOutcome> {
   let reply: JsonReply;
   try {
     reply = await fetchJson(`/api/food/barcode/${code}`, signal);
   } catch {
     rethrowIfAborted(signal);
-    return lookupDirect(code, signal);
+    return { kind: "error", message: "Couldn't reach the food database. Check your connection." };
   }
-  // No Worker (static preview), or the Worker couldn't get an answer upstream.
-  if (!reply.json || reply.status === 429 || reply.status >= 500) return lookupDirect(code, signal);
+  if (!reply.json) return { kind: "error", message: "Barcode lookup isn't available in this preview. Add the food by hand." };
+  if (reply.status === 429) return { kind: "error", message: "Too many lookups. Wait a minute and try again." };
   const body = reply.body as { product?: FoodProduct | null; error?: string };
   if (!reply.ok) return { kind: "error", message: body.error ?? "Lookup failed." };
   return body.product ? { kind: "found", product: body.product } : { kind: "missing" };

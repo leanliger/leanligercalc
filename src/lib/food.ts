@@ -5,13 +5,12 @@
  * agree on exactly what a valid food log is; the Worker re-validates
  * everything regardless of what the client sent.
  *
- * Product data comes from two databases, normalised here into one shape:
+ * Product data comes from USDA FoodData Central (needs a free key): branded
+ * products, found by barcode or name, and whole foods such as "chicken
+ * breast". Entries logged before Open Food Facts was dropped keep their
+ * "off" source; nothing new comes from it.
  *
- *   Open Food Facts         free and open, no key; the barcode source
- *   USDA FoodData Central   optional (needs a free key); adds US brands and
- *                           whole foods such as "chicken breast"
- *
- * A member's own entries ("my foods") override both for the same barcode, so a
+ * A member's own entries ("my foods") override USDA for the same barcode, so a
  * product that's missing or wrong in the database only has to be typed once.
  */
 
@@ -400,66 +399,6 @@ function plausiblePer100(m: Macros | null): Macros | null {
 }
 
 const KJ_PER_KCAL = 4.184;
-
-/** Open Food Facts product fields this app reads; fetching only these keeps responses small. */
-export const OFF_PRODUCT_FIELDS = [
-  "code",
-  "product_name",
-  "product_name_en",
-  // Thai products are often only named in Thai (e.g. Singha water: "น้ำดื่มสิงห์").
-  "product_name_th",
-  "generic_name",
-  "generic_name_th",
-  "abbreviated_product_name",
-  "brands",
-  "serving_size",
-  "serving_quantity",
-  "serving_quantity_unit",
-  "nutrition_data_per",
-  "nutriments",
-].join(",");
-
-/** Open Food Facts `product` object → FoodProduct. */
-export function normalizeOffProduct(raw: unknown, barcode: string): FoodProduct | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const p = raw as Record<string, unknown>;
-  const n = (typeof p.nutriments === "object" && p.nutriments !== null ? p.nutriments : {}) as Record<string, unknown>;
-
-  const read = (suffix: "_100g" | "_serving"): Macros | null => {
-    let kcal = finite(n[`energy-kcal${suffix}`]);
-    if (kcal === null) {
-      const kj = finite(n[`energy-kj${suffix}`]) ?? finite(n[`energy${suffix}`]);
-      if (kj !== null) kcal = kj / KJ_PER_KCAL;
-    }
-    return buildMacros(kcal, finite(n[`proteins${suffix}`]), finite(n[`carbohydrates${suffix}`]), finite(n[`fat${suffix}`]));
-  };
-
-  const name =
-    cleanText(p.product_name, FOOD_NAME_MAX) ??
-    cleanText(p.product_name_en, FOOD_NAME_MAX) ??
-    cleanText(p.product_name_th, FOOD_NAME_MAX) ??
-    cleanText(p.generic_name, FOOD_NAME_MAX) ??
-    cleanText(p.generic_name_th, FOOD_NAME_MAX) ??
-    cleanText(p.abbreviated_product_name, FOOD_NAME_MAX);
-  const brandsRaw = Array.isArray(p.brands) ? p.brands.join(",") : p.brands;
-  const brand = cleanText(typeof brandsRaw === "string" ? brandsRaw.split(",")[0] : null, FOOD_BRAND_MAX);
-  const unitRaw = typeof p.serving_quantity_unit === "string" ? p.serving_quantity_unit.toLowerCase() : "";
-  const baseUnit: "g" | "ml" = unitRaw === "ml" || p.nutrition_data_per === "100ml" ? "ml" : "g";
-  const servingSize = finite(p.serving_quantity);
-
-  return {
-    key: `off:${barcode}`,
-    source: "off",
-    barcode,
-    name: name ?? (brand ? `${brand} product` : "Unnamed product"),
-    brand,
-    per100: plausiblePer100(read("_100g")),
-    perServing: read("_serving"),
-    servingLabel: cleanText(p.serving_size, SERVING_LABEL_MAX),
-    servingSize: servingSize && servingSize > 0 && servingSize <= 5000 ? servingSize : null,
-    baseUnit,
-  };
-}
 
 interface UsdaNutrient {
   nutrientNumber?: string;

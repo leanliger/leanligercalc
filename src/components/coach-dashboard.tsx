@@ -33,7 +33,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { PhysiqueFocusCard } from "@/components/physique-focus-card";
-import { CoachComparisonCard } from "@/components/physique-compare-card";
+import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-compare-card";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -119,7 +119,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   );
   const [unit, setUnit] = React.useState<WeightUnit>("lb");
   // Members (progress) or Assign (send programs and habit sets).
-  const [view, setView] = React.useState<"members" | "assign">("members");
+  const [view, setView] = React.useState<"members" | "assign" | "testimonials">("members");
   const [today] = React.useState(() => todayISO());
 
   // Keep the open member in the address bar, so it can be bookmarked or shared with another admin.
@@ -272,6 +272,25 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             </div>
             <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
           </div>
+        ) : view === "testimonials" ? (
+          <>
+            <SegmentedControl
+              ariaLabel="Dashboard view"
+              value={view}
+              onValueChange={setView}
+              options={[
+                { value: "members" as const, label: "Members" },
+                { value: "assign" as const, label: "Assign programs & habits" },
+                { value: "testimonials" as const, label: "Testimonials" },
+              ]}
+              className="max-w-xl"
+            />
+            <CoachTestimonials
+              companyId={companyId}
+              names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
+              unit={unit}
+            />
+          </>
         ) : view === "assign" ? (
           <>
             <SegmentedControl
@@ -281,8 +300,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               options={[
                 { value: "members" as const, label: "Members" },
                 { value: "assign" as const, label: "Assign programs & habits" },
+                { value: "testimonials" as const, label: "Testimonials" },
               ]}
-              className="max-w-md"
+              className="max-w-xl"
             />
             <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
           </>
@@ -295,8 +315,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               options={[
                 { value: "members" as const, label: "Members" },
                 { value: "assign" as const, label: "Assign programs & habits" },
+                { value: "testimonials" as const, label: "Testimonials" },
               ]}
-              className="max-w-md"
+              className="max-w-xl"
             />
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
               <Stat
@@ -1011,7 +1032,7 @@ function MemberDetail({
         </CardContent>
       </Card>
 
-      {m.data.photos !== null ? <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} /> : null}
+      {m.data.photos !== null ? <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} /> : null}
 
       {/* ------------------------------- habits ------------------------------- */}
       <ConsistencyCard

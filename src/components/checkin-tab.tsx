@@ -359,7 +359,7 @@ export function CheckinTab({
             <div className="space-y-5">
               <PhotosCard cloud={session.mode === "cloud"} today={today} />
               <PhysiqueCard enabled={session.mode === "cloud" && session.physique === true} />
-              <PhysiqueCompareCard enabled={session.mode === "cloud" && session.physique === true} />
+              <PhysiqueCompareCard enabled={session.mode === "cloud" && session.physique === true} unit={unit} />
             </div>
           ) : (
             <div className="space-y-5">

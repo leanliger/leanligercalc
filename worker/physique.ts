@@ -31,6 +31,8 @@ import {
   type CompareIds,
 } from "../src/lib/physique";
 import { addDays, daysBetween, isValidISODate } from "../src/lib/dates";
+import { compareStatsText, liftChanges, measurementChanges, type CompareStats, type MeasurementRow } from "../src/lib/physique-stats";
+import type { Workout } from "../src/lib/training";
 import { POSES, POSE_LABELS, type Pose } from "../src/lib/photos";
 import { photoList, type PhotoEnv } from "./photos";
 import { secretValue } from "./secrets";
@@ -322,6 +324,7 @@ interface ComparisonRow {
   photo_date: string | null;
   before_date: string | null;
   photo_ids: string | null;
+  stats: string | null;
   analysis: string;
   created_at: string;
 }
@@ -333,23 +336,62 @@ function toComparison(r: ComparisonRow) {
   } catch {
     /* keep it empty */
   }
+  let stats: CompareStats | null = null;
+  try {
+    if (r.stats) stats = JSON.parse(r.stats) as CompareStats;
+  } catch {
+    /* none */
+  }
   return {
     id: r.id,
     beforeDate: r.before_date,
     afterDate: r.photo_date,
     createdAt: r.created_at,
     photoIds,
+    stats,
     ...parsePhysique(r.analysis),
   };
 }
 
 export async function listComparisons(env: { DB: D1Database }, userId: string, limit = 12) {
   const { results } = await env.DB.prepare(
-    "SELECT id, photo_date, before_date, photo_ids, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, photo_date, before_date, photo_ids, stats, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' ORDER BY created_at DESC LIMIT ?",
   )
     .bind(userId, limit)
     .all<ComparisonRow>();
   return results.map(toComparison);
+}
+
+/** Weight, tape measurements, lifts and habit logging between two photo dates (src/lib/physique-stats.ts). */
+async function measuredStats(env: { DB: D1Database }, userId: string, before: string, after: string): Promise<CompareStats> {
+  const [wBefore, wAfter, measures, workouts, habits] = await Promise.all([
+    weightNear(env, userId, before),
+    weightNear(env, userId, after),
+    env.DB.prepare("SELECT date, waist, hips, chest, arms, thighs FROM measurements WHERE user_id = ? AND date BETWEEN ? AND ?")
+      .bind(userId, addDays(before, -10), addDays(after, 10))
+      .all<MeasurementRow>(),
+    env.DB.prepare("SELECT data FROM workouts WHERE user_id = ? AND date BETWEEN ? AND ? LIMIT 400")
+      .bind(userId, addDays(before, -30), addDays(after, 3))
+      .all<{ data: string }>(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM habit_logs WHERE user_id = ? AND date > ? AND date <= ?")
+      .bind(userId, before, after)
+      .first<{ n: number }>(),
+  ]);
+  const parsed: Workout[] = [];
+  for (const r of workouts.results) {
+    try {
+      parsed.push(JSON.parse(r.data) as Workout);
+    } catch {
+      /* skip a corrupt row */
+    }
+  }
+  const days = daysBetween(before, after);
+  return {
+    weight: wBefore !== null && wAfter !== null ? { before: wBefore, after: wAfter } : null,
+    measurements: measurementChanges(measures.results, before, after),
+    lifts: liftChanges(parsed, before, after),
+    habits: (habits?.n ?? 0) > 0 && days > 0 ? { logged: Math.min(habits!.n, days), days } : null,
+  };
 }
 
 /** The nearest weigh-in to a date, within a week either side. */
@@ -402,7 +444,7 @@ export async function comparePhysique(env: PhysiqueEnv, userId: string, raw: unk
   const beforeDate = pairs.map((p) => p.before.date).sort()[0]!;
   const afterSetDate = pairs.map((p) => p.after.date).sort().at(-1)!;
   const days = daysBetween(beforeDate, afterSetDate);
-  const [wBefore, wAfter] = await Promise.all([weightNear(env, userId, beforeDate), weightNear(env, userId, afterSetDate)]);
+  const stats = await measuredStats(env, userId, beforeDate, afterSetDate);
 
   const parts: unknown[] = [];
   const ids: CompareIds = { before: {}, after: {} };
@@ -416,22 +458,22 @@ export async function comparePhysique(env: PhysiqueEnv, userId: string, raw: unk
       ids[side][pair.pose] = meta.id;
     }
   }
-  parts.push({ text: compareUserPrompt(beforeDate, afterSetDate, days, { before: wBefore, after: wAfter }) });
+  parts.push({ text: `${compareUserPrompt(beforeDate, afterSetDate, days, { before: null, after: null })} ${compareStatsText(stats)}`.trim() });
 
   const result = await askModel(env, key, userId, parts, COMPARE_PROMPT);
   if (!result.ok) return result;
 
   const id = crypto.randomUUID().replace(/-/g, "");
   await env.DB.prepare(
-    "INSERT INTO physique_analyses (id, user_id, source, photo_date, before_date, photo_ids, analysis) VALUES (?, ?, 'compare', ?, ?, ?, ?)",
+    "INSERT INTO physique_analyses (id, user_id, source, photo_date, before_date, photo_ids, stats, analysis) VALUES (?, ?, 'compare', ?, ?, ?, ?, ?)",
   )
-    .bind(id, userId, afterSetDate, beforeDate, JSON.stringify(ids), result.analysis.raw)
+    .bind(id, userId, afterSetDate, beforeDate, JSON.stringify(ids), JSON.stringify(stats), result.analysis.raw)
     .run();
 
   return {
     ok: true,
     body: {
-      comparison: { id, beforeDate, afterDate: afterSetDate, createdAt: new Date().toISOString(), photoIds: ids, ...result.analysis },
+      comparison: { id, beforeDate, afterDate: afterSetDate, createdAt: new Date().toISOString(), photoIds: ids, stats, ...result.analysis },
       left: result.left,
     },
   };

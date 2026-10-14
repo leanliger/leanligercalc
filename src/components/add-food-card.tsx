@@ -373,10 +373,10 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
 
         <p className="text-[12px] leading-relaxed text-muted-foreground">
           Barcode and search data come from{" "}
-          <a href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            Open Food Facts
+          <a href="https://fdc.nal.usda.gov" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            USDA FoodData Central
           </a>
-          , a free database anyone can add to. Always check the numbers against the label.
+          , mostly US products. Not found? Type the label in once and it&apos;s saved to My foods. Always check the numbers against the label.
         </p>
       </CardContent>
     </Card>
