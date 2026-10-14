@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Check, Disc3 } from "lucide-react";
+import { Check, Disc3, Minus, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented";
-import { BARS, PLATES, describePlates, plateColor, platesFor, type PlateColor } from "@/lib/plates";
+import { BARS, MAX_PLATES_PER_SIDE, PLATES, describePlates, plateColor, platesFor, weightFromCounts, type PlateColor } from "@/lib/plates";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -218,11 +219,12 @@ export function LoadTypePicker({ value, onChange, className }: { value: LoadType
   );
 }
 
-/** Training tab card: type a weight, see the plates. */
+/** Training tab card: type a weight to see the plates, or count the plates to see the weight. */
 export function PlateCalculatorCard({ unit }: { unit: WeightUnit }) {
   const [text, setText] = React.useState(unit === "kg" ? "100" : "225");
   const [bar, setBar] = useBar(unit);
   const [type, setType] = useLoadType();
+  const [mode, setMode] = React.useState<"weight" | "plates">("weight");
   const id = React.useId();
   React.useEffect(() => setText(unit === "kg" ? "100" : "225"), [unit]);
   const total = Number(text.replace(",", "."));
@@ -233,10 +235,32 @@ export function PlateCalculatorCard({ unit }: { unit: WeightUnit }) {
           <Disc3 className="h-4 w-4 text-primary" />
           Plate calculator
         </CardTitle>
-        <CardDescription>Type the total weight to see what goes on each side.</CardDescription>
+        <CardDescription>
+          {mode === "weight"
+            ? "Type the total weight to see what goes on each side."
+            : "Enter how many of each plate are on one side to see the total."}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <SegmentedControl
+          ariaLabel="Plate calculator mode"
+          size="sm"
+          value={mode}
+          onValueChange={setMode}
+          options={[
+            { value: "weight" as const, label: "Weight → plates" },
+            { value: "plates" as const, label: "Plates → weight" },
+          ]}
+          className="max-w-sm"
+        />
         <LoadTypePicker value={type} onChange={setType} />
+        {mode === "plates" ? (
+          <>
+            {type === "barbell" ? <BarPicker unit={unit} bar={bar} onBar={setBar} className="w-40" /> : null}
+            <PlateCounter unit={unit} bar={type === "barbell" ? bar : 0} type={type} />
+          </>
+        ) : (
+        <>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <label htmlFor={id} className="text-xs font-medium">
@@ -254,8 +278,105 @@ export function PlateCalculatorCard({ unit }: { unit: WeightUnit }) {
         ) : (
           <p className="text-xs text-muted-foreground">Enter a weight.</p>
         )}
+        </>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * "Plates → weight": a box per plate for how many are on ONE side (both sides
+ * are loaded the same), and the total on the bar as you type.
+ */
+function PlateCounter({ unit, bar, type }: { unit: WeightUnit; bar: number; type: LoadType }) {
+  const [counts, setCounts] = React.useState<Record<string, string>>({});
+  // Different plates in kg: start fresh when the unit changes.
+  React.useEffect(() => setCounts({}), [unit]);
+  const numbers = Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Number(v) || 0]));
+  const load = weightFromCounts(numbers, bar, unit);
+  const set = (plate: number, value: string) => {
+    const clean = value.replace(/[^0-9]/g, "").slice(0, 2);
+    setCounts((prev) => ({ ...prev, [String(plate)]: clean === "" ? "" : String(Math.min(Number(clean), MAX_PLATES_PER_SIDE)) }));
+  };
+  const step = (plate: number, by: number) => {
+    const now = Number(counts[String(plate)] ?? 0) || 0;
+    const next = Math.max(0, Math.min(MAX_PLATES_PER_SIDE, now + by));
+    setCounts((prev) => ({ ...prev, [String(plate)]: next === 0 ? "" : String(next) }));
+  };
+  const any = load.perSide.length > 0;
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="mb-1.5 grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span>Plate</span>
+          <span>Each side</span>
+        </div>
+        <ul className="space-y-1.5">
+          {PLATES[unit].map((plate) => {
+            const value = counts[String(plate)] ?? "";
+            return (
+              <li key={plate} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3">
+                <span className="flex items-center gap-2">
+                  <span aria-hidden className={cn("h-5 w-2.5 rounded-sm", PLATE_CLASS[plateColor(plate, unit)])} />
+                  <span className="tabular text-sm font-semibold">
+                    {plate}
+                    <span className="ml-0.5 text-xs font-normal text-muted-foreground">{unit}</span>
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() => step(plate, -1)}
+                    disabled={!value}
+                    aria-label={`One fewer ${plate} ${unit} plate each side`}
+                  >
+                    <Minus />
+                  </Button>
+                  <Input
+                    value={value}
+                    onChange={(e) => set(plate, e.target.value)}
+                    inputMode="numeric"
+                    placeholder="0"
+                    aria-label={`${plate} ${unit} plates on each side`}
+                    className="tabular h-10 w-16 text-center text-base font-semibold"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() => step(plate, 1)}
+                    aria-label={`One more ${plate} ${unit} plate each side`}
+                  >
+                    <Plus />
+                  </Button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2.5" aria-live="polite">
+        <p className="text-xs text-muted-foreground">{type === "barbell" ? "Total on the bar" : "Total plates"}</p>
+        <p className="tabular text-3xl font-semibold leading-tight">
+          {load.total}
+          <span className="ml-1 text-base font-normal text-muted-foreground">{unit}</span>
+        </p>
+        <p className="tabular text-xs text-muted-foreground">
+          {any ? `${load.sideWeight} ${unit} each side` : "No plates yet"}
+          {type === "barbell" ? ` + ${bar} ${unit} bar` : ""}
+        </p>
+      </div>
+      {any ? <BarDiagram perSide={load.perSide} unit={unit} type={type} /> : null}
+      {any ? (
+        <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCounts({})}>
+          Clear
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

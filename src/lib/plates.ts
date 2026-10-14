@@ -66,6 +66,27 @@ export function platesFor(total: number, bar: number, unit: WeightUnit): PlateLo
   return { perSide, sideWeight, loaded, short: round(total - loaded), belowBar: false };
 }
 
+/** Most of one plate a side the counter accepts. */
+export const MAX_PLATES_PER_SIDE = 20;
+
+/**
+ * The other way round: how many of each plate are on ONE side → what's on the
+ * bar. Unknown plates and silly counts are ignored.
+ */
+export function weightFromCounts(
+  counts: Readonly<Record<string, number>>,
+  bar: number,
+  unit: WeightUnit,
+): { perSide: number[]; sideWeight: number; total: number } {
+  const perSide: number[] = [];
+  for (const plate of PLATES[unit]) {
+    const n = Math.floor(counts[String(plate)] ?? 0);
+    if (n > 0 && n <= MAX_PLATES_PER_SIDE) for (let i = 0; i < n; i++) perSide.push(plate);
+  }
+  const sideWeight = round(perSide.reduce((s, p) => s + p, 0));
+  return { perSide, sideWeight, total: round(bar + 2 * sideWeight) };
+}
+
 /** Counted plates for reading out: "2 × 45, 25, 10". */
 export function describePlates(perSide: readonly number[]): string {
   const counts: [number, number][] = [];
