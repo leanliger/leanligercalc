@@ -7,7 +7,7 @@
  *   POST   /api/photos?date&pose  upload one (image/jpeg body)
  *   GET    /api/photos/:id        one of my photos
  *   DELETE /api/photos/:id        delete one
- *   PUT    /api/photo-settings    { shareWithCoach }
+ *   PUT    /api/photo-settings    { shareWithCoach?, photoDay? }
  *
  * Coaches can see a member's photos only while that member's
  * share_with_coach is on (see coachPhoto).
@@ -79,6 +79,9 @@ export async function listPhotos(env: PhotoEnv, userId: string): Promise<PhotoRe
     body: {
       available: Boolean(env.PHOTOS),
       shareWithCoach: await isSharingWithCoach(env, userId),
+      // The monthly "It's photo day" reminder (worker/photo-day.ts); on unless turned off.
+      photoDay:
+        (await env.DB.prepare("SELECT photo_day FROM photo_settings WHERE user_id = ?").bind(userId).first<{ photo_day: number }>())?.photo_day !== 0,
       photos: env.PHOTOS ? await photoList(env, userId) : [],
       uploadsLeftToday: Math.max(0, MAX_PHOTO_UPLOADS_PER_DAY - (await uploadsToday(env, userId))),
       storageFull: env.PHOTOS ? (await photoStorageUsed(env)) >= PHOTO_STORAGE_CAP_BYTES : false,
@@ -154,15 +157,20 @@ export async function deletePhoto(env: PhotoEnv, userId: string, id: string): Pr
 }
 
 export async function setSharing(env: PhotoEnv, userId: string, raw: unknown): Promise<PhotoResult> {
-  const share = (raw as { shareWithCoach?: unknown } | null)?.shareWithCoach;
-  if (typeof share !== "boolean") return { ok: false, status: 422, error: "Expected { shareWithCoach: true | false }." };
-  await env.DB.prepare(
-    `INSERT INTO photo_settings (user_id, share_with_coach) VALUES (?, ?)
-     ON CONFLICT (user_id) DO UPDATE SET share_with_coach = excluded.share_with_coach`,
-  )
-    .bind(userId, share ? 1 : 0)
-    .run();
-  return { ok: true, body: { shareWithCoach: share } };
+  const b = (raw ?? {}) as { shareWithCoach?: unknown; photoDay?: unknown };
+  const share = typeof b.shareWithCoach === "boolean" ? b.shareWithCoach : null;
+  const photoDay = typeof b.photoDay === "boolean" ? b.photoDay : null;
+  if (share === null && photoDay === null) {
+    return { ok: false, status: 422, error: "Expected { shareWithCoach } and/or { photoDay } as true or false." };
+  }
+  await env.DB.prepare("INSERT OR IGNORE INTO photo_settings (user_id) VALUES (?)").bind(userId).run();
+  if (share !== null) {
+    await env.DB.prepare("UPDATE photo_settings SET share_with_coach = ? WHERE user_id = ?").bind(share ? 1 : 0, userId).run();
+  }
+  if (photoDay !== null) {
+    await env.DB.prepare("UPDATE photo_settings SET photo_day = ? WHERE user_id = ?").bind(photoDay ? 1 : 0, userId).run();
+  }
+  return { ok: true, body: { ...(share !== null ? { shareWithCoach: share } : {}), ...(photoDay !== null ? { photoDay } : {}) } };
 }
 
 /** Remove every photo a member has (used by "Delete all my data"). */

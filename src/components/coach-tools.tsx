@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ChevronRight, ClipboardCheck, NotebookPen, PieChart, Send } from "lucide-react";
+import { AlertTriangle, ChevronRight, ClipboardCheck, Loader2, NotebookPen, PieChart, Send, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CHECKIN_REPLY_MAX, CHECKIN_SCALES, type Checkin, type CheckinStats } from "@/lib/checkins";
+import { COACH_STYLE_MAX } from "@/lib/checkin-draft";
 import { FLAG_LABELS, type Flag, type MemberSummary } from "@/lib/coach";
 import { macroKcal, type CoachMacros } from "@/lib/coach-macros";
 import { formatShort } from "@/lib/dates";
@@ -263,6 +264,27 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
   const [reply, setReply] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
+  const [drafting, setDrafting] = React.useState(false);
+  const [drafted, setDrafted] = React.useState(false);
+  const [style, setStyle] = useCoachStyle();
+
+  /** An AI draft from this check-in (worker/checkin-drafts.ts), into the reply box to edit. */
+  const draft = async (weekStart: string) => {
+    setDrafting(true);
+    setMessage(null);
+    try {
+      const r = await call<{ draft: string; left: number }>("/api/coach/checkins/draft", {
+        method: "POST",
+        body: JSON.stringify({ company: companyId, member: memberId, weekStart, name: memberName, unit, style }),
+      });
+      setReply(r.draft);
+      setDrafted(true);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Couldn't draft a reply. Try again.");
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   React.useEffect(() => {
     let live = true;
@@ -326,6 +348,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                   onClick={() => {
                     setOpen(isOpen ? null : c.weekStart);
                     setReply("");
+                    setDrafted(false);
                     setMessage(null);
                   }}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/40"
@@ -358,15 +381,42 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                         <Label htmlFor={`reply-${c.weekStart}`} className="text-xs">
                           Your reply
                         </Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void draft(c.weekStart)}
+                          disabled={drafting || sending}
+                        >
+                          {drafting ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                          {drafting ? "Drafting…" : reply.trim() ? "Redraft with AI" : "Draft with AI"}
+                        </Button>
                         <textarea
                           id={`reply-${c.weekStart}`}
                           value={reply}
                           onChange={(e) => setReply(e.target.value)}
                           maxLength={CHECKIN_REPLY_MAX}
-                          rows={4}
+                          rows={drafted ? 9 : 4}
                           placeholder="Great week. Keep steps at 10k and add 10 g protein at breakfast…"
                           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         />
+                        {drafted ? (
+                          <p className="text-[12px] text-muted-foreground">
+                            AI draft from their answers and numbers. Read it and make it yours before sending.
+                          </p>
+                        ) : null}
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-muted-foreground">Your style for AI drafts (optional)</summary>
+                          <textarea
+                            value={style}
+                            onChange={(e) => setStyle(e.target.value)}
+                            maxLength={COACH_STYLE_MAX}
+                            rows={2}
+                            placeholder="e.g. Direct and upbeat. Short sentences. Call them 'champ'. End with 'Let's go!'"
+                            className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                          <span className="text-muted-foreground">Kept on this device. Drafts also follow how you replied to them before.</span>
+                        </details>
                         <Button size="sm" onClick={() => void send(c.weekStart)} disabled={!reply.trim() || sending}>
                           <Send />
                           {sending ? "Sending…" : c.replyAudio ? "Add a written reply" : "Send reply"}
@@ -396,6 +446,28 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
       ) : null}
     </Card>
   );
+}
+
+/** The coach's style note for AI drafts, kept on this device. */
+function useCoachStyle(): [string, (s: string) => void] {
+  const KEY = "prep-calculator:coach-style:v1";
+  const [style, setStyle] = React.useState("");
+  React.useEffect(() => {
+    try {
+      setStyle(window.localStorage.getItem(KEY) ?? "");
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
+  const save = (s: string) => {
+    setStyle(s);
+    try {
+      window.localStorage.setItem(KEY, s);
+    } catch {
+      /* fine: it lasts for this visit */
+    }
+  };
+  return [style, save];
 }
 
 /* ================================== macros ================================== */

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Camera, ImageOff, ImagePlus, Loader2, Lock, Trash2, Users, X } from "lucide-react";
+import { CalendarClock, Camera, ImageOff, ImagePlus, Loader2, Lock, Trash2, Users, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -172,6 +172,8 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
   const [state, setState] = React.useState<{
     available: boolean;
     shareWithCoach: boolean;
+    /** The monthly "It's photo day" reminder. */
+    photoDay?: boolean;
     photos: PhotoMeta[];
     /** Uploads left today under the daily limit. */
     uploadsLeftToday?: number;
@@ -191,6 +193,7 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
   const guide = usePhotoUrl(camera && guidePhoto ? `/api/photos/${guidePhoto.id}` : null);
   const dateId = React.useId();
   const shareId = React.useId();
+  const photoDayId = React.useId();
 
   const load = React.useCallback(async () => {
     try {
@@ -238,6 +241,20 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
     const res = await fetch(`/api/photos/${p.id}`, { method: "DELETE", credentials: "same-origin" });
     if (!res.ok) throw new Error("Couldn't delete it.");
     setState((prev) => (prev ? { ...prev, photos: prev.photos.filter((x) => x.id !== p.id) } : prev));
+  };
+
+  const setPhotoDay = async (on: boolean) => {
+    setState((prev) => (prev ? { ...prev, photoDay: on } : prev));
+    const res = await fetch("/api/photo-settings", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ photoDay: on }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setState((prev) => (prev ? { ...prev, photoDay: !on } : prev));
+      setError("Couldn't change the reminder. Try again.");
+    }
   };
 
   const setShare = async (share: boolean) => {
@@ -303,6 +320,20 @@ export function PhotosCard({ cloud, today }: { cloud: boolean; today: string }) 
                 </p>
               </div>
               <Switch id={shareId} checked={state.shareWithCoach} onCheckedChange={(v) => void setShare(v)} />
+            </div>
+            <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2.5">
+              <CalendarClock className={cn("mt-0.5 h-4 w-4 shrink-0", state.photoDay !== false ? "text-primary" : "text-muted-foreground")} />
+              <div className="min-w-0 flex-1">
+                <label htmlFor={photoDayId} className="text-sm font-medium">
+                  Monthly photo-day reminder
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {state.photoDay !== false
+                    ? "A notification four weeks after your last photos, around 9am, so your monthly comparison stays on schedule."
+                    : "Off: no photo-day notifications."}
+                </p>
+              </div>
+              <Switch id={photoDayId} checked={state.photoDay !== false} onCheckedChange={(v) => void setPhotoDay(v)} />
             </div>
 
             <div className="flex flex-wrap items-end gap-2">

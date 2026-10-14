@@ -31,6 +31,8 @@
  *   POST   /api/physique          run one on my saved photos or an uploaded set
  *   POST   /api/physique/compare  compare my newest photos with ones from about a month earlier { before? }
  *   GET/PUT /api/testimonial-consent      may my coach use my comparisons as testimonials { allowed }
+ *   POST   /api/food/label              read a nutrition label photo { image, mediaType } (see label-photo.ts)
+ *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
@@ -91,6 +93,9 @@ import { receiveSteps, stepSyncKey } from "./steps-sync";
 import { coachMemberPhysique } from "./physique-focus";
 import { coachTestimonials, getConsent, setConsent } from "./testimonials";
 import { sendCompareNudges } from "./compare-nudges";
+import { readLabelPhoto } from "./label-photo";
+import { draftCheckinReply } from "./checkin-drafts";
+import { sendPhotoDayReminders } from "./photo-day";
 import { estimateMealPhoto, mealPhotosOn, type MealPhotoEnv } from "./meal-photo";
 import { analyzePhysique, comparePhysique, listPhysique, physiqueOn, type PhysiqueEnv } from "./physique";
 import { coachVoice, deleteVoiceReplies, memberVoice, uploadVoiceReply } from "./voice-replies";
@@ -726,6 +731,28 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!body.ok) return body.response;
     return send(await setMemberTags(env, userId, body.value));
   }
+  if (path === "/api/food/label") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    // Its own size check: a label photo is larger than readJson's shared cap allows.
+    if (!(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
+      return error(415, "Content-Type must be application/json.");
+    }
+    const text = await request.text();
+    if (text.length > 1_000_000) return error(413, "That photo is too large.");
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return error(400, "Body is not valid JSON.");
+    }
+    return send(await readLabelPhoto(env, userId, parsed));
+  }
+  if (path === "/api/coach/checkins/draft") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await draftCheckinReply(env, userId, body.value));
+  }
   if (path === "/api/meal-photo") {
     if (method !== "POST") return error(405, "Method not allowed.");
     const body = await readJson(request);
@@ -1184,6 +1211,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM step_tokens WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM testimonial_consent WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM compare_nudges WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM photo_day_nudges WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM ai_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
@@ -1249,6 +1278,14 @@ export default {
             if (r.due > 0) console.log("compare nudges", r);
           })
           .catch((e) => console.error("compare nudges crashed", e)),
+      );
+      // "It's photo day": once a month, around 9am the member's time.
+      ctx.waitUntil(
+        sendPhotoDayReminders(env, when)
+          .then((r) => {
+            if (r.due > 0) console.log("photo day reminders", r);
+          })
+          .catch((e) => console.error("photo day reminders crashed", e)),
       );
     }
   },

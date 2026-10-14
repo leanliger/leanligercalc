@@ -13,6 +13,7 @@ import {
   PenLine,
   Plus,
   ScanBarcode,
+  ScanText,
   Search,
   TriangleAlert,
 } from "lucide-react";
@@ -23,7 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { BarcodeScanner } from "@/components/barcode-scanner";
-import { MealPhotoView } from "@/components/meal-photo";
+import { MealPhotoView, shrink } from "@/components/meal-photo";
+import type { LabelReading } from "@/lib/label-photo";
 import {
   MEALS,
   availableUnits,
@@ -228,7 +230,7 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
         kind: "manual",
         seed: {
           ...seedFromProduct(outcome.product, null),
-          notice: `Found “${outcome.product.name}”, but the database has no nutrition for it. Copy the numbers from the label — you’ll only need to do this once.`,
+          notice: `Found “${outcome.product.name}”, but the database has no nutrition for it. ${photoEnabled ? "Read the label from a photo or copy" : "Copy"} the numbers from the label: you’ll only need to do this once.`,
         },
       });
     } else if (outcome.kind === "missing") {
@@ -238,7 +240,9 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
           ...EMPTY_SEED,
           barcode: code,
           saveAsMine: true,
-          notice: `Barcode ${code} isn’t in the database yet. Copy the numbers from the label — it’ll be remembered next time you scan it.`,
+          notice: photoEnabled
+            ? `Barcode ${code} isn’t in the USDA database. Read the label from a photo, or type it in: it’ll be remembered next time you scan it.`
+            : `Barcode ${code} isn’t in the USDA database. Copy the numbers from the label: it’ll be remembered next time you scan it.`,
         },
       });
     } else {
@@ -351,6 +355,7 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
         ) : (
           <ManualView
             key={JSON.stringify(mode.seed)}
+            labelPhoto={photoEnabled}
             seed={mode.seed}
             mealLabel={MEALS.find((m) => m.id === meal)?.label ?? ""}
             onAdd={add}
@@ -876,11 +881,14 @@ function parseOptional(text: string): number | null | "bad" {
 }
 
 function ManualView({
+  labelPhoto,
   seed,
   mealLabel,
   onAdd,
   onSaveMyFood,
 }: {
+  /** Offer "Read the label from a photo" (needs the AI key, like meal photos). */
+  labelPhoto: boolean;
   seed: ManualSeed;
   mealLabel: string;
   onAdd: (entry: Omit<FoodEntry, "id" | "meal">) => Promise<void>;
@@ -901,6 +909,46 @@ function ManualView({
     save: React.useId(),
   };
   const set = (patch: Partial<ManualSeed>) => setF((prev) => ({ ...prev, ...patch }));
+
+  // A photo of the Nutrition Facts panel fills the form in (worker/label-photo.ts).
+  const labelRef = React.useRef<HTMLInputElement>(null);
+  const [reading, setReading] = React.useState(false);
+  const [readNote, setReadNote] = React.useState<string | null>(null);
+  const readLabel = async (file: File) => {
+    setReading(true);
+    setError(null);
+    setReadNote(null);
+    try {
+      const image = await shrink(file, 1280);
+      const res = await fetch("/api/food/label", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ image, mediaType: "image/jpeg" }),
+      });
+      const body = (await res.json().catch(() => null)) as { reading?: LabelReading; error?: string } | null;
+      if (!res.ok || !body?.reading) throw new Error(body?.error ?? "Couldn't read that label. Try again or type it in.");
+      const r = body.reading;
+      setF((prev) => ({
+        ...prev,
+        name: prev.name || r.name,
+        brand: prev.brand || r.brand,
+        servingLabel: r.servingLabel || prev.servingLabel,
+        kcal: String(r.kcal),
+        protein: String(r.protein),
+        carbs: String(r.carbs),
+        fat: String(r.fat),
+        notice: null,
+      }));
+      setReadNote(
+        `Read from the label${r.confidence === "high" ? "" : ` (${r.confidence} confidence)`}. Check the numbers against the label before saving.${r.note ? ` ${r.note}` : ""}`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read that label.");
+    } finally {
+      setReading(false);
+    }
+  };
 
   const nums = {
     kcal: parseOptional(f.kcal),
@@ -998,6 +1046,36 @@ function ManualView({
           <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-primary" />
           <span>{f.notice}</span>
         </p>
+      ) : null}
+      {labelPhoto ? (
+        <div className="space-y-1.5">
+          <Button type="button" variant={f.kcal ? "outline" : "default"} className="w-full" onClick={() => labelRef.current?.click()} disabled={reading}>
+            {reading ? <Loader2 className="animate-spin" /> : <ScanText />}
+            {reading ? "Reading the label…" : "Read the label from a photo"}
+          </Button>
+          <input
+            ref={labelRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void readLabel(file);
+            }}
+          />
+          {readNote ? (
+            <p role="status" className="flex gap-2 rounded-md border border-success/40 bg-success/10 px-2.5 py-2 text-xs">
+              <Check className="mt-px h-3.5 w-3.5 shrink-0 text-success" />
+              <span>{readNote}</span>
+            </p>
+          ) : (
+            <p className="text-[12px] text-muted-foreground">Snap the Nutrition Facts panel, straight on and in focus. The photo isn&apos;t kept.</p>
+          )}
+        </div>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">

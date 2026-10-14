@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 const MAX_SIDE = 768;
 
-/** The photo as a small JPEG, base64 without the data: prefix. */
-async function shrink(file: File): Promise<string> {
+/** The photo as a small JPEG, base64 without the data: prefix. Also used for label photos (bigger, for small print). */
+export async function shrink(file: File, maxSide = MAX_SIDE): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -26,7 +26,7 @@ async function shrink(file: File): Promise<string> {
       i.onerror = () => reject(new Error("That file isn't a photo the browser can read."));
       i.src = url;
     });
-    const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(img.naturalWidth * scale);
     canvas.height = Math.round(img.naturalHeight * scale);

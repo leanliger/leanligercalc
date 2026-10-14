@@ -279,10 +279,13 @@ export default function PrivacyPage() {
               lookups; the cache contains only barcodes, search words and product details.
             </li>
             <li>
-              <strong>Google (Gemini)</strong> reads photos to produce a physique analysis or a meal photo estimate, only
-              when you ask for one. We send the photos and our instructions, nothing that identifies you. Under our paid
-              Gemini plan, Google does not use them to improve its products and keeps them only for a limited time to
-              detect abuse.
+              <strong>Google (Gemini)</strong> reads photos to produce a physique analysis, a monthly comparison, a meal
+              photo estimate or a nutrition label reading, only when you ask for one. We send the photos and our
+              instructions, nothing that identifies you. When your coach asks for a draft reply to your weekly check-in,
+              Gemini also receives that check-in (your ratings, answers and the week&apos;s numbers), your plan&apos;s targets,
+              your coach&apos;s earlier replies and notes, and your first name, to write the draft your coach then edits.
+              Under our paid Gemini plan, Google does not use any of this to improve its products and keeps it only for a
+              limited time to detect abuse.
             </li>
             <li>
               <strong>YouTube</strong> (or the site of a video link you added) opens in a new tab only when you tap
