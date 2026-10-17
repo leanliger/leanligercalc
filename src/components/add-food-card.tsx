@@ -7,6 +7,7 @@ import {
   Check,
   CircleAlert,
   History,
+  MessageSquareText,
   Keyboard,
   Loader2,
   Minus,
@@ -24,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { BarcodeScanner } from "@/components/barcode-scanner";
-import { MealPhotoView, shrink } from "@/components/meal-photo";
+import { DescribeMealView, MealPhotoView, shrink } from "@/components/meal-photo";
 import type { LabelReading } from "@/lib/label-photo";
 import {
   MEALS,
@@ -63,7 +64,8 @@ export type AddMode =
   | { kind: "search" }
   | { kind: "product"; product: FoodProduct; quantity?: number; unit?: FoodUnit }
   | { kind: "manual"; seed: ManualSeed }
-  | { kind: "photo" };
+  | { kind: "photo" }
+  | { kind: "describe" };
 
 /** Starting values for the type-it-in form. */
 export interface ManualSeed {
@@ -177,7 +179,7 @@ interface AddFoodCardProps {
   /** Several foods at once (a photo estimate), saved together. */
   onAddMany: (entries: FoodEntry[]) => Promise<void>;
   onSaveMyFood: (food: FoodProduct) => Promise<FoodProduct>;
-  /** Photo estimates are switched on (worker/meal-photo.ts). */
+  /** Photo estimates and described meals are switched on (worker/meal-photo.ts, worker/meal-describe.ts). */
   photoEnabled: boolean;
 }
 
@@ -268,7 +270,9 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
   const title =
     mode.kind === "photo"
       ? "Estimate from a photo"
-      : mode.kind === "scan" || mode.kind === "lookup"
+      : mode.kind === "describe"
+        ? "Describe a meal"
+        : mode.kind === "scan" || mode.kind === "lookup"
       ? "Scan a barcode"
       : mode.kind === "search"
         ? "Search foods"
@@ -313,11 +317,14 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
             onSearch={() => go({ kind: "search" })}
             onManual={() => go({ kind: "manual", seed: EMPTY_SEED })}
             onPhoto={photoEnabled ? () => go({ kind: "photo" }) : undefined}
+            onDescribe={photoEnabled ? () => go({ kind: "describe" }) : undefined}
             onBarcode={(code) => void lookup(code)}
             onRecent={(e) => go({ kind: "product", product: productFromEntry(e), quantity: e.quantity, unit: e.unit })}
           />
         ) : mode.kind === "photo" ? (
           <MealPhotoView mealLabel={MEALS.find((m) => m.id === meal)?.label ?? ""} onAddMany={addMany} onCancel={() => go({ kind: "menu" })} />
+        ) : mode.kind === "describe" ? (
+          <DescribeMealView mealLabel={MEALS.find((m) => m.id === meal)?.label ?? ""} onAddMany={addMany} onCancel={() => go({ kind: "menu" })} />
         ) : mode.kind === "scan" ? (
           <BarcodeScanner onDetected={(code) => void lookup(code)} onCancel={() => go({ kind: "menu" })} />
         ) : mode.kind === "lookup" ? (
@@ -396,6 +403,7 @@ function MenuView({
   onSearch,
   onManual,
   onPhoto,
+  onDescribe,
   onBarcode,
   onRecent,
 }: {
@@ -405,6 +413,8 @@ function MenuView({
   onManual: () => void;
   /** Present when photo estimates are switched on. */
   onPhoto?: () => void;
+  /** Present when described meals are switched on (same AI key as photos). */
+  onDescribe?: () => void;
   onBarcode: (code: string) => void;
   onRecent: (e: FoodEntry) => void;
 }) {
@@ -414,10 +424,11 @@ function MenuView({
 
   return (
     <div className="space-y-4">
-      <div className={cn("grid gap-2", onPhoto ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
+      <div className={cn("grid gap-2", onPhoto || onDescribe ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-3")}>
         <BigButton icon={<ScanBarcode />} label="Scan" sub="barcode" onClick={onScan} primary />
         <BigButton icon={<Search />} label="Search" sub="by name" onClick={onSearch} />
         <BigButton icon={<PenLine />} label="Quick add" sub="from label" onClick={onManual} />
+        {onDescribe ? <BigButton icon={<MessageSquareText />} label="Describe" sub="type or say it" onClick={onDescribe} /> : null}
         {onPhoto ? <BigButton icon={<Camera />} label="Photo" sub="estimate" onClick={onPhoto} /> : null}
       </div>
 

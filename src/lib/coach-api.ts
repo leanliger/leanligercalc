@@ -6,6 +6,7 @@
 
 import type { HabitEntries } from "./habits";
 import type { Measurement } from "./measurements";
+import type { Milestone } from "./milestones";
 import type { PhotoMeta } from "./photos";
 import type { MemberSharing } from "./sharing";
 import type { WeighIn } from "./tracking";
@@ -54,6 +55,8 @@ export interface CoachMemberData {
   workoutDates: string[];
   /** Their latest weekly check-ins (newest first, up to 4). */
   checkins: { weekStart: string; submittedAt: string; replied: boolean }[];
+  /** Milestones reached in the last CELEBRATE_DAYS (5 lb lost, 1 in off the waist…), for the Celebrate list. */
+  milestones?: Milestone[];
 }
 
 export interface CoachOverview {

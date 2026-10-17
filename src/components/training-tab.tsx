@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MuscleVolumeCard } from "@/components/muscle-volume-card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -444,6 +445,7 @@ export function TrainingTab({
             onEdit={(id) => setView({ kind: "edit", workoutId: id })}
             onDelete={onDeleteWorkout}
           />
+          <MuscleVolumeCard workouts={workouts} customExercises={custom} today={today} />
         </div>
       </div>
     );

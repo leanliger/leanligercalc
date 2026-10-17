@@ -73,6 +73,8 @@ import type { HabitDef, HabitLog } from "@/lib/habits";
 import type { CalorieAdjustment } from "@/lib/tracking";
 import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs, WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { TrainingCarbsCard } from "@/components/training-carbs-card";
+import type { TrainingToday } from "@/lib/training-carbs";
 
 const DAY_PILL: Record<DayType, string> = {
   high: "bg-roadmap-high text-roadmap-high-foreground",
@@ -118,6 +120,8 @@ interface MacrosTabProps {
   /** "My usual breakfast": groups of foods logged in one tap. */
   savedMeals: SavedMeal[];
   onSavedMealsChange: (meals: SavedMeal[]) => void;
+  /** Today's workout, planned, in progress or done, for the training-day carb split. */
+  trainingToday: TrainingToday;
 }
 
 export type NutritionSection = "food" | "water" | "fasting";
@@ -148,6 +152,7 @@ export function MacrosTab({
   unit,
   savedMeals,
   onSavedMealsChange,
+  trainingToday,
 }: MacrosTabProps) {
   const [date, setDate] = React.useState(today);
   const [meal, setMeal] = React.useState<MealId>(() => defaultMeal(new Date().getHours()));
@@ -462,6 +467,8 @@ export function MacrosTab({
               )}
             </CardContent>
           </Card>
+
+          {isToday && target ? <TrainingCarbsCard training={trainingToday} target={target} /> : null}
 
           <AddFoodCard
             ref={addRef}

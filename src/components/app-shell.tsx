@@ -45,6 +45,7 @@ import {
   buildShareUrl,
   clearStorage,
   decodeStateFromQuery,
+  tabFromQuery,
   loadFromStorage,
   sanitizeAppState,
   saveToStorage,
@@ -113,6 +114,8 @@ import {
   type DayBackupEntry,
 } from "@/lib/day-backup";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
+import { planToday } from "@/lib/program-schedule";
+import type { TrainingToday } from "@/lib/training-carbs";
 import type {
   BiometricProfile,
   CarbCyclingInputs,
@@ -285,9 +288,11 @@ async function bootstrap(): Promise<{
   cloudState: AppState | null;
 }> {
   const fromUrl = decodeStateFromQuery(window.location.search);
+  // A link with only a tab (?t=checkin) opens that tab on the saved plan.
+  const openTab = tabFromQuery(window.location.search) ?? "today";
   const stored = loadFromStorage();
   // A fresh open starts on Today; a reload (the tab is in the URL) stays put.
-  let state: AppState = fromUrl ?? (stored ? { ...stored, activeTab: "today" } : DEFAULT_APP_STATE);
+  let state: AppState = fromUrl ?? (stored ? { ...stored, activeTab: openTab } : { ...DEFAULT_APP_STATE, activeTab: openTab });
   if (fromUrl) state = { ...state, tracking: stored?.tracking ?? state.tracking };
 
   let session = await detectSession();
@@ -300,7 +305,7 @@ async function bootstrap(): Promise<{
       const plan = await cloud.loadPlan();
       const saved = plan ? sanitizeAppState(plan) : null;
       // Older plans saved the tab too; a fresh open still starts on Today.
-      if (saved) state = fromUrl ? { ...state, tracking: saved.tracking } : { ...saved, activeTab: "today" };
+      if (saved) state = fromUrl ? { ...state, tracking: saved.tracking } : { ...saved, activeTab: openTab };
 
       let weighIns = await cloud.list();
       const onDevice = await local.list();
@@ -739,6 +744,20 @@ export function AppShell() {
     [state.profile, state.fatLoss, state.tracking.adjustments, today],
   );
   const carbPlan = React.useMemo(() => effectiveCarbInputs(state.carbs, planWeek), [state.carbs, planWeek]);
+
+  // Today's workout, for the Food tab's training-day carb split: one done or
+  // in progress today, else the active program's session for today.
+  const trainingToday = React.useMemo((): TrainingToday => {
+    const todays = workouts.filter((w) => w.date === today);
+    const live = todays.find((w) => w.finishedAt === null);
+    if (live) return { kind: "live", name: live.name };
+    const done = todays.find((w) => w.finishedAt !== null);
+    if (done) return { kind: "done", name: done.name };
+    const training = state.tracking.training;
+    const program = training.programs.find((p) => p.id === training.activeProgramId) ?? training.programs[0] ?? null;
+    const plan = program && today ? planToday(program, workouts, today) : null;
+    return plan?.kind === "today" ? { kind: "planned", name: plan.session.day.name } : null;
+  }, [workouts, today, state.tracking.training]);
   const macrosProfile = React.useMemo(() => planProfile(state.profile, planWeek), [state.profile, planWeek]);
 
   // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
@@ -1715,6 +1734,7 @@ export function AppShell() {
                   unit={state.unit}
                   savedMeals={state.tracking.savedMeals}
                   onSavedMealsChange={updateSavedMeals}
+                  trainingToday={trainingToday}
                 />
               </TabsContent>
 

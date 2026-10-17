@@ -10,6 +10,20 @@ import { addDays } from "./dates";
 import { sumMacros, type FoodLog } from "./food";
 import { weekStartOf } from "./habits";
 
+/** One day's food totals (the coach overview's FoodDay has this shape). */
+export interface DayTotals {
+  date: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+/** A member's food logs as daily totals, days with nothing logged left out. */
+export function dayTotals(foodLogs: readonly FoodLog[]): DayTotals[] {
+  return foodLogs.filter((l) => l.entries.length > 0).map((l) => ({ date: l.date, ...sumMacros(l.entries) }));
+}
+
 export interface IntakeWeek {
   weekStart: string;
   /** Days with food logged that week. */
@@ -33,7 +47,7 @@ const r = (v: number | null) => (v === null ? null : Math.round(v));
 
 /** The last `weeks` weeks up to and including the week of `today`, oldest first. */
 export function weeklyIntake(
-  foodLogs: readonly FoodLog[],
+  foodDays: readonly DayTotals[],
   weighIns: readonly { date: string; weightLb: number }[],
   weeks: number,
   today: string,
@@ -44,7 +58,7 @@ export function weeklyIntake(
     const start = addDays(last, -7 * i);
     const end = addDays(start, 6);
     const inWeek = (d: string) => d >= start && d <= end && d <= today;
-    const days = foodLogs.filter((l) => inWeek(l.date) && l.entries.length > 0).map((l) => sumMacros(l.entries));
+    const days = foodDays.filter((d) => inWeek(d.date) && d.kcal > 0);
     const w = weighIns.filter((x) => inWeek(x.date)).map((x) => x.weightLb);
     const p = avg(days.map((d) => d.protein));
     const f = avg(days.map((d) => d.fat));

@@ -326,6 +326,10 @@ Body weight and food logs are health data. Members can delete everything from Se
 
 **Weekly weigh-ins vs calories** (`weekly-intake-chart.tsx`, `src/lib/weekly-intake.ts`; Progress → Weigh-in, under Plan vs actual): for the last 8, 12 or 26 Monday–Sunday weeks, a bar for the average logged day (days with food only) stacked protein / fat / carbs by their calories (4 / 9 / 4) on the right axis, and the week's average weigh-in as a line on the left axis. Weeks without food have no bar; the line joins across weeks without weigh-ins. The tooltip shows grams, calories and how many food days and weigh-ins the week rests on. Picking a longer range loads older food logs (`onEnsureFoodLoaded`).
 
+**Plateau detector** (`src/lib/plateau.ts`, `plateau-card.tsx`): during the diet (from its start to the goal date; not in a reverse diet or maintenance), when the least-squares slope of the last 14 days of weigh-ins (5+ readings over 10+ days) shows less than 0.1% of body weight lost a week, or a gain, a card at the top of Progress → Weigh-in says how long it's been flat (14 or 21 days) and what to try in order: check the tape (water can hide fat loss), tighten the logging, 2,000 more steps (with its kcal), or 100–150 kcal less, and after 8+ weeks of dieting a 1–2 week diet break. The coach dashboard flags it as *Plateau 2+ weeks*.
+
+**Milestones** (`src/lib/milestones.ts`, `worker/milestones.ts`, migration `0028`): every 15 minutes the cron checks members who saved a weigh-in or measurement since the last run. Every 5 lb lost (start = the average of the first three weigh-ins from the plan's start; now = the average of the latest week's, up to three) and every inch off the waist (first measurement against the latest) is a milestone; a new highest one is stored in `milestones` (one row per member and kind, only ever going up, so a regain and re-loss doesn't repeat it) and sent as a Whop notification ("Down 10 lb!"), in kg or cm for kg users. The coach's Today **Celebrate** list shows milestones from the last 7 days.
+
 ## Measurements and progress photos
 
 On the Progress tab, under the weight chart:
@@ -345,6 +349,8 @@ On the Progress tab, under the weight chart:
 **Storage limits** (`src/lib/photos.ts`, checked in `worker/photos.ts` since every upload passes through the Worker): each member can upload **12 photos a day** (UTC; `MAX_PHOTO_UPLOADS_PER_DAY`, counted in `photo_uploads` from migration `0016`, so deleting and re-uploading doesn't reset it), and uploads stop for everyone once all photos together reach **9 GB** (`PHOTO_STORAGE_CAP_BYTES`), which keeps R2 inside Cloudflare's free 10 GB. The photo card says which limit was hit and turns **Add photo** off; existing photos stay viewable and deletable. The coach dashboard shows "Progress photo storage: X of 9 GB used" (amber from 80%). To allow more, raise `PHOTO_STORAGE_CAP_BYTES` (R2 costs about $0.015 per GB a month beyond the free tier).
 
 **Turning photos on** needs Cloudflare R2, which Cloudflare only enables after a payment method is on file (the free tier covers 10 GB). Once it's enabled: `npx wrangler r2 bucket create leanligercalc-photos`, add `"r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "leanligercalc-photos" }]` to `wrangler.jsonc`, and deploy. Until then the photos card says "Coming soon".
+
+**Time to measure** (`worker/measure-day.ts`, `measure-reminder.tsx`, `GET/PUT /api/measurement-settings`, migration `0028`): like photo day, a Whop notification around 9am (their reminders' time zone, else 2pm UTC) once the newest measurement is 28+ days old, for members who measured in the last 120 days and haven't turned it off (the switch under Progress → Measurements; on by default, `measurement_settings`). One per gap (`measure_day_nudges`), not while paused, and a day later if a photo-day reminder went out in the last 20 hours, so the two don't arrive together.
 
 ## Physique analysis
 
@@ -398,6 +404,8 @@ The **Training** tab (`training-tab.tsx`) has three sections. **Workouts** is to
 
 Weights are stored in pounds and shown in the member's unit. Programs, own exercises and rest settings live in the plan document (`tracking.training`, re-sanitised on load — entries pointing at a deleted exercise are dropped; `PLAN_MAX_BYTES` is 256 kB to fit them at their limits). Workouts have their own table (`workouts`, one JSON row per workout validated by `validateWorkout()`, up to 2,000 per member) from migration `0009`, or the `prep-calculator:workouts:v1` local storage key outside Whop. The coach dashboard doesn't show training yet, and strips it from the plans it loads.
 
+**Sets per muscle** (`src/lib/muscle-volume.ts`, `muscle-volume-card.tsx`): on Training's home and on a member's Training tab for the coach, finished sets this week or last week per muscle, as bars with a line at 10. Each exercise counts for its main muscle and half a set for its usual helpers (chest work for triceps and shoulders, back for biceps, shoulders for triceps, quads and hamstrings for glutes, glutes for hamstrings). Chest, back, shoulders, quads, hamstrings and glutes under 10 sets in the last finished week are called out; arms, calves and core aren't, since they get work from other lifts or are optional.
+
 ## Lift leaderboard
 
 Ranks → **Lifts** (`lift-board.tsx`, `src/lib/lift-board.ts`, `worker/lift-board.ts`): verified one-rep squat, bench press and deadlift, ranked by **weight ÷ bodyweight** (ties: the heavier lift, then the earlier submission). Each member's best approved lift per exercise counts.
@@ -424,6 +432,8 @@ The Progress tab includes the **Daily Self-Accountability Scorecard**:
 - **Community leaderboard** (its own **Leaderboard** tab; opt-in; `src/lib/leaderboard.ts`, `worker/leaderboard.ts`, `leaderboard-tab.tsx`, `leaderboard-card.tsx`): members who join are ranked within their Whop community on **Streak** (current 80%+ days in a row), **This week** (scorecard %) and **This month** (80%+ days so far — a built-in monthly challenge). Anyone in the community can view it; joining or viewing is checked against Whop access to that experience. Stats are computed on the server from each participant's habit logs in their own time zone, so only name, Whop photo and those four numbers ever leave the server — other members' ids, logs, weight and food never do. Leaving deletes the entry (`leaderboard` table, migration `0007`), as does "Delete all my data".
 
 Habit definitions sync with the plan; daily logs (`habit_logs`) and reviews (`weekly_reviews`) have their own tables, added by migrations `0002` and `0003`. "Delete all my data" removes all of it.
+
+**What's working for you** (`src/lib/insights.ts`, `habit-insights-card.tsx`; Progress → Habits): the last 16 finished Mon–Sun weeks, each with its weight change (the least-squares slope through that week's weigh-ins and the day before, ×7; 4+ readings over 4+ days), split three ways: weeks averaging the plan's step target or more (rounded to the thousand; 4+ days with a count), Green weeks (80%+ on the scorecard), and weeks with food logged 6+ days. A comparison shows when both sides have 3+ weeks and differ by 0.15 lb a week or more: "In weeks you averaged 9,000+ steps, you lost 0.4 lb more a week (−0.9 vs −0.5 lb a week)". Labelled as a pattern, not proof.
 
 ## Nutrition: food log and barcode scanning
 
@@ -456,6 +466,10 @@ The amount picker always shows the calories and macros it's about to log, flags 
 **Photo estimate** (`meal-photo.tsx`, `worker/meal-photo.ts`, `src/lib/meal-photo.ts`): Add food → **Photo**. The phone shrinks the photo (768 px JPEG) and the Worker asks Gemini (`gemini-3.8-flash`, or `MEAL_PHOTO_MODEL`) for each food's grams, calories and macros as JSON (`responseMimeType: application/json`); the member edits any of it, removes items, and adds them all in one go (logged in grams, so changing the amount scales the macros). The photo is sent to Google for that request and never stored here. **Off until the `GEMINI_API_KEY` secret is set** — the same key and credit balance as physique analysis; without it the Photo button doesn't show. Each member gets 10 a day (`meal_photo_usage`), counted before the call so retries can't run up the bill; if the Gemini prepay credit runs out (HTTP 402) the member is told estimates are paused and the attempt is given back. `GEMINI_API_BASE` exists only to point local tests at a stand-in.
 
 **Nutrition label photo** (`src/lib/label-photo.ts`, `worker/label-photo.ts`, `POST /api/food/label`): in the type-it-in form (a barcode USDA doesn't have, *Quick add from label*, or a product without nutrition), **Read the label from a photo** opens the camera; the phone sends a 1280 px JPEG, Gemini reads the per-serving column (or per 100 g when that's all there is; kJ converted) as JSON, and the name, brand, serving size, calories, protein, carbs and fat fill the form for the member to check before saving (to My foods, so the barcode is remembered). Unreadable labels come back as an error rather than guesses. 15 a day per member (`ai_usage`), same Gemini key; the photo isn't kept.
+
+**Describe a meal** (Add food → **Describe**; `src/lib/meal-describe.ts`, `worker/meal-describe.ts`, `POST /api/food/describe`): the member types or says what they ate ("2 eggs, toast with butter, black coffee", up to 400 characters). Gemini splits it into foods with grams and macros (amounts as given, typical portions otherwise, cooking fat and milk in drinks as their own items), returned in the photo estimate's shape and shown in the same editable list (`EstimateReview` in `meal-photo.tsx`) before anything is logged. The microphone button uses the browser's speech recognition where there is one (Chrome, Edge, Safari) and is hidden otherwise; the keyboard's own dictation always works. 30 a day per member (`ai_usage` kind `meal-describe`); shown when the AI key is set, like photo estimates.
+
+**Training-day carb split** (`src/lib/training-carbs.ts`, `training-carbs-card.tsx`): on Food for today, when a workout is planned today in the active program, in progress or done, a card above Add food suggests putting about 25% of the day's carbs in the meal 1–3 hours before and 35% in the meal within about 2 hours after, with about a quarter of the day's protein (20–50 g) in each; the day's totals don't change. After a workout it shows only the refuel meal. On other days it folds to one line ("Training today?") for members who train without a calendar.
 
 **Calorie ring** (`macro-donut.tsx`). Under the day's calories, a ring shows where they came from: protein, carbs and fat by their calories (4 / 4 / 9 kcal per gram), whole percentages that add to 100, labelled around the outside on leader lines in the macro colours, with the calories eaten in the middle and the target's split underneath ("Target: 37% protein · 33% carbs · 30% fat"). Before anything is logged it shows the target's split, faded. Plain SVG on a fixed viewBox, so it scales with the card.
 
@@ -505,6 +519,10 @@ Opening the app from the **Whop creator dashboard** (Whop serves it at `/dashboa
 
 **Whop setup:** in the app's settings in Whop's developer dashboard, set the **Dashboard path** to `/dashboard/[companyId]` and add the **`member:basic:read`** permission (approve the update in your whop). Then open the app from your whop's dashboard.
 
+- **Safety flags** (`src/lib/coach.ts`): *Losing too fast* when the plan analysis's observed rate is over 1.25% of body weight a week, and *Eating under the minimum* when 3 of the last 7 logged days are under the plan's intake floor (8 kcal per lb, at least 1,200; days under 500 kcal look unfinished and don't count). Both sort above everything else, and show in the Reach out list like the other flags.
+- **Celebrate** (`coach-today.tsx`): the third Today list, members with a milestone in the last 7 days ("Down 10 lb since starting · Waist down 1 in"), from the overview's `milestones`.
+- **Weekly weigh-ins vs calories for coaches** (`coach-member-food.tsx`, `worker/member-food.ts`, `GET /api/coach/member-food`): on a member's Food tab, the same chart members have, from 26 weeks of daily totals loaded for that one member (the overview still carries only two weeks of food for everyone). Totals only; same admin, membership and sharing checks as the other member routes.
+
 ## Validation and warnings
 
 | Condition | Level |
@@ -529,7 +547,7 @@ Opening the app from the **Whop creator dashboard** (Whop serves it at `/dashboa
 State is kept in local React state and mirrored two ways:
 
 - **LocalStorage** — a returning user lands back on their last setup.
-- **URL query string** — a coach can send a client a link that opens pre-filled. Use the **Share** button in the header.
+- **URL query string** — a coach can send a client a link that opens pre-filled. Use the **Share** button in the header. A query only counts as a plan when it carries plan keys (`decodeStateFromQuery`); a link with just a tab (`?t=checkin`) or someone else's parameters opens that tab on the saved plan (`tabFromQuery`) instead of replacing it with defaults.
 
 The query string is user-editable, so every restored value passes through `sanitize*` in `persistence.ts` before reaching the engines. Restoration happens in an effect after mount rather than during render, which avoids a hydration mismatch (neither storage nor `window.location` exists during SSR).
 

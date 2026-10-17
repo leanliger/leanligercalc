@@ -4,11 +4,10 @@ import * as React from "react";
 import { Bar, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { formatShort } from "@/lib/dates";
-import type { FoodLog } from "@/lib/food";
 import type { WeighIn } from "@/lib/tracking";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb, round } from "@/lib/units";
-import { weeklyIntake, type IntakeWeek } from "@/lib/weekly-intake";
+import { weeklyIntake, type DayTotals, type IntakeWeek } from "@/lib/weekly-intake";
 
 const RANGES = [8, 12, 26] as const;
 type Range = (typeof RANGES)[number];
@@ -24,13 +23,14 @@ interface Point extends IntakeWeek {
  * weeks without weigh-ins are skipped by the line.
  */
 export function WeeklyIntakeChart({
-  foodLogs,
+  days,
   weighIns,
   unit,
   today,
   onNeedFrom,
 }: {
-  foodLogs: readonly FoodLog[];
+  /** Daily food totals (dayTotals() of the food logs, or the coach's copy). */
+  days: readonly DayTotals[];
   weighIns: readonly WeighIn[];
   unit: WeightUnit;
   today: string;
@@ -40,11 +40,11 @@ export function WeeklyIntakeChart({
   const [weeks, setWeeks] = React.useState<Range>(12);
   const data: Point[] = React.useMemo(
     () =>
-      weeklyIntake(foodLogs, weighIns, weeks, today).map((w) => ({
+      weeklyIntake(days, weighIns, weeks, today).map((w) => ({
         ...w,
         weight: w.weightLb === null ? null : round(fromLb(w.weightLb, unit), 1),
       })),
-    [foodLogs, weighIns, weeks, today, unit],
+    [days, weighIns, weeks, today, unit],
   );
   const firstWeek = data[0]?.weekStart;
   React.useEffect(() => {

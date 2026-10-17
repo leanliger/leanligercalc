@@ -41,6 +41,7 @@ import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/
 import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
 import { Avatar, CoachNav, TodayLanes, WeekStrip, isAtRisk } from "@/components/coach-today";
+import { CoachIntakeChart } from "@/components/coach-member-food";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
   FLAG_LABELS,
@@ -75,7 +76,7 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 /** The rest, one at a time from a menu. */
-const FLAG_FILTERS = ["behind", "red", "no-weigh-in", "no-workouts", "checkin", "inactive", "no-plan"] as const satisfies readonly Flag[];
+const FLAG_FILTERS = ["too-fast", "under-floor", "behind", "plateau", "red", "no-weigh-in", "no-workouts", "checkin", "inactive", "no-plan"] as const satisfies readonly Flag[];
 
 function matchesFilter(m: MemberSummary, f: Filter): boolean {
   if (f === "all") return true;
@@ -360,7 +361,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 </div>
                 {summaries.length > 0 ? (
                   <>
-                    <TodayLanes members={summaries} onOpen={openMember} onShowAll={showMembers} />
+                    <TodayLanes members={summaries} unit={unit} onOpen={openMember} onShowAll={showMembers} />
                     <WeekStrip
                       items={[
                         { label: "Logged this week", value: counts.loggedWeek, of: `of ${counts.total}`, sub: "any log in the last 7 days" },
@@ -1155,6 +1156,7 @@ function MemberDetail({
         ) : tab === "food" ? (
           <>
             <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+            <CoachIntakeChart companyId={companyId} memberId={m.data.userId} weighIns={m.data.weighIns} unit={unit} today={today} />
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">

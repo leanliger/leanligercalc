@@ -127,7 +127,9 @@ export default function PrivacyPage() {
             contact lists. The barcode scanner uses your camera only while it is open: camera images are read on your
             device to find the barcode and are <strong>never uploaded or stored</strong>. The same applies to photos you
             take of a barcode. A meal photo you use for a calorie estimate is sent to Google for that one estimate (see
-            &ldquo;Who else sees it&rdquo;) and is not stored by us.
+            &ldquo;Who else sees it&rdquo;) and is not stored by us, and so is a meal you describe in words. If you tap the
+            microphone to say a meal, your browser&apos;s own speech service turns it into text (in Chrome that is
+            Google&apos;s; on iPhone, Apple&apos;s); the app only receives the text.
           </p>
         </Section>
 
@@ -171,7 +173,11 @@ export default function PrivacyPage() {
             <li>To compare your weigh-ins with your plan and suggest calorie adjustments.</li>
             <li>To show your Today summary, habit scorecard, badges, food log, and fasting timer.</li>
             <li>To log your workouts, run the rest timer, and chart your lifts and personal records.</li>
-            <li>To send the notifications and reminders you switch on.</li>
+            <li>
+              To send the notifications and reminders you switch on, including the monthly &ldquo;Time to measure&rdquo;
+              reminder and a note when you reach a milestone (every 5 lb lost, or an inch off your waist). Your coach sees
+              milestones from the last week on their dashboard while you share your progress.
+            </li>
             <li>To let your coach review your progress and support you (see &ldquo;Your coach&rdquo; below).</li>
             <li>To keep your data in sync across the devices where you open the app in Whop.</li>
           </List>
@@ -280,8 +286,8 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Google (Gemini)</strong> reads photos to produce a physique analysis, a monthly comparison, a meal
-              photo estimate or a nutrition label reading, only when you ask for one. We send the photos and our
-              instructions, nothing that identifies you. When your coach asks for a draft reply to your weekly check-in,
+              photo estimate or a nutrition label reading, and turns a meal you describe into foods, only when you ask for
+              one. We send the photos or your description and our instructions, nothing that identifies you. When your coach asks for a draft reply to your weekly check-in,
               Gemini also receives that check-in (your ratings, answers and the week&apos;s numbers), your plan&apos;s targets,
               your coach&apos;s earlier replies and notes, and your first name, to write the draft your coach then edits.
               Under our paid Gemini plan, Google does not use any of this to improve its products and keeps it only for a
@@ -320,7 +326,8 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong>Turn off notifications</strong> at any time: fasting notifications from the fasting card on the
-              Food tab (Fasting), and weigh-in, habit, downtime and recap reminders from Settings (the gear at the top left).
+              Food tab (Fasting), weigh-in, habit, downtime and recap reminders from Settings (the gear at the top left), and
+              the measurement reminder under Progress → Measurements.
             </li>
             <li>
               <strong>Leave the leaderboard</strong> at any time from the Ranks tab.

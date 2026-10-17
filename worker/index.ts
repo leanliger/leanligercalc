@@ -32,6 +32,9 @@
  *   POST   /api/physique/compare  compare my newest photos with ones from about a month earlier { before? }
  *   GET/PUT /api/testimonial-consent      may my coach use my comparisons as testimonials { allowed }
  *   POST   /api/food/label              read a nutrition label photo { image, mediaType } (see label-photo.ts)
+ *   POST   /api/food/describe           split a described meal into foods { text } (see meal-describe.ts)
+ *   GET/PUT /api/measurement-settings    my "Time to measure" reminder switch { reminder } (see measure-day.ts)
+ *   GET    /api/coach/member-food?company=…&member=…  coaches: a member's daily food totals, 26 weeks (see member-food.ts)
  *   GET/PUT/DELETE /api/water-reminders  my hydration reminders (see water-reminders.ts)
  *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
@@ -95,6 +98,10 @@ import { coachMemberPhysique } from "./physique-focus";
 import { coachTestimonials, getConsent, setConsent } from "./testimonials";
 import { sendCompareNudges } from "./compare-nudges";
 import { readLabelPhoto } from "./label-photo";
+import { describeMeal } from "./meal-describe";
+import { measurementSettings, sendMeasureDayReminders } from "./measure-day";
+import { coachMemberFood } from "./member-food";
+import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
 import { sendDueWaterReminders, waterReminders } from "./water-reminders";
@@ -758,6 +765,25 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
     return send(await readLabelPhoto(env, userId, parsed));
   }
+  if (path === "/api/measurement-settings") {
+    let body: unknown = null;
+    if (method === "PUT") {
+      const b = await readJson(request);
+      if (!b.ok) return b.response;
+      body = b.value;
+    }
+    return send(await measurementSettings(env, userId, method, body));
+  }
+  if (path === "/api/coach/member-food") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachMemberFood(env, userId, q("company"), q("member")));
+  }
+  if (path === "/api/food/describe") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await describeMeal(env, userId, body.value));
+  }
   if (path === "/api/coach/checkins/draft") {
     if (method !== "POST") return error(405, "Method not allowed.");
     const body = await readJson(request);
@@ -1224,6 +1250,9 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM compare_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM photo_day_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM water_reminders WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM milestones WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM measurement_settings WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM measure_day_nudges WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM ai_usage WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM challenge_entrants WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
@@ -1306,6 +1335,22 @@ export default {
             if (r.due > 0) console.log("photo day reminders", r);
           })
           .catch((e) => console.error("photo day reminders crashed", e)),
+      );
+      // "Time to measure": the same, for tape measurements.
+      ctx.waitUntil(
+        sendMeasureDayReminders(env, when)
+          .then((r) => {
+            if (r.due > 0) console.log("measure day reminders", r);
+          })
+          .catch((e) => console.error("measure day reminders crashed", e)),
+      );
+      // Milestones (5 lb lost, 1 in off the waist…) for anyone who just logged.
+      ctx.waitUntil(
+        checkMilestones(env, when)
+          .then((r) => {
+            if (r.reached > 0) console.log("milestones", r);
+          })
+          .catch((e) => console.error("milestones crashed", e)),
       );
     }
   },

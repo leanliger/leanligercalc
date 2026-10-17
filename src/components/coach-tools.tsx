@@ -37,7 +37,10 @@ const first = (name: string) => name.split(" ")[0] || name;
 
 export const FLAG_VARIANT: Record<Flag, "danger" | "warning" | "secondary" | "default"> = {
   reply: "default",
+  "too-fast": "danger",
+  "under-floor": "danger",
   behind: "warning",
+  plateau: "warning",
   red: "danger",
   "no-weigh-in": "warning",
   "no-workouts": "warning",

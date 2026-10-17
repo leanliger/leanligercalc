@@ -9,7 +9,8 @@
 
 import { analyzeProgress, type ProgressAnalysis } from "./adaptive";
 import { addDays, daysBetween } from "./dates";
-import { calculateFatLossTimeline } from "./fat-loss";
+import { calculateFatLossTimeline, intakeFloor } from "./fat-loss";
+import { detectPlateau, dietStartToday } from "./plateau";
 import type { FatLossResult } from "./types";
 import { weekStartOf, weeklyScore, type Zone } from "./habits";
 import { sanitizeAppState, type AppState } from "./persistence";
@@ -29,7 +30,25 @@ import { INACTIVE_DAYS, type CoachMemberData } from "./coach-api";
 
 /* -------------------------------- summary -------------------------------- */
 
-export type Flag = "reply" | "behind" | "red" | "no-weigh-in" | "no-workouts" | "checkin" | "inactive" | "no-plan";
+export type Flag =
+  | "reply"
+  | "too-fast"
+  | "under-floor"
+  | "behind"
+  | "plateau"
+  | "red"
+  | "no-weigh-in"
+  | "no-workouts"
+  | "checkin"
+  | "inactive"
+  | "no-plan";
+
+/** Safety: losing more than this share of body weight a week (1.25%). */
+export const TOO_FAST_RATE = 0.0125;
+/** Safety: this many of the last 7 days logged under the intake floor. */
+export const UNDER_FLOOR_DAYS = 3;
+/** Days logged under this look unfinished, so they don't count as eating too little. */
+const PARTIAL_DAY_KCAL = 500;
 
 /** Days without a weigh-in before it counts as missed. */
 export const WEIGH_IN_GAP_DAYS = 4;
@@ -106,7 +125,10 @@ export function healthZone(score: number): Zone {
 
 export const FLAG_LABELS: Record<Flag, string> = {
   reply: "Check-in to review",
+  "too-fast": "Losing too fast",
+  "under-floor": "Eating under the minimum",
   behind: "Behind plan",
+  plateau: "Plateau 2+ weeks",
   red: "Habits slipping",
   "no-weigh-in": `No weigh-in ${WEIGH_IN_GAP_DAYS}+ days`,
   "no-workouts": "No workouts this week",
@@ -188,7 +210,13 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   const flags: Flag[] = [];
   if (lastCheckin && !lastCheckin.replied) flags.push("reply");
   if (!hasPlan) flags.push("no-plan");
+  // Safety first: these sit at the top of the list.
+  const bodyWeight = latest?.weightLb ?? state.profile.weight;
+  if (progress?.observedRate != null && progress.observedRate > TOO_FAST_RATE * bodyWeight) flags.push("too-fast");
+  const floor = intakeFloor(bodyWeight);
+  if (recentFood.filter((d) => d.kcal >= PARTIAL_DAY_KCAL && d.kcal < floor).length >= UNDER_FLOOR_DAYS) flags.push("under-floor");
   if (progress?.status === "behind") flags.push("behind");
+  if (!paused && detectPlateau(weighIns, today, dietStartToday(timeline, today))) flags.push("plateau");
   if (score.zone === "red") flags.push("red");
   if (!paused) {
     if (hasPlan && (daysSinceWeighIn === null || daysSinceWeighIn >= WEIGH_IN_GAP_DAYS)) flags.push("no-weigh-in");
@@ -225,7 +253,19 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
 
 /** Members needing attention first (more flags, then longest without a log), then by name. */
 export function sortForAttention(list: MemberSummary[]): MemberSummary[] {
-  const W: Record<Flag, number> = { reply: 6, behind: 5, red: 4, "no-weigh-in": 3, "no-workouts": 3, inactive: 2, checkin: 1, "no-plan": 1 };
+  const W: Record<Flag, number> = {
+    "too-fast": 8,
+    "under-floor": 8,
+    reply: 6,
+    behind: 5,
+    plateau: 4,
+    red: 4,
+    "no-weigh-in": 3,
+    "no-workouts": 3,
+    inactive: 2,
+    checkin: 1,
+    "no-plan": 1,
+  };
   const weight = (m: MemberSummary) => m.flags.reduce((s, f) => s + W[f], 0);
   return [...list].sort(
     (a, b) =>

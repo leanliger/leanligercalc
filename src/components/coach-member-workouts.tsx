@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ExerciseProgress } from "@/components/exercise-progress";
 import { LiftProgressCard } from "@/components/lift-progress";
-import { formatLong } from "@/lib/dates";
+import { MuscleVolumeCard } from "@/components/muscle-volume-card";
+import { formatLong, todayISO } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
 import {
   doneSets,
@@ -101,6 +102,7 @@ export function MemberWorkoutsCard({
   return (
     <div className="space-y-5">
       <LiftProgressCard workouts={data.workouts} custom={data.customExercises} unit={unit} onOpen={setExerciseId} />
+      <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />
       <WorkoutLog workouts={data.workouts} custom={data.customExercises} unit={unit} name={first} onOpenExercise={setExerciseId} />
     </div>
   );

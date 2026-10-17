@@ -50,6 +50,12 @@ const STORAGE_KEY = "prep-calculator:v2";
 export type AppTab = "today" | "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
 const APP_TABS: readonly AppTab[] = ["today", "timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
 
+/** The tab a link opens on (`?t=`), when the link carries no plan. */
+export function tabFromQuery(search: string): AppTab | null {
+  const t = new URLSearchParams(search).get("t");
+  return t !== null && (APP_TABS as readonly string[]).includes(t) ? (t as AppTab) : null;
+}
+
 /** Personal progress state. Never put in shareable URLs. */
 export interface TrackingState {
   adjustments: CalorieAdjustment[];
@@ -350,7 +356,9 @@ export function encodeStateToQuery(state: AppState): string {
 
 export function decodeStateFromQuery(search: string): AppState | null {
   const params = new URLSearchParams(search);
-  if ([...params.keys()].length === 0) return null;
+  // Only a link that carries a plan is one: "?t=checkin" or a query Whop or a
+  // campaign adds would otherwise replace the saved plan with defaults.
+  if (![...PROFILE_KEYS, ...FAT_LOSS_KEYS, ...CARB_KEYS].some((k) => params.has(k))) return null;
 
   const profileRaw: Record<string, unknown> = {};
   const fatLossRaw: Record<string, unknown> = {};

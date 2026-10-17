@@ -25,6 +25,10 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { Stat } from "@/components/stat";
 import { ProgressChart } from "@/components/progress-chart";
 import { WeeklyIntakeChart } from "@/components/weekly-intake-chart";
+import { PlateauCard } from "@/components/plateau-card";
+import { HabitInsightsCard } from "@/components/habit-insights-card";
+import { MeasureReminder } from "@/components/measure-reminder";
+import { dayTotals } from "@/lib/weekly-intake";
 import { HabitsCard, WeeklyScorecard } from "@/components/habits-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { HabitConsistencyList } from "@/components/consistency-card";
@@ -294,6 +298,8 @@ export function CheckinTab({
     return { day: { current: d.current, best: d.best }, weeks: { current: w.current, best: w.best } };
   }, [habits, habitLogs, pauses, today]);
 
+  const foodDayTotals = React.useMemo(() => dayTotals(foodLogs), [foodLogs]);
+
   // The steps the plan assumes; the step habit ticks itself at this count.
   const stepTarget = fatLoss.activitySource === "steps" ? fatLoss.dailySteps : DEFAULT_STEP_TARGET;
 
@@ -302,6 +308,7 @@ export function CheckinTab({
       <div className="space-y-5">
         {nav}
         <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
+          <div className="space-y-5">
           <WeeklyScorecard habits={habits} logs={habitLogs} pauses={pauses} today={today} weekTargets={weekTargets} streaks={streaks}>
               {habits.length > 0 && habitLogs.length > 0 ? (
                 <details className="group border-t border-border pt-3">
@@ -314,6 +321,16 @@ export function CheckinTab({
                 </details>
               ) : null}
           </WeeklyScorecard>
+          <HabitInsightsCard
+            weighIns={weighIns}
+            habits={habits}
+            habitLogs={habitLogs}
+            foodLogs={foodLogs}
+            today={today}
+            stepTarget={stepTarget}
+            unit={unit}
+          />
+          </div>
           <div className="space-y-5">
             <HabitsCard
               mode="fix"
@@ -351,14 +368,17 @@ export function CheckinTab({
         {nav}
         <div className="lg:max-w-4xl">
           {section === "measurements" ? (
-            <MeasurementsCard
-              measurements={measurements}
-              weighIns={weighIns}
-              unit={unit}
-              today={today}
-              onSave={onSaveMeasurement}
-              onDelete={onDeleteMeasurement}
-            />
+            <div className="space-y-3">
+              <MeasurementsCard
+                measurements={measurements}
+                weighIns={weighIns}
+                unit={unit}
+                today={today}
+                onSave={onSaveMeasurement}
+                onDelete={onDeleteMeasurement}
+              />
+              {session.mode === "cloud" && session.notifications === true ? <MeasureReminder /> : null}
+            </div>
           ) : section === "photos" ? (
             <div className="space-y-5">
               <PhotosCard cloud={session.mode === "cloud"} today={today} />
@@ -509,6 +529,13 @@ export function CheckinTab({
 
         {/* ------------------------------ right ------------------------------- */}
         <div className="space-y-5">
+          <PlateauCard
+            weighIns={weighIns}
+            timeline={timeline.feasible ? timeline : null}
+            today={today}
+            unit={unit}
+            weightLb={weighIns[weighIns.length - 1]?.weightLb ?? profile.weight}
+          />
           {analysis.status === "no-data" ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-4 px-6 py-10 text-center">
@@ -627,7 +654,7 @@ export function CheckinTab({
 
           <Card>
             <CardContent className="p-4 sm:p-6">
-              <WeeklyIntakeChart foodLogs={foodLogs} weighIns={weighIns} unit={unit} today={today} onNeedFrom={onEnsureFoodLoaded} />
+              <WeeklyIntakeChart days={foodDayTotals} weighIns={weighIns} unit={unit} today={today} onNeedFrom={onEnsureFoodLoaded} />
             </CardContent>
           </Card>
 

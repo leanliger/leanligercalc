@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, MessageSquare } from "lucide-react";
+import { AlertTriangle, MessageSquare, PartyPopper } from "lucide-react";
 import { FLAG_LABELS, type MemberSummary } from "@/lib/coach";
+import { milestoneLabel } from "@/lib/milestones";
+import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -106,20 +108,26 @@ function sentAgo(iso: string | undefined, now: number): string {
  */
 export function TodayLanes({
   members,
+  unit,
   onOpen,
   onShowAll,
 }: {
   members: MemberSummary[];
+  unit: WeightUnit;
   /** Open a member, on the check-ins tab or their overview. */
   onOpen: (userId: string, tab: "checkins" | "overview") => void;
   /** Show the whole list, filtered to this lane. */
-  onShowAll: (filter: "reply" | "risk") => void;
+  onShowAll: (filter: "reply" | "risk" | "all") => void;
 }) {
   const now = Date.now();
   const reply = members.filter((m) => m.flags.includes("reply"));
   const risk = members.filter(isAtRisk);
+  // Milestones in the last week, newest first.
+  const wins = members
+    .filter((m) => (m.data.milestones ?? []).length > 0)
+    .sort((a, b) => newestWin(b).localeCompare(newestWin(a)));
   return (
-    <section aria-label="Today" className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2">
+    <section aria-label="Today" className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 xl:grid-cols-3">
       <Lane
         title="Reply to check-ins"
         icon={<MessageSquare />}
@@ -147,12 +155,31 @@ export function TodayLanes({
         onOpen={(id) => onOpen(id, "overview")}
         onMore={() => onShowAll("risk")}
       />
+      <Lane
+        title="Celebrate"
+        icon={<PartyPopper />}
+        tone="success"
+        list={wins}
+        empty="No milestones this week. They show here when someone is 5 lb down, or an inch off the waist."
+        reason={(m) =>
+          [...(m.data.milestones ?? [])]
+            .sort((a, b) => b.reachedOn.localeCompare(a.reachedOn))
+            .map((x) => milestoneLabel(x, unit))
+            .join(" · ")
+        }
+        action="Open"
+        onOpen={(id) => onOpen(id, "overview")}
+        onMore={() => onShowAll("all")}
+      />
     </section>
   );
 }
 
+const newestWin = (m: MemberSummary) => (m.data.milestones ?? []).reduce((d, x) => (x.reachedOn > d ? x.reachedOn : d), "");
+
 const TONE = {
   primary: { icon: "bg-primary/10 text-primary", count: "text-primary", action: "text-primary" },
+  success: { icon: "bg-success/10 text-success", count: "text-success", action: "text-foreground" },
   destructive: { icon: "bg-destructive/10 text-destructive", count: "text-destructive", action: "text-foreground" },
 } as const;
 

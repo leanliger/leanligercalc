@@ -19,6 +19,8 @@
  */
 
 import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay } from "../src/lib/coach-api";
+import { CELEBRATE_DAYS } from "../src/lib/milestones";
+import { celebrateSince, recentMilestones } from "./milestones";
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
 import { accessLevel, hasWhopKey, whopGet, whopReason, type WhopEnv } from "./whop";
@@ -122,7 +124,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
   const sharing = await sharingFor(env, [...profiles.keys()]);
   const members = new Map<string, CoachMemberData>();
   for (const p of profiles.values()) {
-    members.set(p.userId, { ...p, sharing: sharing.get(p.userId)!, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null, workoutDates: [], checkins: [] });
+    members.set(p.userId, { ...p, sharing: sharing.get(p.userId)!, plan: null, weighIns: [], habitLogs: [], foodDays: [], measurements: [], photos: null, workoutDates: [], checkins: [], milestones: [] });
   }
   // Only members who share their progress: nobody else's data is read at all.
   const ids = [...profiles.keys()].filter((id) => sharing.get(id)?.state === "shared");
@@ -220,6 +222,13 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
         /* skip a corrupt row */
       }
     }
+  }
+
+  // Milestones for the coach's Celebrate list.
+  const reached = await recentMilestones(env, ids, celebrateSince(today, CELEBRATE_DAYS));
+  for (const [id, list] of reached) {
+    const m = members.get(id);
+    if (m) m.milestones = list;
   }
 
   return {
