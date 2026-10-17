@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   CalendarClock,
   Check,
+  ChevronDown,
   Pencil,
   Scale,
   Trash2,
@@ -60,7 +61,6 @@ import {
   type ProgressAnalysis,
   type Recommendation,
 } from "@/lib/adaptive";
-import { Hint } from "@/components/ui/hint";
 import type { SessionInfo } from "@/lib/checkin-store";
 import { formatLong, formatShort } from "@/lib/dates";
 import { calculateFatLossTimeline } from "@/lib/fat-loss";
@@ -231,6 +231,12 @@ export function CheckinTab({
   const [chartRange, setChartRange] = React.useState<"recent" | "plan">("recent");
   const [message, setMessage] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const existing = weighIns.find((w) => w.date === date) ?? null;
+  // Date, calories and note sit behind a toggle; they show by themselves for a past day.
+  const [more, setMore] = React.useState(false);
+  const showMore = more || date !== today;
+  // "Keep" on the weekly review hides that recommendation (until the next one).
+  const [keptRec, setKeptRec] = React.useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
 
   // Picking a day that already has an entry loads it for editing.
   React.useEffect(() => {
@@ -434,113 +440,86 @@ export function CheckinTab({
   return (
     <div className="space-y-5">
       {nav}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
-        {/* ------------------------------ left -------------------------------- */}
-        <div className="space-y-5">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Scale className="h-4 w-4 text-primary" />
-                Log a weigh-in
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={submit} className="space-y-4" noValidate>
-                <Hint id="progress-weigh-in" label="When to weigh in">
-                  Same time each morning: after the bathroom, before food or water.
-                </Hint>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="wi-date">Date</Label>
-                    <Input
-                      id="wi-date"
-                      type="date"
-                      value={date}
-                      max={today}
-                      onChange={(e) => e.target.value && setDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="wi-weight">Weight</Label>
-                    <div className="relative">
-                      <Input
-                        id="wi-weight"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.1"
-                        min={fromLb(50, unit).toFixed(0)}
-                        value={weight}
-                        onChange={(e) => setWeight(e.target.value)}
-                        className="pr-9"
-                        placeholder={round(fromLb(analysis.trendWeight ?? profile.weight, unit), 1).toString()}
-                        required
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                        {unit}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="wi-cal">
-                    Calories eaten <span className="font-normal text-muted-foreground">(optional)</span>
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="wi-cal"
-                      type="number"
-                      inputMode="numeric"
-                      step="1"
-                      min={0}
-                      value={calories}
-                      onChange={(e) => setCalories(e.target.value)}
-                      className="pr-12"
-                      placeholder="e.g. 2150"
-                    />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      kcal
-                    </span>
-                  </div>
-                  <Hint id="progress-weigh-in-calories" label="Why log calories?">
-                    Yesterday&apos;s total. Logging it makes the maintenance estimate far more accurate.
-                  </Hint>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="wi-note">
-                    Note <span className="font-normal text-muted-foreground">(optional)</span>
-                  </Label>
-                  <Input
-                    id="wi-note"
-                    value={note}
-                    maxLength={NOTE_MAX_LENGTH}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="High-sodium dinner, poor sleep…"
-                  />
-                </div>
-
-                <Button type="submit" className="w-full" disabled={busy}>
-                  <Check />
-                  {existing ? `Update ${formatShort(date)}` : "Save weigh-in"}
-                </Button>
-
-                <p
-                  role="status"
-                  aria-live="polite"
-                  className={cn(
-                    "min-h-4 text-xs",
-                    message?.kind === "error" ? "text-destructive" : "text-success",
-                  )}
-                >
-                  {message?.text ?? (existing ? "This replaces the entry already logged for that day." : "")}
-                </p>
-              </form>
-            </CardContent>
-          </Card>
+      <form onSubmit={submit} noValidate className="space-y-3 rounded-xl border border-border bg-card p-3 lg:max-w-xl">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="wi-weight" className="shrink-0 text-sm font-semibold">
+            {date === today ? "Today" : formatShort(date)}
+          </Label>
+          <div className="relative min-w-0 flex-1">
+            <Input
+              id="wi-weight"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min={fromLb(50, unit).toFixed(0)}
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="h-10 pr-9 text-base"
+              placeholder={round(fromLb(analysis.trendWeight ?? profile.weight, unit), 1).toString()}
+              required
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{unit}</span>
+          </div>
+          <Button type="submit" className="h-10 font-semibold" disabled={busy}>
+            {existing ? "Update" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            aria-expanded={showMore}
+            aria-label="Date, calories and note"
+            onClick={() => setMore((v) => !v)}
+          >
+            <ChevronDown className={cn("transition-transform", showMore && "rotate-180")} />
+          </Button>
         </div>
+        {showMore ? (
+          <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="wi-date">Date</Label>
+              <Input id="wi-date" type="date" value={date} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wi-cal">
+                Calories eaten <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <div className="relative">
+                <Input
+                  id="wi-cal"
+                  type="number"
+                  inputMode="numeric"
+                  step="1"
+                  min={0}
+                  value={calories}
+                  onChange={(e) => setCalories(e.target.value)}
+                  className="pr-12"
+                  placeholder="e.g. 2150"
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">kcal</span>
+              </div>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="wi-note">
+                Note <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <Input id="wi-note" value={note} maxLength={NOTE_MAX_LENGTH} onChange={(e) => setNote(e.target.value)} placeholder="High-sodium dinner, poor sleep…" />
+            </div>
+            <p className="text-[12px] text-muted-foreground sm:col-span-2">
+              Same time each morning: after the bathroom, before food or water. Yesterday&apos;s calories make the maintenance estimate far more
+              accurate.
+            </p>
+          </div>
+        ) : null}
+        {message || existing ? (
+          <p role="status" aria-live="polite" className={cn("text-xs", message?.kind === "error" ? "text-destructive" : message ? "text-success" : "text-muted-foreground")}>
+            {message?.text ?? "This replaces the entry already logged for that day."}
+          </p>
+        ) : null}
+      </form>
 
-        {/* ------------------------------ right ------------------------------- */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
         <div className="space-y-5">
           <PlateauCard
             weighIns={weighIns}
@@ -582,24 +561,64 @@ export function CheckinTab({
               </CardContent>
             </Card>
           ) : (
-          <Card>
-            <CardHeader className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={status.badge}>{status.label}</Badge>
-                {analysis.stale ? (
-                  <Badge variant="warning">
-                    <CalendarClock />
-                    Last weigh-in over a week ago
-                  </Badge>
-                ) : null}
-              </div>
-              <CardTitle className="text-lg">{analysis.headline}</CardTitle>
-              <CardDescription className="max-w-3xl leading-relaxed">{analysis.detail}</CardDescription>
-            </CardHeader>
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-base">Plan vs actual</CardTitle>
+                  <SegmentedControl
+                    ariaLabel="Chart range"
+                    size="sm"
+                    value={chartRange}
+                    onValueChange={setChartRange}
+                    options={[
+                      { value: "recent" as const, label: "Recent" },
+                      { value: "plan" as const, label: "Whole plan" },
+                    ]}
+                    className="w-auto"
+                  />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ProgressChart timeline={timeline} weighIns={weighIns} unit={unit} today={today} range={chartRange} />
+              </CardContent>
+            </Card>
+          )}
 
-            <CardContent className="space-y-4">
+          <Card>
+            <CardContent className="p-4 sm:p-6">
+              <WeeklyIntakeChart
+                days={foodDayTotals}
+                weighIns={weighIns}
+                unit={unit}
+                today={today}
+                onNeedFrom={onEnsureFoodLoaded}
+                weekTarget={weekTargetKcal}
+                planWeightFor={planWeightFor}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-5 lg:sticky lg:top-4">
+          {analysis.status !== "no-data" ? (
+            <Card>
+              <CardHeader className="space-y-2 pb-3">
+                <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">Weekly review</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={status.badge}>{status.label}</Badge>
+                  {analysis.stale ? (
+                    <Badge variant="warning">
+                      <CalendarClock />
+                      Last weigh-in over a week ago
+                    </Badge>
+                  ) : null}
+                </div>
+                <CardTitle className="text-base">{analysis.headline}</CardTitle>
+                <CardDescription className="leading-relaxed">{analysis.detail}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
               {analysis.latest ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3">
                   <Stat
                     label="Trend weight"
                     emphasis
@@ -637,57 +656,29 @@ export function CheckinTab({
                 </div>
               ) : null}
 
-              {analysis.recommendation ? (
-                <RecommendationBox
-                  rec={analysis.recommendation}
-                  onApply={() => onApplyAdjustment(analysis.recommendation!, analysis)}
-                />
-              ) : null}
-
-              <div>
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium">Plan vs actual</h3>
-                  <SegmentedControl
-                    ariaLabel="Chart range"
-                    size="sm"
-                    value={chartRange}
-                    onValueChange={setChartRange}
-                    options={[
-                      { value: "recent" as const, label: "Recent" },
-                      { value: "plan" as const, label: "Whole plan" },
-                    ]}
-                    className="w-auto"
+                {analysis.recommendation && keptRec !== analysis.recommendation.effectiveFrom ? (
+                  <RecommendationBox
+                    rec={analysis.recommendation}
+                    onApply={() => onApplyAdjustment(analysis.recommendation!, analysis)}
+                    onKeep={() => setKeptRec(analysis.recommendation!.effectiveFrom)}
                   />
-                </div>
-                <ProgressChart timeline={timeline} weighIns={weighIns} unit={unit} today={today} range={chartRange} />
-              </div>
-            </CardContent>
-          </Card>
-          )}
-
-          <Card>
-            <CardContent className="p-4 sm:p-6">
-              <WeeklyIntakeChart
-                days={foodDayTotals}
-                weighIns={weighIns}
-                unit={unit}
-                today={today}
-                onNeedFrom={onEnsureFoodLoaded}
-                weekTarget={weekTargetKcal}
-                planWeightFor={planWeightFor}
-              />
-            </CardContent>
-          </Card>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {adjustments.length > 0 ? (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Calorie changes applied</CardTitle>
-                <CardDescription>
-                  Each one shifts the roadmap from the week it starts. Your timeline&apos;s predicted weights stay the same — that&apos;s the line you&apos;re steering back to.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+            <Fold
+              title="Calorie changes applied"
+              summary={`${adjustments.length} · ${adjustments
+                .slice(-3)
+                .map((a) => `${a.kcal > 0 ? "+" : "−"}${Math.abs(a.kcal)} ${formatShort(a.effectiveFrom)}`)
+                .join(", ")}`}
+            >
+              <p className="text-xs text-muted-foreground">
+                Each one shifts the roadmap from the week it starts. Your plan&apos;s predicted weights stay the same: that&apos;s the line you&apos;re
+                steering back to.
+              </p>
                 <ul className="divide-y divide-border">
                   {adjustments.map((a) => (
                     <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
@@ -708,21 +699,18 @@ export function CheckinTab({
                     </li>
                   ))}
                 </ul>
-              </CardContent>
-            </Card>
+            </Fold>
           ) : null}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Weigh-ins</CardTitle>
-              <CardDescription>
-                {weighIns.length === 0
-                  ? "Nothing logged yet."
-                  : `${weighIns.length} logged. Trend is the smoothed weight — judge progress by that, not single days.`}
-              </CardDescription>
-            </CardHeader>
+          <Fold
+            title="Weigh-in history"
+            summary={weighIns.length === 0 ? "Nothing logged yet" : `${weighIns.length} weigh-in${weighIns.length === 1 ? "" : "s"}`}
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+          >
             {weighIns.length > 0 ? (
-              <CardContent>
+              <>
+                <p className="text-xs text-muted-foreground">Trend is the smoothed weight: judge progress by that, not single days.</p>
                 <div className="relative scrollbar-thin max-h-[28rem] overflow-auto rounded-lg border border-border">
                   <table className="w-full min-w-[36rem] border-collapse text-sm">
                     <thead className="sticky top-0 bg-card">
@@ -764,7 +752,10 @@ export function CheckinTab({
                                 size="icon"
                                 className="h-7 w-7"
                                 aria-label={`Edit ${formatShort(w.date)}`}
-                                onClick={() => setDate(w.date)}
+                                onClick={() => {
+                                  setDate(w.date);
+                                  document.getElementById("wi-weight")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                }}
                               >
                                 <Pencil />
                               </Button>
@@ -783,19 +774,62 @@ export function CheckinTab({
                     </tbody>
                   </table>
                 </div>
-              </CardContent>
-            ) : null}
-          </Card>
-
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Nothing logged yet.</p>
+            )}
+          </Fold>
         </div>
       </div>
     </div>
   );
 }
 
+/** A row that opens to show more (calorie changes, the weigh-in history). */
+function Fold({
+  title,
+  summary,
+  open: controlled,
+  onOpenChange,
+  children,
+}: {
+  title: string;
+  summary: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const [own, setOwn] = React.useState(false);
+  const open = controlled ?? own;
+  const setOpen = onOpenChange ?? setOwn;
+  const id = React.useId();
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen(!open)}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-4 text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span>{title}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
+          <span className="truncate">{summary}</span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+        </span>
+      </button>
+      {open ? (
+        <div id={id} className="space-y-3 border-t border-border p-4">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 
-function RecommendationBox({ rec, onApply }: { rec: Recommendation; onApply: () => void }) {
+function RecommendationBox({ rec, onApply, onKeep }: { rec: Recommendation; onApply: () => void; onKeep: () => void }) {
   const food = rec.kcal !== 0;
   return (
     <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
@@ -821,10 +855,16 @@ function RecommendationBox({ rec, onApply }: { rec: Recommendation; onApply: () 
       </div>
       <p className="text-xs text-muted-foreground">{rec.reason}</p>
       {food ? (
-        <Button size="sm" onClick={onApply}>
-          <Check />
-          Apply to my roadmap
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={onApply}>
+            <Check />
+            Apply {rec.kcal > 0 ? "+" : "−"}
+            {Math.abs(rec.kcal)} kcal
+          </Button>
+          <Button size="sm" variant="outline" onClick={onKeep}>
+            Keep {(rec.newIntake - rec.kcal).toLocaleString()}
+          </Button>
+        </div>
       ) : (
         <p className="text-xs">
           Food is already at its floor, so this one is activity only — there&apos;s nothing to apply to the roadmap.

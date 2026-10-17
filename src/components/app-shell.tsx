@@ -4,6 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import {
   Activity,
+  ArrowLeft,
   CloudOff,
   Dumbbell,
   House,
@@ -169,10 +170,6 @@ const PLAN_SECTIONS = [
   { value: "roadmap", label: "Calendar" },
   { value: "timeline", label: "Settings" },
 ] as const;
-const PLAN_SETTINGS = [
-  { value: "timeline", label: "Goal & timeline" },
-  { value: "carbs", label: "Eating plan" },
-] as const;
 type PlanSection = "plan" | "timeline" | "carbs" | "roadmap";
 const isPlanTab = (t: AppTab): t is PlanSection => t === "plan" || t === "timeline" || t === "carbs" || t === "roadmap";
 
@@ -183,7 +180,7 @@ const isPlanTab = (t: AppTab): t is PlanSection => t === "plan" || t === "timeli
  * doesn't wait on the network.
  */
 const TAB_LOADERS = {
-  fatLoss: () => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator),
+  planSettings: () => import("@/components/plan-settings").then((m) => m.PlanSettings),
   carbs: () => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator),
   roadmap: () => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar),
   planOverview: () => import("@/components/plan-overview").then((m) => m.PlanOverview),
@@ -194,7 +191,8 @@ const TAB_LOADERS = {
 };
 // Same imports as above (they share one download each), written out because
 // next/dynamic only accepts them inline.
-const FatLossCalculator = dynamic(() => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator), { ssr: false, loading: () => <LazyPanel /> });
+const PlanSettings = dynamic(() => import("@/components/plan-settings").then((m) => m.PlanSettings), { ssr: false, loading: () => <LazyPanel /> });
+const PlanSetup = dynamic(() => import("@/components/plan-setup").then((m) => m.PlanSetup), { ssr: false });
 const CarbCyclingCalculator = dynamic(() => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator), { ssr: false, loading: () => <LazyPanel /> });
 const RoadmapCalendar = dynamic(() => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar), { ssr: false, loading: () => <LazyPanel /> });
 const PlanOverview = dynamic(() => import("@/components/plan-overview").then((m) => m.PlanOverview), { ssr: false, loading: () => <LazyPanel /> });
@@ -691,6 +689,8 @@ export function AppShell() {
 
   // Badges live on Ranks → Badges; worked out only while that tab is open.
   const [ranksStart, setRanksStart] = React.useState<RanksBoard | null>(null);
+  // The guided plan setup (Plan → Settings, or the empty Overview).
+  const [setupOpen, setSetupOpen] = React.useState(false);
   React.useEffect(() => {
     if (state.activeTab !== "leaderboard") setRanksStart(null);
   }, [state.activeTab]);
@@ -1671,15 +1671,14 @@ export function AppShell() {
                   options={PLAN_SECTIONS}
                   className="max-w-sm"
                 />
-                {state.activeTab === "timeline" || state.activeTab === "carbs" ? (
-                  <SegmentedControl
-                    ariaLabel="Plan settings"
-                    size="sm"
-                    value={state.activeTab}
-                    onValueChange={(v) => setTab(v)}
-                    options={PLAN_SETTINGS}
-                    className="max-w-xs"
-                  />
+                {state.activeTab === "carbs" ? (
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setTab("timeline")}>
+                      <ArrowLeft />
+                      Settings
+                    </Button>
+                    <h2 className="text-base font-semibold">Eating plan</h2>
+                  </div>
                 ) : null}
                 {coachMacros && (state.activeTab === "roadmap" || state.activeTab === "carbs") ? (
                   <CoachMacrosBanner macros={coachMacros} />
@@ -1695,6 +1694,7 @@ export function AppShell() {
                     today={today}
                     unit={state.unit}
                     onOpenSettings={() => setTab("timeline")}
+                    onOpenSetup={() => setSetupOpen(true)}
                     onOpenCalendar={() => setTab("roadmap")}
                     onOpenWeighIn={() => navigateFor.weighIn("checkin")}
                   />
@@ -1722,20 +1722,41 @@ export function AppShell() {
                     profileSlot={<ProfileSummary profile={state.profile} unit={state.unit} onEdit={() => setTab("timeline")} />}
                     foodLogToday={foodLogToday}
                     onOpenRoadmap={() => setTab("roadmap")}
+                    onOpenAdvanced={() => setTab("timeline")}
                   />
                 ) : (
-                  <FatLossCalculator
+                  <PlanSettings
                     profile={state.profile}
+                    onProfileChange={updateProfile}
                     inputs={state.fatLoss}
                     onChange={updateFatLoss}
-                    unit={state.unit}
-                    profileSlot={
-                      <ProfileCard profile={state.profile} onChange={updateProfile} unit={state.unit} />
-                    }
-                    weighIns={weighIns}
+                    carbs={carbPlan}
+                    macrosProfile={macrosProfile}
+                    onCarbsChange={updateCarbs}
                     adjustments={state.tracking.adjustments}
+                    coachMacros={coachMacros}
+                    unit={state.unit}
+                    onOpenEatingPlan={() => setTab("carbs")}
+                    onRunSetup={() => setSetupOpen(true)}
                   />
                 )}
+                {setupOpen && today ? (
+                  <PlanSetup
+                    profile={state.profile}
+                    fatLoss={state.fatLoss}
+                    carbs={carbPlan}
+                    unit={state.unit}
+                    today={today}
+                    onClose={() => setSetupOpen(false)}
+                    onFinish={(r) => {
+                      updateProfile(r.profile);
+                      updateFatLoss(r.fatLoss);
+                      updateCarbs(r.carbs);
+                      setSetupOpen(false);
+                      setTab("plan");
+                    }}
+                  />
+                ) : null}
               </TabsContent>
 
               <TabsContent value="macros">

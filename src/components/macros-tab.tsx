@@ -8,6 +8,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Dumbbell,
   Cloud,
   Copy,
   GlassWater,
@@ -19,8 +20,6 @@ import {
   Target,
   Trash2,
   Undo2,
-  Utensils,
-  X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Hint } from "@/components/ui/hint";
@@ -48,7 +47,7 @@ import {
 import type { FastingSettings } from "@/lib/fasting";
 import type { SessionInfo } from "@/lib/checkin-store";
 import { DAY_LABELS } from "@/lib/carb-cycling";
-import { addDays, formatShort } from "@/lib/dates";
+import { addDays, formatLong, formatShort } from "@/lib/dates";
 import {
   CALORIE_TOLERANCE_KCAL,
   FOOD_DAYS_AHEAD,
@@ -58,6 +57,7 @@ import {
   applyFoodTicks,
   defaultMeal,
   myFoodId,
+  productFromEntry,
   recentFoods,
   recentMeals,
   type RecentMeal,
@@ -77,7 +77,7 @@ import type { CalorieAdjustment } from "@/lib/tracking";
 import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs, WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { bottlesOn, liters, ounces, tapBottle, withBottles, WATER_GOAL_BOTTLES } from "@/lib/water";
-import { TrainingCarbsCard } from "@/components/training-carbs-card";
+import { TrainingCarbsPanel, trainingChipLabel } from "@/components/training-carbs-card";
 import type { TrainingToday } from "@/lib/training-carbs";
 
 const DAY_PILL: Record<DayType, string> = {
@@ -173,6 +173,16 @@ export function MacrosTab({
   }, [justAdded]);
   // Where the targets come from, and the scorecard note, behind the ⓘ.
   const [showInfo, setShowInfo] = React.useState(false);
+  // Before / after carbs on a training day, from the chip on the summary.
+  const [showCarbs, setShowCarbs] = React.useState(false);
+  // Foods just added, highlighted in their meal for a few seconds.
+  const [fresh, setFresh] = React.useState<string[]>([]);
+  const markFresh = (ids: string[]) => setFresh(ids);
+  React.useEffect(() => {
+    if (fresh.length === 0) return;
+    const t = setTimeout(() => setFresh([]), 4000);
+    return () => clearTimeout(t);
+  }, [fresh]);
   // The last removal or saved-meal add, for Undo.
   const [undo, setUndo] = React.useState<{ date: string; entries: FoodEntry[]; message: string } | null>(null);
   // Which meal in the day's log is being saved as a saved meal.
@@ -395,8 +405,15 @@ export function MacrosTab({
     setJustAdded(text);
     if (!isWide()) setAddOpen(false);
   };
+  const aiNote =
+    session.mode !== "cloud"
+      ? "Describe and Photo work when you open the app inside Whop."
+      : session.mealPhotos !== true
+        ? "Describe and Photo aren't switched on for this app yet."
+        : null;
   const addAndClose = async (entry: FoodEntry) => {
     await addEntry(entry);
+    markFresh([entry.id]);
     noteAdded(`Added ${entry.name} to ${MEALS.find((m) => m.id === entry.meal)?.label ?? mealLabel}.`);
   };
 
@@ -415,66 +432,64 @@ export function MacrosTab({
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-start">
         <div className="space-y-4">
           {/* --------------------------- day + targets --------------------------- */}
+          <div className="flex items-center justify-between gap-2">
+            <Button variant="outline" size="icon" onClick={() => changeDate(addDays(date, -1))} aria-label="Previous day">
+              <ChevronLeft />
+            </Button>
+            <div className="flex min-w-0 flex-col items-center" aria-live="polite">
+              <span className="text-base font-semibold">{isToday ? "Today" : formatShort(date)}</span>
+              <span className="text-[12px] text-muted-foreground">
+                {isToday ? formatLong(date) : <button type="button" className="underline underline-offset-2" onClick={() => changeDate(today)}>Back to today</button>}
+              </span>
+            </div>
+            <Button variant="outline" size="icon" onClick={() => changeDate(addDays(date, 1))} disabled={date >= maxDate} aria-label="Next day">
+              <ChevronRight />
+            </Button>
+          </div>
+
           <Card>
-            <CardHeader className="space-y-3 pb-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeDate(addDays(date, -1))} aria-label="Previous day">
-                    <ChevronLeft />
-                  </Button>
-                  <span className="min-w-[6.5rem] text-center text-sm font-semibold" aria-live="polite">
-                    {isToday ? "Today" : formatShort(date)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => changeDate(addDays(date, 1))}
-                    disabled={date >= maxDate}
-                    aria-label="Next day"
-                  >
-                    <ChevronRight />
-                  </Button>
-                  {!isToday ? (
-                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => changeDate(today)}>
-                      Today
-                    </Button>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-1">
-                  {target && !target.steady ? (
-                    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
-                      {DAY_LABELS[target.type]}
-                    </span>
-                  ) : null}
-                  {target ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      aria-label="About these targets"
-                      aria-expanded={showInfo}
-                      onClick={() => setShowInfo((v) => !v)}
-                    >
-                      <Info />
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 p-4">
               {target ? (
                 <>
-                  <div className="grid items-center gap-4 sm:grid-cols-[auto_minmax(0,1fr)]">
-                  <MacroDonut eaten={totals} kcal={totals.kcal} target={target} targetKcal={target.calories} />
-                  <div className="space-y-3">
-                    <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
-                    <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
-                    <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4">
+                    <CalorieRing eaten={totals.kcal} target={target.calories} />
+                    <div className="space-y-2.5 lg:grid lg:grid-cols-3 lg:gap-4 lg:space-y-0">
+                      <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
+                      <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
+                      <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
+                    </div>
                   </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {target && !target.steady ? (
+                      <span className={cn("flex min-h-8 items-center rounded-full px-3 text-xs font-semibold", DAY_PILL[target.type])}>
+                        {DAY_LABELS[target.type]}
+                      </span>
+                    ) : null}
+                    {isToday && target.carbs > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCarbs((v) => !v)}
+                        aria-expanded={showCarbs}
+                        className="flex min-h-8 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/10 px-3 text-xs font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Dumbbell className="h-3.5 w-3.5" />
+                        {trainingChipLabel(trainingToday)}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setShowInfo((v) => !v)}
+                      aria-expanded={showInfo}
+                      className="flex min-h-8 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-foreground/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                      {SOURCE_CHIP[target.source] ?? "Targets"} · Protein{" "}
+                      {target.protein - totals.protein <= PROTEIN_TOLERANCE_G ? "hit" : `${fmt(target.protein - totals.protein)} g to go`}
+                    </button>
                   </div>
+                  {showCarbs && isToday ? <TrainingCarbsPanel training={trainingToday} target={target} /> : null}
                   {showInfo ? (
-                  <>
+                  <div className="space-y-2 rounded-md bg-muted/40 p-3">
                   <p className="text-[12px] text-muted-foreground">
                     {target.source === "coach"
                       ? "Targets your coach set for you."
@@ -512,7 +527,7 @@ export function MacrosTab({
                       </Hint>
                     </div>
                   ) : null}
-                  </>
+                  </div>
                   ) : null}
                 </>
               ) : (
@@ -531,128 +546,132 @@ export function MacrosTab({
             </CardContent>
           </Card>
 
-          {isToday && target ? <TrainingCarbsCard training={trainingToday} target={target} /> : null}
-
           {date <= today ? (
             <WaterStrip date={date} unit={unit} habits={habits} habitLogs={habitLogs} onSaveHabits={onSaveHabits} onOpen={() => setSection("water")} />
           ) : null}
 
           {/* ------------------------------ day log ------------------------------ */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Utensils className="h-4 w-4 text-primary" />
-                {isToday ? "Today’s food" : `Food for ${formatShort(date)}`}
-              </CardTitle>
-              <CardDescription>{entries.length > 0 ? <MacroLine m={totals} /> : "Nothing logged yet."}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {justAdded ? (
-                <p role="status" className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-xs text-success">
-                  <Check className="h-3.5 w-3.5 shrink-0" />
-                  {justAdded}
-                </p>
-              ) : null}
-              {undo && undo.date === date ? (
-                <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                  <span className="min-w-0 truncate">{undo.message}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 px-2"
-                    onClick={() => {
-                      const restore = undo;
-                      setUndo(null);
-                      void commit(restore.date, restore.entries).catch(() => {});
-                    }}
-                  >
-                    <Undo2 />
-                    Undo
-                  </Button>
-                </p>
-              ) : null}
-              {saveError ? (
-                <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {saveError}
-                </p>
-              ) : null}
-              {entries.length === 0 && yesterday.length > 0 ? (
-                <Button variant="outline" size="sm" onClick={copyYesterday}>
-                  <Copy />
-                  Copy the whole day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
+          <div className="space-y-2.5">
+            {justAdded ? (
+              <p role="status" className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-xs text-success">
+                <Check className="h-3.5 w-3.5 shrink-0" />
+                {justAdded}
+              </p>
+            ) : null}
+            {undo && undo.date === date ? (
+              <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
+                <span className="min-w-0 truncate">{undo.message}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 px-2"
+                  onClick={() => {
+                    const restore = undo;
+                    setUndo(null);
+                    void commit(restore.date, restore.entries).catch(() => {});
+                  }}
+                >
+                  <Undo2 />
+                  Undo
                 </Button>
-              ) : null}
-              {entries.length === 0 && date > today ? (
-                <p className="text-xs text-muted-foreground">Logging ahead counts as pre-logging your meals.</p>
-              ) : null}
+              </p>
+            ) : null}
+            {saveError ? (
+              <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {saveError}
+              </p>
+            ) : null}
+            {entries.length === 0 && yesterday.length > 0 ? (
+              <Button variant="outline" size="sm" onClick={copyYesterday}>
+                <Copy />
+                Copy the whole day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
+              </Button>
+            ) : null}
+            {entries.length === 0 && date > today ? (
+              <p className="text-xs text-muted-foreground">Logging ahead counts as pre-logging your meals.</p>
+            ) : null}
 
-              {MEALS.map((m) => {
-                const items = entries.filter((e) => e.meal === m.id);
-                const fromYesterday = yesterday.filter((e) => e.meal === m.id);
-                return (
-                  <section key={m.id} aria-label={m.label} className="rounded-lg border border-border">
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold">{m.label}</h3>
-                        {items.length > 0 ? (
-                          <MacroLine m={sumMacros(items)} className="block truncate text-[12px]" />
-                        ) : (
-                          <p className="text-[12px] text-muted-foreground">Nothing yet</p>
-                        )}
-                      </div>
+            {MEALS.map((m) => {
+              const items = entries.filter((e) => e.meal === m.id);
+              const fromYesterday = yesterday.filter((e) => e.meal === m.id);
+              return (
+                <section key={m.id} aria-label={m.label} className={cn("overflow-hidden rounded-xl border bg-card", items.length > 0 ? "border-border" : "border-border/60")}>
+                  <div className="flex items-center gap-2 py-2.5 pl-4 pr-2">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold">{m.label}</h3>
                       {items.length > 0 ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 shrink-0 text-muted-foreground"
-                          aria-label={`Save ${m.label.toLowerCase()} as a meal`}
-                          title="Save as a meal"
-                          aria-expanded={savingMeal === m.id}
-                          onClick={() => setSavingMeal(savingMeal === m.id ? null : m.id)}
-                        >
-                          <BookmarkPlus />
-                        </Button>
-                      ) : null}
-                      <Button size="sm" variant="secondary" className="h-9 shrink-0" onClick={() => openAdd(m.id)} aria-label={`Add food to ${m.label}`}>
-                        <Plus />
-                        Add
-                      </Button>
+                        <MacroLine m={sumMacros(items)} className="block truncate text-[12px]" />
+                      ) : (
+                        <p className="text-[12px] text-muted-foreground">Nothing yet</p>
+                      )}
                     </div>
-                    {savingMeal === m.id ? (
-                      <div className="px-3 pb-2">
-                        <SaveMealForm
-                          defaultName={`My usual ${m.label.toLowerCase()}`}
-                          count={items.length}
-                          full={savedMeals.length >= MAX_SAVED_MEALS}
-                          onSave={(name) => saveAsMeal(m.id, name)}
-                          onCancel={() => setSavingMeal(null)}
-                        />
-                      </div>
-                    ) : null}
                     {items.length > 0 ? (
-                      <ul className="divide-y divide-border/60 border-t border-border px-3">
-                        {items.map((e) => (
-                          <EntryRow key={e.id} entry={e} onRemove={() => removeEntry(e.id)} onAmount={(q) => changeAmount(e.id, q)} />
-                        ))}
-                      </ul>
-                    ) : fromYesterday.length > 0 ? (
-                      <div className="border-t border-border px-2 py-1.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground"
+                        aria-label={`Save ${m.label.toLowerCase()} as a meal`}
+                        title="Save as a meal"
+                        aria-expanded={savingMeal === m.id}
+                        onClick={() => setSavingMeal(savingMeal === m.id ? null : m.id)}
+                      >
+                        <BookmarkPlus />
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-9 shrink-0 bg-primary/15 text-primary hover:bg-primary/25"
+                      onClick={() => openAdd(m.id)}
+                      aria-label={`Add food to ${m.label}`}
+                    >
+                      <Plus />
+                      Add
+                    </Button>
+                  </div>
+                  {savingMeal === m.id ? (
+                    <div className="px-3 pb-2">
+                      <SaveMealForm
+                        defaultName={`My usual ${m.label.toLowerCase()}`}
+                        count={items.length}
+                        full={savedMeals.length >= MAX_SAVED_MEALS}
+                        onSave={(name) => saveAsMeal(m.id, name)}
+                        onCancel={() => setSavingMeal(null)}
+                      />
+                    </div>
+                  ) : null}
+                  {items.length > 0 ? (
+                    <ul className="divide-y divide-border/60 border-t border-border/60 px-4">
+                      {items.map((e) => (
+                        <EntryRow key={e.id} entry={e} fresh={fresh.includes(e.id)} onRemove={() => removeEntry(e.id)} onAmount={(q) => changeAmount(e.id, q)} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="flex flex-col gap-2 px-4 pb-3">
+                      <button
+                        type="button"
+                        onClick={() => openAdd(m.id)}
+                        className="h-11 rounded-lg border border-dashed border-border text-sm text-muted-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        + Add {m.label.toLowerCase()}
+                      </button>
+                      {fromYesterday.length > 0 ? (
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-8 px-2 text-xs"
+                          className="h-9 text-xs"
                           onClick={() => repeatMeal(fromYesterday, m.id, `yesterday’s ${m.label.toLowerCase()}`)}
                         >
                           <Copy />
                           Copy yesterday’s {m.label.toLowerCase()} ({Math.round(sumMacros(fromYesterday).kcal).toLocaleString()} kcal)
                         </Button>
-                      </div>
-                    ) : null}
-                  </section>
-                );
-              })}
-            </CardContent>
-          </Card>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
 
           <p className="flex gap-2 text-[12px] leading-relaxed text-muted-foreground">
             {session.mode === "cloud" ? (
@@ -671,6 +690,7 @@ export function MacrosTab({
         </div>
 
         {/* ------------------------- add food panel ------------------------- */}
+        {addOpen ? <div aria-hidden className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setAddOpen(false)} /> : null}
         <div
           role={addOpen ? "dialog" : undefined}
           aria-modal={addOpen ? true : undefined}
@@ -681,16 +701,11 @@ export function MacrosTab({
           className={cn(
             "space-y-4 lg:sticky lg:top-4",
             addOpen
-              ? "fixed inset-0 z-50 overflow-y-auto bg-background p-4 pb-24 lg:inset-auto lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0"
+              ? "fixed inset-x-0 bottom-0 top-16 z-50 overflow-y-auto rounded-t-2xl border-t border-border bg-background px-4 pb-24 pt-2 lg:inset-auto lg:z-auto lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
               : "hidden lg:block",
           )}
         >
-          <div className="flex items-center justify-between gap-2 lg:hidden">
-            <span className="text-base font-semibold">Add to {mealLabel}</span>
-            <Button variant="ghost" size="icon" aria-label="Close" onClick={() => setAddOpen(false)}>
-              <X />
-            </Button>
-          </div>
+          <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-border lg:hidden" />
           <AddFoodCard
             ref={addRef}
             mode={mode}
@@ -699,34 +714,46 @@ export function MacrosTab({
             setMeal={setMeal}
             dayLabel={dayLabel}
             myFoods={myFoods}
-            recents={recents}
+            onClose={() => setAddOpen(false)}
+            aiNote={aiNote}
             leftAfter={leftAfter}
             onAdd={addAndClose}
             onAddMany={async (added) => {
               setUndo(null);
               await commit(date, [...logFor(date), ...added]);
+              markFresh(added.map((e) => e.id));
               noteAdded(`Added ${added.length} food${added.length === 1 ? "" : "s"} to ${mealLabel}.`);
             }}
             onSaveMyFood={onSaveMyFood}
             photoEnabled={session.mode === "cloud" && session.mealPhotos === true}
           />
 
+          {mode.kind === "menu" ? (
           <LibraryTabs
             tabs={[
               {
                 id: "recent",
-                label: "Recent meals",
-                count: recent.length,
-                empty: "Meals you log show up here for two weeks, ready to repeat.",
+                label: "Recent",
+                count: recents.length + recent.length,
+                empty: "Foods and meals you log show up here, ready to add again in one tap.",
                 node: (
-                  <RecentMealsCard
-                    meals={recent}
-                    today={today}
-                    onAdd={(r) => {
-                      repeatMeal(r.items, r.meal, "it");
-                      if (!isWide()) setAddOpen(false);
-                    }}
-                  />
+                  <div className="space-y-4">
+                    <RecentFoodsList
+                      foods={recents}
+                      onAdd={(e) => void addAndClose({ ...e, id: newId(), meal })}
+                      onOpen={(e) => setMode({ kind: "product", product: productFromEntry(e), quantity: e.quantity, unit: e.unit })}
+                    />
+                    {recent.length > 0 ? (
+                      <RecentMealsCard
+                        meals={recent}
+                        today={today}
+                        onAdd={(r) => {
+                          repeatMeal(r.items, r.meal, "it");
+                          if (!isWide()) setAddOpen(false);
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 ),
               },
               {
@@ -755,6 +782,7 @@ export function MacrosTab({
               },
             ]}
           />
+          ) : null}
         </div>
       </div>
     </div>
@@ -994,10 +1022,13 @@ function MacroBar({
 
 function EntryRow({
   entry,
+  fresh = false,
   onRemove,
   onAmount,
 }: {
   entry: FoodEntry;
+  /** Just added: highlighted for a moment. */
+  fresh?: boolean;
   onRemove: () => void;
   onAmount: (quantity: number) => void;
 }) {
@@ -1016,16 +1047,17 @@ function EntryRow({
   };
 
   return (
-    <li className="space-y-1.5 py-2">
-      <div className="flex items-start gap-2">
+    <li className={cn("-mx-4 space-y-1.5 px-4 py-2 transition-colors duration-700", fresh && "bg-primary/10")}>
+      <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{entry.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="tabular truncate text-xs text-muted-foreground">
             {entry.brand ? `${entry.brand} · ` : ""}
-            {amount}
+            {amount} · <span className="text-macro-protein">P {fmt(entry.protein)}</span> · <span className="text-macro-carb">C {fmt(entry.carbs)}</span> ·{" "}
+            <span className="text-macro-fat">F {fmt(entry.fat)}</span>
           </p>
-          <MacroLine m={entry} className="block truncate" />
         </div>
+        <span className="tabular shrink-0 text-sm text-foreground/85">{Math.round(entry.kcal).toLocaleString()}</span>
         <div className="flex shrink-0 items-center">
           <Button
             variant="ghost"
@@ -1289,5 +1321,91 @@ function LibraryTabs({
         {current.count === 0 ? <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">{current.empty}</p> : current.node}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------ calorie ring ------------------------------ */
+
+const SOURCE_CHIP: Record<string, string> = {
+  coach: "Coach's targets",
+  roadmap: "Roadmap targets",
+  after: "After-goal targets",
+  plan: "Plan targets",
+};
+
+/** The day's calories as a ring filling toward the target, with what's left in the middle. */
+function CalorieRing({ eaten, target }: { eaten: number; target: number }) {
+  const r = 52;
+  const circ = 2 * Math.PI * r;
+  const pct = target > 0 ? Math.min(1, eaten / target) : 0;
+  const left = Math.round(target - eaten);
+  const over = left < -100;
+  return (
+    <div
+      role="img"
+      aria-label={`${Math.round(eaten).toLocaleString()} of ${target.toLocaleString()} kcal eaten, ${left >= 0 ? `${left.toLocaleString()} left` : `${(-left).toLocaleString()} over`}`}
+      className="relative h-[120px] w-[120px] shrink-0"
+    >
+      <svg aria-hidden viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <circle cx="60" cy="60" r={r} fill="none" className="stroke-muted" strokeWidth="10" />
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          fill="none"
+          className={over ? "stroke-warning" : "stroke-primary"}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={`${(pct * circ).toFixed(1)} ${circ.toFixed(1)}`}
+          style={{ transition: "stroke-dasharray 400ms ease" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="tabular text-2xl font-bold leading-tight">{left >= 0 ? left.toLocaleString() : `+${(-left).toLocaleString()}`}</span>
+        <span className="text-[11px] text-muted-foreground">{left >= 0 ? "kcal left" : "kcal over"}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ recent foods ------------------------------ */
+
+/** Foods logged lately: + adds the same amount to the meal; the name opens it to change the amount. */
+function RecentFoodsList({
+  foods,
+  onAdd,
+  onOpen,
+}: {
+  foods: FoodEntry[];
+  onAdd: (e: FoodEntry) => void;
+  onOpen: (e: FoodEntry) => void;
+}) {
+  if (foods.length === 0) return null;
+  return (
+    <ul className="divide-y divide-border/60">
+      {foods.slice(0, 10).map((e) => (
+        <li key={e.id} className="flex items-center gap-2 py-2">
+          <button
+            type="button"
+            onClick={() => onOpen(e)}
+            className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="block truncate text-sm">{e.name}</span>
+            <span className="tabular block truncate text-[12px] text-muted-foreground">
+              {fmt(e.quantity)} {e.unit === "serving" ? unitLabel("serving", e.quantity) : e.unit} · {Math.round(e.kcal)} kcal · P {fmt(e.protein)} · C{" "}
+              {fmt(e.carbs)} · F {fmt(e.fat)}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onAdd(e)}
+            aria-label={`Add ${e.name}`}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary transition-colors hover:bg-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Plus className="h-[18px] w-[18px]" />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

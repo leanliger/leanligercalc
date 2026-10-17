@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { AdvancedFold } from "@/components/ui/advanced-fold";
 import { CalendarRange, Flame, Info, Percent, Sparkles, Utensils } from "lucide-react";
 import {
   Card,
@@ -67,6 +66,8 @@ interface CarbCyclingCalculatorProps {
    */
   foodLogToday?: DayTarget | null;
   onOpenRoadmap?: () => void;
+  /** Opens Plan → Settings, where protein, fat and the carb swing are. */
+  onOpenAdvanced?: () => void;
 }
 
 const DAY_NAME = { high: "High", medium: "Medium", low: "Low" } as const;
@@ -281,6 +282,7 @@ export function CarbCyclingCalculator({
   foodLogToday,
   onOpenRoadmap,
   onOpenTimeline,
+  onOpenAdvanced,
 }: CarbCyclingCalculatorProps) {
   const result = React.useMemo(
     () => calculateCarbCycling(profile, inputs),
@@ -408,78 +410,17 @@ export function CarbCyclingCalculator({
             </>
           )}
 
-          <AdvancedFold title="Advanced: protein and fat" hint="protein per lb, fat floor">
-          {/* --------------------------- Protein -------------------------- */}
-          <div className="space-y-3">
-            <Field label="Protein basis">
-              <SegmentedControl
-                ariaLabel="Protein basis"
-                value={inputs.proteinBasis}
-                onValueChange={(value) => onChange({ proteinBasis: value })}
-                options={PROTEIN_BASIS_OPTIONS}
-                size="sm"
-              />
-            </Field>
-
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">Protein per pound</span>
-                <span className="tabular font-semibold text-macro-protein">
-                  {inputs.proteinPerLb.toFixed(2)} g/lb
-                </span>
-              </div>
-              <Slider
-                value={[inputs.proteinPerLb * 100]}
-                onValueChange={([value]) =>
-                  onChange({ proteinPerLb: (value ?? 110) / 100 })
-                }
-                min={60}
-                max={160}
-                step={5}
-                aria-label="Protein grams per pound"
-              />
-              <p className="tabular text-xs text-muted-foreground">
-                {Math.round(protein)}g per day ·{" "}
-                {inputs.proteinBasis === "leanMass" ? "on lean mass" : "on body weight"}
-              </p>
-            </div>
-          </div>
-
-          {/* ---------------------------- Fat floor ----------------------- */}
-          <div className="space-y-3 border-t border-border pt-4">
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">Fat floor</span>
-                <span className="tabular font-semibold text-macro-fat">
-                  {Math.round(inputs.fatFloorPercent * 100)}% of calories
-                </span>
-              </div>
-              <Slider
-                value={[inputs.fatFloorPercent * 100]}
-                onValueChange={([value]) =>
-                  onChange({ fatFloorPercent: (value ?? 22) / 100 })
-                }
-                min={15}
-                max={40}
-                step={1}
-                aria-label="Minimum fat as a percentage of calories"
-              />
-            </div>
-
-            <NumberField
-              label="Absolute fat minimum"
-              value={inputs.fatFloorGramsPerLb}
-              onValueChange={(value) => onChange({ fatFloorGramsPerLb: value })}
-              suffix="g/lb"
-              min={0.1}
-              max={1}
-              step={0.05}
-              decimals={2}
-              hint="Whichever floor is higher wins, on every day type."
-              help="Hormone production and fat-soluble vitamin absorption both suffer below roughly 0.3g per pound of body weight."
-            />
-          </div>
-          </AdvancedFold>
+          <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Protein, the fat minimum{inputs.cycleCarbs ? " and how far high and low days swing" : ""} are under{" "}
+            {onOpenAdvanced ? (
+              <button type="button" onClick={onOpenAdvanced} className="font-medium text-primary underline-offset-2 hover:underline">
+                Settings → Advanced
+              </button>
+            ) : (
+              "Settings → Advanced"
+            )}
+            .
+          </p>
 
           {inputs.cycleCarbs ? (
           <>
@@ -557,54 +498,6 @@ export function CarbCyclingCalculator({
             ) : null}
           </div>
 
-          <AdvancedFold title="Advanced: carb swing" hint={`+${Math.round(inputs.highCarbBoost * 100)}% high, −${Math.round(inputs.lowCarbCut * 100)}% low`}>
-          {/* --------------------------- Amplitude ------------------------ */}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">High-day carb boost</span>
-                <span className="tabular font-semibold text-day-high">
-                  +{Math.round(inputs.highCarbBoost * 100)}%
-                </span>
-              </div>
-              <Slider
-                value={[inputs.highCarbBoost * 100]}
-                onValueChange={([value]) =>
-                  onChange({ highCarbBoost: (value ?? 20) / 100 })
-                }
-                min={0}
-                max={50}
-                step={1}
-                aria-label="High day carb boost"
-              />
-              <p className="text-[12px] text-muted-foreground">
-                Recommended {Math.round(HIGH_BOOST_RANGE.min * 100)}–
-                {Math.round(HIGH_BOOST_RANGE.max * 100)}% more carbs than an average day
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">Low-day carb cut</span>
-                <span className="tabular font-semibold text-day-low">
-                  −{Math.round(inputs.lowCarbCut * 100)}%
-                </span>
-              </div>
-              <Slider
-                value={[inputs.lowCarbCut * 100]}
-                onValueChange={([value]) => onChange({ lowCarbCut: (value ?? 25) / 100 })}
-                min={0}
-                max={60}
-                step={1}
-                aria-label="Low day carb cut"
-              />
-              <p className="text-[12px] text-muted-foreground">
-                Recommended {Math.round(LOW_CUT_RANGE.min * 100)}–
-                {Math.round(LOW_CUT_RANGE.max * 100)}% fewer carbs than an average day
-              </p>
-            </div>
-          </div>
-          </AdvancedFold>
 
           </>
           ) : null}        </CardContent>

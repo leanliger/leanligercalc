@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Check,
   CircleAlert,
-  History,
   MessageSquareText,
   Keyboard,
   Loader2,
@@ -17,6 +16,7 @@ import {
   ScanText,
   Search,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +37,6 @@ import {
   macrosFor,
   myFoodId,
   normalizeBarcode,
-  productFromEntry,
   roundMacros,
   sameBarcode,
   scaleMacros,
@@ -61,7 +60,7 @@ export type AddMode =
   | { kind: "menu" }
   | { kind: "scan" }
   | { kind: "lookup"; code: string }
-  | { kind: "search" }
+  | { kind: "search"; query?: string }
   | { kind: "product"; product: FoodProduct; quantity?: number; unit?: FoodUnit }
   | { kind: "manual"; seed: ManualSeed }
   | { kind: "photo" }
@@ -172,7 +171,10 @@ interface AddFoodCardProps {
   /** "today", or e.g. "Mon, Oct 5". */
   dayLabel: string;
   myFoods: FoodProduct[];
-  recents: FoodEntry[];
+  /** Closes the panel (phones, where it's a sheet). */
+  onClose?: () => void;
+  /** Why Describe and Photo can't be used here, or null when they can. */
+  aiNote?: string | null;
   /** Calories and macros left for the day after eating `m`, when there's a target. */
   leftAfter: (m: Macros) => Macros | null;
   onAdd: (entry: FoodEntry) => Promise<void>;
@@ -184,7 +186,7 @@ interface AddFoodCardProps {
 }
 
 export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(function AddFoodCard(
-  { mode, setMode, meal, setMeal, dayLabel, myFoods, recents, leftAfter, onAdd, onAddMany, onSaveMyFood, photoEnabled },
+  { mode, setMode, meal, setMeal, dayLabel, myFoods, onClose, aiNote = null, leftAfter, onAdd, onAddMany, onSaveMyFood, photoEnabled },
   ref,
 ) {
   const [flash, setFlash] = React.useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -267,6 +269,7 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
     setFlash({ kind: "ok", text: `Added ${entries.length} food${entries.length === 1 ? "" : "s"} to ${mealLabel}.` });
   };
 
+  const mealName = MEALS.find((m) => m.id === meal)?.label ?? "your log";
   const title =
     mode.kind === "photo"
       ? "Estimate from a photo"
@@ -283,43 +286,61 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
             : "Add food";
 
   return (
-    <Card ref={ref} className="scroll-mt-20">
-      <CardHeader className="space-y-3 pb-3">
+    <Card ref={ref} className="scroll-mt-20 max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none">
+      <CardHeader className="space-y-3 pb-3 max-lg:px-0 max-lg:pt-2">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-primary" />
-            {title}
+          <CardTitle className="min-w-0 text-lg">
+            {mode.kind === "menu" ? (
+              <>
+                Add to {mealName}
+                {dayLabel !== "today" ? <span className="text-sm font-normal text-muted-foreground"> · {dayLabel}</span> : null}
+              </>
+            ) : (
+              title
+            )}
           </CardTitle>
-          {mode.kind !== "menu" ? (
-            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => go({ kind: "menu" })}>
-              <ArrowLeft />
-              Back
-            </Button>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1">
+            {mode.kind !== "menu" ? (
+              <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => go({ kind: "menu" })}>
+                <ArrowLeft />
+                Back
+              </Button>
+            ) : null}
+            {onClose ? (
+              <Button variant="outline" size="icon" className="lg:hidden" aria-label="Close" onClick={onClose}>
+                <X />
+              </Button>
+            ) : null}
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">Adding to {dayLabel}:</p>
-          <SegmentedControl
-            ariaLabel="Meal"
-            size="sm"
-            value={meal}
-            onValueChange={setMeal}
-            options={MEALS.map((m) => ({ value: m.id, label: m.label }))}
-          />
+        <div role="group" aria-label="Meal" className="grid grid-cols-4 gap-1.5">
+          {MEALS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={m.id === meal}
+              onClick={() => setMeal(m.id)}
+              className={cn(
+                "h-9 rounded-full border text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                m.id === meal ? "border-primary bg-primary text-primary-foreground" : "border-border text-foreground/85 hover:bg-muted/40",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 max-lg:px-0">
         {mode.kind === "menu" ? (
           <MenuView
-            recents={recents}
+            aiNote={aiNote}
             onScan={() => go({ kind: "scan" })}
-            onSearch={() => go({ kind: "search" })}
+            onSearch={(query) => go({ kind: "search", query })}
             onManual={() => go({ kind: "manual", seed: EMPTY_SEED })}
             onPhoto={photoEnabled ? () => go({ kind: "photo" }) : undefined}
             onDescribe={photoEnabled ? () => go({ kind: "describe" }) : undefined}
             onBarcode={(code) => void lookup(code)}
-            onRecent={(e) => go({ kind: "product", product: productFromEntry(e), quantity: e.quantity, unit: e.unit })}
           />
         ) : mode.kind === "photo" ? (
           <MealPhotoView mealLabel={MEALS.find((m) => m.id === meal)?.label ?? ""} onAddMany={addMany} onCancel={() => go({ kind: "menu" })} />
@@ -334,6 +355,7 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
           </p>
         ) : mode.kind === "search" ? (
           <SearchView
+            initialQuery={mode.query}
             myFoods={myFoods}
             onPick={(p) => go({ kind: "product", product: p })}
             onManual={() => go({ kind: "manual", seed: EMPTY_SEED })}
@@ -383,13 +405,15 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
           </p>
         ) : null}
 
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          Barcode and search data come from{" "}
-          <a href="https://fdc.nal.usda.gov" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            USDA FoodData Central
-          </a>
-          , mostly US products. Not found? Type the label in once and it&apos;s saved to My foods. Always check the numbers against the label.
-        </p>
+        {mode.kind === "search" || mode.kind === "scan" || mode.kind === "lookup" ? (
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Food data from{" "}
+            <a href="https://fdc.nal.usda.gov" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              USDA FoodData Central
+            </a>
+            , mostly US products. Not found? Type the label in once and it&apos;s saved to My foods.
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -398,108 +422,115 @@ export const AddFoodCard = React.forwardRef<HTMLDivElement, AddFoodCardProps>(fu
 /* ---------------------------------- menu --------------------------------- */
 
 function MenuView({
-  recents,
+  aiNote,
   onScan,
   onSearch,
   onManual,
   onPhoto,
   onDescribe,
   onBarcode,
-  onRecent,
 }: {
-  recents: FoodEntry[];
+  aiNote: string | null;
   onScan: () => void;
-  onSearch: () => void;
+  /** Opens search with what's been typed so far. */
+  onSearch: (query: string) => void;
   onManual: () => void;
   /** Present when photo estimates are switched on. */
   onPhoto?: () => void;
   /** Present when described meals are switched on (same AI key as photos). */
   onDescribe?: () => void;
   onBarcode: (code: string) => void;
-  onRecent: (e: FoodEntry) => void;
 }) {
   const [typed, setTyped] = React.useState("");
   const [typedError, setTypedError] = React.useState<string | null>(null);
+  const [barcodeOpen, setBarcodeOpen] = React.useState(false);
+  const [aiShown, setAiShown] = React.useState(false);
   const inputId = React.useId();
+  const searchId = React.useId();
+  const off = () => setAiShown(true);
 
   return (
-    <div className="space-y-4">
-      <div className={cn("grid gap-2", onPhoto || onDescribe ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-3")}>
-        <BigButton icon={<ScanBarcode />} label="Scan" sub="barcode" onClick={onScan} primary />
-        <BigButton icon={<Search />} label="Search" sub="by name" onClick={onSearch} />
-        <BigButton icon={<PenLine />} label="Quick add" sub="from label" onClick={onManual} />
-        {onDescribe ? <BigButton icon={<MessageSquareText />} label="Describe" sub="type or say it" onClick={onDescribe} /> : null}
-        {onPhoto ? <BigButton icon={<Camera />} label="Photo" sub="estimate" onClick={onPhoto} /> : null}
+    <div className="space-y-3">
+      <div className="relative">
+        <Label htmlFor={searchId} className="sr-only">
+          Search foods
+        </Label>
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Input
+          id={searchId}
+          type="search"
+          autoComplete="off"
+          enterKeyHint="search"
+          placeholder="Search foods"
+          className="h-12 rounded-xl pl-10 text-base"
+          onChange={(e) => {
+            if (e.target.value.trim()) onSearch(e.target.value);
+          }}
+        />
       </div>
 
-      <form
-        className="space-y-1.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const code = normalizeBarcode(typed);
-          if (!code) {
-            setTypedError("That isn’t a valid barcode. Check the digits under the bars.");
-            return;
-          }
-          setTypedError(null);
-          onBarcode(code);
-        }}
-      >
-        <Label htmlFor={inputId} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Keyboard className="h-3.5 w-3.5" />
-          Or type the barcode numbers
-        </Label>
-        <div className="flex gap-2">
-          <Input
-            id={inputId}
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="e.g. 0737628064502"
-            value={typed}
-            maxLength={20}
-            onChange={(e) => setTyped(e.target.value)}
-            aria-invalid={typedError ? true : undefined}
-          />
-          <Button type="submit" variant="outline" disabled={typed.replace(/\D/g, "").length < 8}>
-            Look up
-          </Button>
-        </div>
-        {typedError ? (
-          <p role="alert" className="text-xs text-destructive">
-            {typedError}
-          </p>
-        ) : null}
-      </form>
-
-      {recents.length > 0 ? (
-        <div className="space-y-1.5">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <History className="h-3.5 w-3.5" />
-            Recent
-          </p>
-          <ul className="space-y-1">
-            {recents.slice(0, 8).map((e) => (
-              <li key={e.id}>
-                <button
-                  type="button"
-                  onClick={() => onRecent(e)}
-                  className="flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{e.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {fmt(e.quantity)} {e.unit === "serving" ? unitLabel("serving", e.quantity) : e.unit}
-                      {e.brand ? ` · ${e.brand}` : ""}
-                    </span>
-                  </span>
-                  <span className="tabular shrink-0 text-xs text-muted-foreground">{Math.round(e.kcal)} kcal</span>
-                  <Plus className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="grid grid-cols-4 gap-2">
+        <BigButton icon={<ScanBarcode />} label="Scan" onClick={onScan} primary />
+        <BigButton icon={<MessageSquareText />} label="Describe" onClick={onDescribe ?? off} muted={!onDescribe} />
+        <BigButton icon={<Camera />} label="Photo" onClick={onPhoto ?? off} muted={!onPhoto} />
+        <BigButton icon={<PenLine />} label="Quick add" onClick={onManual} />
+      </div>
+      {aiShown && aiNote ? (
+        <p role="status" className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          {aiNote}
+        </p>
       ) : null}
+
+      {barcodeOpen ? (
+        <form
+          className="space-y-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const code = normalizeBarcode(typed);
+            if (!code) {
+              setTypedError("That isn’t a valid barcode. Check the digits under the bars.");
+              return;
+            }
+            setTypedError(null);
+            onBarcode(code);
+          }}
+        >
+          <Label htmlFor={inputId} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Keyboard className="h-3.5 w-3.5" />
+            Barcode numbers
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id={inputId}
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              placeholder="e.g. 0737628064502"
+              value={typed}
+              maxLength={20}
+              onChange={(e) => setTyped(e.target.value)}
+              aria-invalid={typedError ? true : undefined}
+            />
+            <Button type="submit" variant="outline" disabled={typed.replace(/\D/g, "").length < 8}>
+              Look up
+            </Button>
+          </div>
+          {typedError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {typedError}
+            </p>
+          ) : null}
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setBarcodeOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Keyboard className="h-3.5 w-3.5" />
+          Type a barcode instead
+        </button>
+      )}
     </div>
   );
 }
@@ -507,33 +538,33 @@ function MenuView({
 function BigButton({
   icon,
   label,
-  sub,
   onClick,
   primary,
+  muted,
 }: {
   icon: React.ReactNode;
   label: string;
-  sub: string;
   onClick: () => void;
   primary?: boolean;
+  /** Not available here: tapping says why. */
+  muted?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center gap-1 rounded-lg border px-2 py-3 text-center transition-colors [&_svg]:h-6 [&_svg]:w-6",
+        "flex flex-col items-center gap-1 rounded-xl border px-1 py-2.5 text-center transition-colors [&_svg]:h-5 [&_svg]:w-5",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         primary
-          ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-          : "border-border hover:bg-muted/40 [&_svg]:text-primary",
+          ? "border-primary/45 bg-primary/10 text-primary hover:bg-primary/20"
+          : muted
+            ? "border-border/60 text-muted-foreground"
+            : "border-border bg-card hover:bg-muted/40",
       )}
     >
       {icon}
-      <span className="text-sm font-semibold leading-tight">{label}</span>
-      <span className={cn("text-[12px] leading-tight", primary ? "text-primary-foreground/80" : "text-muted-foreground")}>
-        {sub}
-      </span>
+      <span className="text-xs font-semibold leading-tight">{label}</span>
     </button>
   );
 }
@@ -541,15 +572,18 @@ function BigButton({
 /* --------------------------------- search -------------------------------- */
 
 function SearchView({
+  initialQuery,
   myFoods,
   onPick,
   onManual,
 }: {
+  /** What was typed in the menu's search box. */
+  initialQuery?: string;
   myFoods: FoodProduct[];
   onPick: (p: FoodProduct) => void;
   onManual: () => void;
 }) {
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState(initialQuery ?? "");
   const [state, setState] = React.useState<
     | { kind: "idle" }
     | { kind: "loading" }
