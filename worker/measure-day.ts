@@ -1,5 +1,5 @@
 /**
- * "Time to measure" (Progress → Measurements): a monthly Whop notification
+ * "Time to measure" (Progress → Check-in → Measurements): a monthly Whop notification
  * to take tape measurements, like photo day (photo-day.ts).
  *
  *   GET /api/measurement-settings   { reminder }
@@ -106,7 +106,7 @@ export async function sendMeasureDayReminders(env: Env, now: Date): Promise<{ du
     const weeks = Math.max(4, Math.floor(daysBetween(r.newest, localDate) / 7));
     const res = await sendWhop(env, exp, r.user_id, {
       title: "Time to measure",
-      content: `${weeks} weeks since your last tape measurements. Same spots, first thing in the morning: Lean Stature System → Progress → Measurements.`,
+      content: `${weeks} weeks since your last tape measurements. Same spots, first thing in the morning: Lean Stature System → Progress → Check-in → Measurements.`,
     });
     if (res.ok) sent++;
     else console.error("measure day reminder failed", { status: res.status, reason: res.reason });

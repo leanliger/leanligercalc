@@ -124,13 +124,20 @@ const STATUS_STYLE: Record<ProgressAnalysis["status"], { badge: BadgeVariant; la
 /** The Progress tab's sub-sections (its id is still "checkin", so old links work). */
 export type CheckinSection = "weigh-in" | "habits" | "measurements" | "photos" | "scorecard";
 
-const SECTIONS: { value: CheckinSection; label: string; short: string }[] = [
-  { value: "weigh-in", label: "Weigh-in", short: "Weigh-in" },
-  { value: "habits", label: "Habits", short: "Habits" },
-  { value: "measurements", label: "Measurements", short: "Measure" },
-  { value: "photos", label: "Progress photos", short: "Photos" },
-  { value: "scorecard", label: "Check-in", short: "Check-in" },
+/** The daily sections, plus Check-in, which holds the weekly and monthly ones. */
+const SECTIONS: { value: CheckinSection; label: string }[] = [
+  { value: "weigh-in", label: "Weigh-in" },
+  { value: "habits", label: "Habits" },
+  { value: "scorecard", label: "Check-in" },
 ];
+
+/** Under Check-in: the weekly check-in, progress photos and tape measurements. */
+const CHECKIN_PARTS: { value: CheckinSection; label: string }[] = [
+  { value: "scorecard", label: "Check-in" },
+  { value: "photos", label: "Photos" },
+  { value: "measurements", label: "Measurements" },
+];
+const inCheckin = (s: CheckinSection) => s === "scorecard" || s === "photos" || s === "measurements";
 
 /* -------------------------------------------------------------------------- */
 
@@ -274,18 +281,10 @@ export function CheckinTab({
     <SegmentedControl
       ariaLabel="Progress section"
       size="sm"
-      value={section}
+      value={inCheckin(section) ? "scorecard" : section}
       onValueChange={onSectionChange}
-      options={SECTIONS.map((s) => ({
-        value: s.value,
-        label: (
-          <>
-            <span className="sm:hidden">{s.short}</span>
-            <span className="hidden sm:inline">{s.label}</span>
-          </>
-        ),
-      }))}
-      className="w-full lg:max-w-4xl"
+      options={SECTIONS}
+      className="w-full lg:max-w-xl"
     />
   );
 
@@ -362,10 +361,18 @@ export function CheckinTab({
     );
   }
 
-  if (section === "measurements" || section === "photos" || section === "scorecard") {
+  if (inCheckin(section)) {
     return (
       <div className="space-y-5">
         {nav}
+        <SegmentedControl
+          ariaLabel="Check-in section"
+          size="sm"
+          value={section}
+          onValueChange={onSectionChange}
+          options={CHECKIN_PARTS}
+          className="w-full sm:max-w-md"
+        />
         <div className="lg:max-w-4xl">
           {section === "measurements" ? (
             <div className="space-y-3">

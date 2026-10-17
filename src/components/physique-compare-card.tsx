@@ -287,7 +287,7 @@ interface AnalysisLite {
 }
 
 /**
- * Progress → Photos: once a month, compare the newest front / side / back with
+ * Progress → Check-in → Photos: once a month, compare the newest front / side / back with
  * the set from about a month earlier (worker/physique.ts → comparePhysique).
  * Uses one of the day's physique analyses.
  */
@@ -579,7 +579,7 @@ export function CoachTestimonials({ companyId, names, unit }: { companyId: strin
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No one yet. Members find the switch under Progress → Photos → Monthly comparison; it&apos;s worth mentioning in a check-in.
+            No one yet. Members find the switch under Progress → Check-in → Photos → Monthly comparison; it&apos;s worth mentioning in a check-in.
           </p>
         ) : (
           <ul className="space-y-3">

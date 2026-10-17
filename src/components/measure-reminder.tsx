@@ -5,7 +5,7 @@ import { BellRing } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 /**
- * Progress → Measurements: the "Time to measure" switch (worker/measure-day.ts).
+ * Progress → Check-in → Measurements: the "Time to measure" switch (worker/measure-day.ts).
  * A Whop notification 4 weeks after the last measurement, around 9am. On by
  * default; saved on the server.
  */

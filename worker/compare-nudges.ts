@@ -1,5 +1,5 @@
 /**
- * "Your monthly comparison is ready" (Progress → Photos → Monthly comparison).
+ * "Your monthly comparison is ready" (Progress → Check-in → Photos → Monthly comparison).
  *
  * Run from the cron every 15 minutes. A member is told once per new photo
  * set, when all of these hold:
@@ -64,7 +64,7 @@ export async function sendCompareNudges(env: Env, now: Date): Promise<{ due: num
     if (!exp) continue;
     const res = await sendWhop(env, exp, r.user_id, {
       title: "Your monthly comparison is ready",
-      content: "Your new photos are in. Open Lean Stature System → Progress → Photos to see what changed this month.",
+      content: "Your new photos are in. Open Lean Stature System → Progress → Check-in → Photos to see what changed this month.",
     });
     if (res.ok) sent++;
     else console.error("compare nudge failed", { status: res.status, reason: res.reason });

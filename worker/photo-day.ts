@@ -1,5 +1,5 @@
 /**
- * "It's photo day" (Progress → Photos): a monthly Whop notification so
+ * "It's photo day" (Progress → Check-in → Photos): a monthly Whop notification so
  * progress photos, and the monthly comparison, happen on schedule.
  *
  * Run from the cron every 15 minutes. A member is reminded once per gap when:
@@ -85,7 +85,7 @@ export async function sendPhotoDayReminders(env: Env, now: Date): Promise<{ due:
     const weeks = Math.max(4, Math.floor(daysBetween(r.newest, localDate) / 7));
     const res = await sendWhop(env, exp, r.user_id, {
       title: "It's photo day",
-      content: `${weeks} weeks since your last progress photos. Same spot, same light, same poses: Lean Stature System → Progress → Photos.`,
+      content: `${weeks} weeks since your last progress photos. Same spot, same light, same poses: Lean Stature System → Progress → Check-in → Photos.`,
     });
     if (res.ok) sent++;
     else console.error("photo day reminder failed", { status: res.status, reason: res.reason });

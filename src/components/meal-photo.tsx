@@ -41,7 +41,27 @@ export async function shrink(file: File, maxSide = MAX_SIDE): Promise<string> {
   }
 }
 
-type Row = { name: string; grams: string; kcal: string; protein: string; carbs: string; fat: string };
+type Nutrients = { kcal: number; protein: number; carbs: number; fat: number };
+type Row = {
+  name: string;
+  grams: string;
+  kcal: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+  /**
+   * What the grams scale from: the amounts per gram, taken from the estimate
+   * and again whenever a macro is typed in by hand. Null when the grams were
+   * 0, so there's nothing to scale from.
+   */
+  perGram: Nutrients | null;
+};
+const n = (v: string) => {
+  const x = Number(v);
+  return Number.isFinite(x) && x >= 0 ? x : NaN;
+};
+const perGramOf = (grams: number, m: Nutrients): Nutrients | null =>
+  grams > 0 ? { kcal: m.kcal / grams, protein: m.protein / grams, carbs: m.carbs / grams, fat: m.fat / grams } : null;
 const toRow = (i: MealEstimateItem): Row => ({
   name: i.name,
   grams: String(i.grams),
@@ -49,11 +69,26 @@ const toRow = (i: MealEstimateItem): Row => ({
   protein: String(i.protein),
   carbs: String(i.carbs),
   fat: String(i.fat),
+  perGram: perGramOf(i.grams, i),
 });
-const n = (v: string) => {
-  const x = Number(v);
-  return Number.isFinite(x) && x >= 0 ? x : NaN;
-};
+/** Whole calories; grams of macros to one decimal under 10 g, whole above. */
+const fmtKcal = (v: number) => String(Math.round(v));
+const fmtGrams = (v: number) => String(v < 10 ? Math.round(v * 10) / 10 : Math.round(v));
+
+/** A row after one field changes: grams rescale the rest; a macro typed in becomes the new basis. */
+function editRow(r: Row, key: "grams" | "kcal" | "protein" | "carbs" | "fat", value: string): Row {
+  if (key === "grams") {
+    const g = n(value);
+    if (Number.isNaN(g) || value.trim() === "" || !r.perGram) return { ...r, grams: value };
+    const p = r.perGram;
+    return { ...r, grams: value, kcal: fmtKcal(p.kcal * g), protein: fmtGrams(p.protein * g), carbs: fmtGrams(p.carbs * g), fat: fmtGrams(p.fat * g) };
+  }
+  const next = { ...r, [key]: value };
+  const vals = { kcal: n(next.kcal), protein: n(next.protein), carbs: n(next.carbs), fat: n(next.fat) };
+  const grams = n(next.grams);
+  const ok = !Number.isNaN(grams) && Object.values(vals).every((v) => !Number.isNaN(v));
+  return ok ? { ...next, perGram: perGramOf(grams, vals) ?? r.perGram } : next;
+}
 
 type AddMany = (entries: Omit<FoodEntry, "id" | "meal">[]) => Promise<void>;
 
@@ -181,7 +216,7 @@ function EstimateReview({
                     min={0}
                     value={r[k]}
                     aria-label={`${r.name} ${k}`}
-                    onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)))}
+                    onChange={(e) => setRows(rows.map((x, j) => (j === i ? editRow(x, k, e.target.value) : x)))}
                     className={cn("tabular h-8 px-1.5 text-center text-sm", Number.isNaN(n(r[k])) && "border-destructive")}
                   />
                 </label>
@@ -192,6 +227,7 @@ function EstimateReview({
       </ul>
       <p className="tabular text-sm">
         Total <span className="font-semibold">{Math.round(total).toLocaleString()} kcal</span>
+        <span className="text-[12px] text-muted-foreground"> · change the grams and the calories and macros follow</span>
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => void add()} disabled={!valid || adding}>
