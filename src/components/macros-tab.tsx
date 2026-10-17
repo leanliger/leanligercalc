@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmButton } from "@/components/confirm-button";
 import { AddFoodCard, MacroLine, type AddMode } from "@/components/add-food-card";
+import { FoodAmountEditor, type AmountResult } from "@/components/food-amount-editor";
 import { FastingCard, type NotificationStatus } from "@/components/fasting-card";
 import { WaterCard } from "@/components/water-card";
 import { MacroDonut } from "@/components/macro-donut";
@@ -55,6 +56,8 @@ import {
   MEALS,
   PROTEIN_TOLERANCE_G,
   applyFoodTicks,
+  basisOfEntry,
+  servingSizeFromLabel,
   defaultMeal,
   myFoodId,
   productFromEntry,
@@ -62,7 +65,6 @@ import {
   recentMeals,
   type RecentMeal,
   roundMacros,
-  scaleMacros,
   sumMacros,
   targetHits,
   unitLabel,
@@ -262,13 +264,10 @@ export function MacrosTab({
     void commit(date, before.filter((e) => e.id !== id)).catch(() => setUndo(null));
   };
 
-  const changeAmount = (id: string, quantity: number) => {
+  /** A logged food's new amount (maybe in another unit) and nutrition, from its edit. */
+  const updateEntry = (id: string, a: AmountResult) => {
     const before = logFor(date);
-    const next = before.map((e) =>
-      e.id === id && quantity > 0
-        ? { ...e, quantity, ...roundMacros(scaleMacros(e, quantity / e.quantity)) }
-        : e,
-    );
+    const next = before.map((e) => (e.id === id ? { ...e, ...a } : e));
     void commit(date, next).catch(() => {});
   };
 
@@ -643,7 +642,7 @@ export function MacrosTab({
                   {items.length > 0 ? (
                     <ul className="divide-y divide-border/60 border-t border-border/60 px-4">
                       {items.map((e) => (
-                        <EntryRow key={e.id} entry={e} fresh={fresh.includes(e.id)} onRemove={() => removeEntry(e.id)} onAmount={(q) => changeAmount(e.id, q)} />
+                        <EntryRow key={e.id} entry={e} fresh={fresh.includes(e.id)} onRemove={() => removeEntry(e.id)} onUpdate={(a) => updateEntry(e.id, a)} />
                       ))}
                     </ul>
                   ) : (
@@ -1024,27 +1023,20 @@ function EntryRow({
   entry,
   fresh = false,
   onRemove,
-  onAmount,
+  onUpdate,
 }: {
   entry: FoodEntry;
   /** Just added: highlighted for a moment. */
   fresh?: boolean;
   onRemove: () => void;
-  onAmount: (quantity: number) => void;
+  onUpdate: (a: AmountResult) => void;
 }) {
   const [editing, setEditing] = React.useState(false);
-  const [text, setText] = React.useState(String(entry.quantity));
-  const inputId = React.useId();
+  const [draft, setDraft] = React.useState<AmountResult | null>(null);
   const amount =
     entry.unit === "serving"
       ? `${fmt(entry.quantity)} ${unitLabel("serving", entry.quantity)}${entry.servingLabel ? ` (${entry.servingLabel})` : ""}`
       : `${fmt(entry.quantity)} ${entry.unit}`;
-
-  const save = () => {
-    const q = Number(text);
-    if (Number.isFinite(q) && q > 0 && q !== entry.quantity) onAmount(Math.round(q * 100) / 100);
-    setEditing(false);
-  };
 
   return (
     <li className={cn("-mx-4 space-y-1.5 px-4 py-2 transition-colors duration-700", fresh && "bg-primary/10")}>
@@ -1065,10 +1057,7 @@ function EntryRow({
             className="h-8 w-8"
             aria-label={`Change amount of ${entry.name}`}
             aria-expanded={editing}
-            onClick={() => {
-              setText(String(entry.quantity));
-              setEditing((v) => !v);
-            }}
+            onClick={() => setEditing((v) => !v)}
           >
             <Pencil />
           </Button>
@@ -1079,37 +1068,31 @@ function EntryRow({
       </div>
       {editing ? (
         <form
-          className="flex items-center gap-2"
+          className="space-y-3 rounded-lg border border-border bg-muted/20 p-3"
           onSubmit={(e) => {
             e.preventDefault();
-            save();
+            if (!draft) return;
+            onUpdate(draft);
+            setEditing(false);
           }}
         >
-          <label htmlFor={inputId} className="sr-only">
-            Amount in {entry.unit === "serving" ? "servings" : entry.unit}
-          </label>
-          <div className="relative w-36">
-            <Input
-              id={inputId}
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="h-8 pr-16"
-            />
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-muted-foreground">
-              {entry.unit === "serving" ? unitLabel("serving", Number(text)) : entry.unit}
-            </span>
+          <FoodAmountEditor
+            basis={basisOfEntry(entry)}
+            baseUnit={entry.unit === "ml" ? "ml" : "g"}
+            initialQuantity={entry.quantity}
+            initialUnit={entry.unit}
+            servingSize={servingSizeFromLabel(entry.servingLabel, entry.unit === "ml" ? "ml" : "g")}
+            servingLabel={entry.servingLabel}
+            onChange={setDraft}
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={!draft}>
+              Save
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
           </div>
-          <Button type="submit" size="sm">
-            Save
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
-            Cancel
-          </Button>
         </form>
       ) : null}
     </li>

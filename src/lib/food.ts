@@ -610,3 +610,65 @@ export function validateMyFood(raw: unknown, id: string): ValidationResult<FoodP
 export function myFoodId(p: FoodProduct): string | null {
   return p.source === "mine" && p.key.startsWith("mine:") ? p.key.slice(5) : null;
 }
+
+/* ------------------------- amounts you can edit ------------------------- */
+
+/**
+ * What one unit of a food holds, for the amount editor: per gram (or ml) or
+ * per serving. With the serving's size known, either converts to the other.
+ */
+export interface FoodBasis {
+  per: "base" | "serving";
+  m: Macros;
+}
+
+/** Grams (or ml) in one serving, read from a label like "1 scoop (32 g)". */
+export function servingSizeFromLabel(label: string | null | undefined, baseUnit: "g" | "ml" = "g"): number | null {
+  if (!label) return null;
+  const re = baseUnit === "ml" ? /(\d+(?:[.,]\d+)?)\s*ml\b/i : /(\d+(?:[.,]\d+)?)\s*g\b/i;
+  const hit = re.exec(label);
+  const n = hit ? Number(hit[1]!.replace(",", ".")) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** The basis for a product: per gram from the per-100 figures, else per serving. */
+export function basisOfProduct(p: FoodProduct): FoodBasis | null {
+  if (p.per100) return { per: "base", m: scaleMacros(p.per100, 1 / 100) };
+  if (p.perServing) return { per: "serving", m: p.perServing };
+  return null;
+}
+
+/** The basis for a logged entry: its macros divided by its amount. */
+export function basisOfEntry(e: Pick<FoodEntry, "quantity" | "unit"> & Macros): FoodBasis | null {
+  if (!(e.quantity > 0)) return null;
+  return { per: e.unit === "serving" ? "serving" : "base", m: scaleMacros(e, 1 / e.quantity) };
+}
+
+/** What one unit holds (a serving, or a gram/ml), or null without the serving's size. */
+export function perUnit(b: FoodBasis, unit: "base" | "serving", servingSize: number | null): Macros | null {
+  if (b.per === unit) return b.m;
+  if (!servingSize || !(servingSize > 0)) return null;
+  return b.per === "base" ? scaleMacros(b.m, servingSize) : scaleMacros(b.m, 1 / servingSize);
+}
+
+export type MacroField = keyof Macros;
+
+/**
+ * The basis after one number for the amount shown was changed. Changing
+ * protein, carbs or fat moves the calories by the same 4 / 4 / 9 kcal per
+ * gram; changing calories changes only calories.
+ */
+export function editBasis(
+  current: Macros,
+  quantity: number,
+  unit: "base" | "serving",
+  field: MacroField,
+  value: number,
+): FoodBasis {
+  const next = { ...current, [field]: value };
+  if (field !== "kcal") {
+    const per = field === "protein" ? 4 : field === "carbs" ? 4 : 9;
+    next.kcal = Math.max(0, current.kcal + (value - current[field]) * per);
+  }
+  return { per: unit, m: scaleMacros(next, 1 / quantity) };
+}

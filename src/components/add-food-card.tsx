@@ -9,7 +9,6 @@ import {
   MessageSquareText,
   Keyboard,
   Loader2,
-  Minus,
   PenLine,
   Plus,
   ScanBarcode,
@@ -23,24 +22,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SegmentedControl } from "@/components/ui/segmented";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { DescribeMealView, MealPhotoView, shrink } from "@/components/meal-photo";
+import { FoodAmountEditor, type AmountResult } from "@/components/food-amount-editor";
 import type { LabelReading } from "@/lib/label-photo";
 import {
   MEALS,
-  availableUnits,
+  basisOfProduct,
   caloriesLookOff,
   defaultAmount,
   hasNutrition,
   kcalFromMacros,
-  macrosFor,
+  servingSizeFromLabel,
   myFoodId,
   normalizeBarcode,
   roundMacros,
   sameBarcode,
   scaleMacros,
-  unitLabel,
   FOOD_BRAND_MAX,
   FOOD_NAME_MAX,
   SERVING_LABEL_MAX,
@@ -755,42 +753,16 @@ function ProductView({
   onAdd: (entry: Omit<FoodEntry, "id" | "meal">) => Promise<void>;
   onFix: () => void;
 }) {
-  const units = availableUnits(product);
   const fallback = defaultAmount(product);
-  const [unit, setUnit] = React.useState<FoodUnit>(
-    initialUnit && units.includes(initialUnit) ? initialUnit : (fallback?.unit ?? "serving"),
-  );
-  const [text, setText] = React.useState(String(initialQuantity ?? fallback?.quantity ?? 1));
+  const [amount, setAmount] = React.useState<AmountResult | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const qtyId = React.useId();
-
-  const quantity = Number(text);
-  const macros = macrosFor(product, quantity, unit);
+  const macros = amount;
   const left = macros ? leftAfter(macros) : null;
-  const step = unit === "serving" ? 0.5 : 10;
   const perUnit = product.perServing ?? product.per100;
   const looksOff = perUnit ? caloriesLookOff(perUnit) : null;
-  const servingText =
-    product.servingLabel ?? (product.servingSize ? `${product.servingSize} ${product.baseUnit}` : null);
-
-  const switchUnit = (next: FoodUnit) => {
-    if (next === unit) return;
-    // Keep the same amount of food when switching between servings and grams.
-    if (product.servingSize && Number.isFinite(quantity) && quantity > 0) {
-      const converted = next === "serving" ? quantity / product.servingSize : quantity * product.servingSize;
-      setText(String(Math.round(converted * 100) / 100));
-    } else {
-      setText(next === "serving" ? "1" : "100");
-    }
-    setUnit(next);
-  };
-
-  const bump = (delta: number) => {
-    const base = Number.isFinite(quantity) ? quantity : 0;
-    const next = Math.max(Math.round((base + delta) * 100) / 100, 0);
-    setText(String(next || step));
-  };
+  const servingSize = product.servingSize ?? servingSizeFromLabel(product.servingLabel, product.baseUnit);
+  const servingText = product.servingLabel ?? (servingSize ? `${servingSize} ${product.baseUnit}` : null);
 
   const submit = async () => {
     if (!macros) {
@@ -804,9 +776,6 @@ function ProductView({
         name: product.name,
         brand: product.brand,
         barcode: product.barcode,
-        quantity: Math.round(quantity * 100) / 100,
-        unit,
-        servingLabel: unit === "serving" ? servingText : null,
         ...macros,
       });
     } catch (e) {
@@ -832,58 +801,27 @@ function ProductView({
           </Badge>
           {product.barcode ? <span className="tabular">#{product.barcode}</span> : null}
         </div>
-        {servingText && units.includes("serving") ? (
-          <p className="text-xs text-muted-foreground">1 serving = {servingText}</p>
-        ) : null}
       </div>
 
-      {units.length > 1 ? (
-        <SegmentedControl
-          ariaLabel="Measure by"
-          size="sm"
-          value={unit}
-          onValueChange={switchUnit}
-          options={units.map((u) => ({ value: u, label: u === "serving" ? "Servings" : u === "g" ? "Grams" : "Millilitres" }))}
-        />
-      ) : null}
+      <FoodAmountEditor
+        basis={basisOfProduct(product)}
+        baseUnit={product.baseUnit}
+        initialQuantity={initialQuantity ?? fallback?.quantity ?? 1}
+        initialUnit={initialUnit ?? fallback?.unit ?? "serving"}
+        servingSize={servingSize}
+        servingLabel={servingText}
+        onChange={setAmount}
+      />
 
-      <div className="space-y-1.5">
-        <Label htmlFor={qtyId}>Amount</Label>
-        <div className="flex items-center gap-1.5">
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={() => bump(-step)} aria-label="Less">
-            <Minus />
-          </Button>
-          <div className="relative min-w-0 flex-1">
-            <Input
-              id={qtyId}
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="pr-20 text-center text-base"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-              {unit === "serving" ? unitLabel("serving", quantity) : unit}
-            </span>
-          </div>
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={() => bump(step)} aria-label="More">
-            <Plus />
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-1 rounded-md bg-muted/40 px-3 py-2">
-        {macros ? <MacroLine m={macros} className="text-sm" /> : <span className="text-sm text-muted-foreground">Enter an amount</span>}
-        {left ? (
+      {left ? (
+        <div className="rounded-md bg-muted/40 px-3 py-2">
           <p className="tabular text-xs text-muted-foreground">
             Leaves {left.kcal >= 0 ? `${Math.round(left.kcal).toLocaleString()} kcal` : `${Math.round(-left.kcal).toLocaleString()} kcal over`}
             {" · "}
             {left.protein > 0 ? `${Math.round(left.protein)} g protein to go` : "protein target met"}
           </p>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {looksOff ? (
         <p className="flex gap-2 rounded-md bg-warning/10 px-2.5 py-2 text-xs text-warning">
