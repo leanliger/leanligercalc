@@ -159,17 +159,22 @@ const byWorkoutTime = (a: Workout, b: Workout) => (a.date === b.date ? a.started
 const WORKOUT_SAVE_DEBOUNCE_MS = 600;
 
 /**
- * Plan's sections. Each is still a destination of its own ("timeline", "carbs",
- * "roadmap"), so links and saved tabs from before Plan existed still land in
- * the right place; the tab bar shows them as one tab.
+ * Plan's sections: Overview ("plan"), Calendar ("roadmap") and Settings, which
+ * holds Goal & timeline ("timeline") and Eating plan ("carbs") under its own
+ * switch. Each is still a destination of its own, so links and saved tabs from
+ * before (to "timeline", "carbs" or "roadmap") land in the right place.
  */
 const PLAN_SECTIONS = [
-  { value: "timeline", label: "Timeline" },
-  { value: "carbs", label: "Macros" },
-  { value: "roadmap", label: "Roadmap" },
+  { value: "plan", label: "Overview" },
+  { value: "roadmap", label: "Calendar" },
+  { value: "timeline", label: "Settings" },
 ] as const;
-type PlanSection = (typeof PLAN_SECTIONS)[number]["value"];
-const isPlanTab = (t: AppTab): t is PlanSection => t === "timeline" || t === "carbs" || t === "roadmap";
+const PLAN_SETTINGS = [
+  { value: "timeline", label: "Goal & timeline" },
+  { value: "carbs", label: "Eating plan" },
+] as const;
+type PlanSection = "plan" | "timeline" | "carbs" | "roadmap";
+const isPlanTab = (t: AppTab): t is PlanSection => t === "plan" || t === "timeline" || t === "carbs" || t === "roadmap";
 
 /*
  * Every tab but Today is its own download, so the app starts on a much smaller
@@ -181,6 +186,7 @@ const TAB_LOADERS = {
   fatLoss: () => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator),
   carbs: () => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator),
   roadmap: () => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar),
+  planOverview: () => import("@/components/plan-overview").then((m) => m.PlanOverview),
   checkin: () => import("@/components/checkin-tab").then((m) => m.CheckinTab),
   macros: () => import("@/components/macros-tab").then((m) => m.MacrosTab),
   training: () => import("@/components/training-tab").then((m) => m.TrainingTab),
@@ -191,6 +197,7 @@ const TAB_LOADERS = {
 const FatLossCalculator = dynamic(() => import("@/components/fat-loss-calculator").then((m) => m.FatLossCalculator), { ssr: false, loading: () => <LazyPanel /> });
 const CarbCyclingCalculator = dynamic(() => import("@/components/carb-cycling-calculator").then((m) => m.CarbCyclingCalculator), { ssr: false, loading: () => <LazyPanel /> });
 const RoadmapCalendar = dynamic(() => import("@/components/roadmap-calendar").then((m) => m.RoadmapCalendar), { ssr: false, loading: () => <LazyPanel /> });
+const PlanOverview = dynamic(() => import("@/components/plan-overview").then((m) => m.PlanOverview), { ssr: false, loading: () => <LazyPanel /> });
 const CheckinTab = dynamic(() => import("@/components/checkin-tab").then((m) => m.CheckinTab), { ssr: false, loading: () => <LazyPanel /> });
 const MacrosTab = dynamic(() => import("@/components/macros-tab").then((m) => m.MacrosTab), { ssr: false, loading: () => <LazyPanel /> });
 const TrainingTab = dynamic(() => import("@/components/training-tab").then((m) => m.TrainingTab), { ssr: false, loading: () => <LazyPanel /> });
@@ -658,7 +665,7 @@ export function AppShell() {
   }, []);
 
   // Coming back to Plan opens the section you were last on.
-  const lastPlanSection = React.useRef<PlanSection>("timeline");
+  const lastPlanSection = React.useRef<PlanSection>("plan");
   React.useEffect(() => {
     if (isPlanTab(state.activeTab)) lastPlanSection.current = state.activeTab;
   }, [state.activeTab]);
@@ -1659,15 +1666,39 @@ export function AppShell() {
               <TabsContent value="plan" className="space-y-5">
                 <SegmentedControl
                   ariaLabel="Plan section"
-                  value={isPlanTab(state.activeTab) ? state.activeTab : "timeline"}
+                  value={state.activeTab === "carbs" ? "timeline" : isPlanTab(state.activeTab) ? state.activeTab : "plan"}
                   onValueChange={(v) => setTab(v)}
                   options={PLAN_SECTIONS}
                   className="max-w-sm"
                 />
+                {state.activeTab === "timeline" || state.activeTab === "carbs" ? (
+                  <SegmentedControl
+                    ariaLabel="Plan settings"
+                    size="sm"
+                    value={state.activeTab}
+                    onValueChange={(v) => setTab(v)}
+                    options={PLAN_SETTINGS}
+                    className="max-w-xs"
+                  />
+                ) : null}
                 {coachMacros && (state.activeTab === "roadmap" || state.activeTab === "carbs") ? (
                   <CoachMacrosBanner macros={coachMacros} />
                 ) : null}
-                {state.activeTab === "roadmap" ? (
+                {state.activeTab === "plan" ? (
+                  <PlanOverview
+                    profile={state.profile}
+                    fatLoss={state.fatLoss}
+                    carbs={carbPlan}
+                    adjustments={state.tracking.adjustments}
+                    weighIns={weighIns}
+                    coachMacros={coachMacros}
+                    today={today}
+                    unit={state.unit}
+                    onOpenSettings={() => setTab("timeline")}
+                    onOpenCalendar={() => setTab("roadmap")}
+                    onOpenWeighIn={() => navigateFor.weighIn("checkin")}
+                  />
+                ) : state.activeTab === "roadmap" ? (
                   <RoadmapCalendar
                     profile={state.profile}
                     fatLoss={state.fatLoss}

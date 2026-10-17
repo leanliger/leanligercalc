@@ -32,6 +32,7 @@ import { SegmentedControl } from "@/components/ui/segmented";
 import { Field, NumberField } from "@/components/field";
 import { Stat } from "@/components/stat";
 import { WarningList } from "@/components/warnings";
+import { AdvancedFold } from "@/components/ui/advanced-fold";
 import { CopyButton } from "@/components/copy-button";
 import { WeightCurveChart } from "@/components/weight-curve-chart";
 import { MilestoneTable } from "@/components/milestone-table";
@@ -312,46 +313,6 @@ export function FatLossCalculator({
               ))}
             </div>
 
-            <NumberField
-              label="Or enter a daily deficit"
-              value={typedDeficit}
-              onValueChange={(kcal) => {
-                if (kcal > 0)
-                  onChange(
-                    inputs.fixedDeficit
-                      ? { fixedDeficit: Math.round(kcal), weeklyRate: rateForDailyDeficit(profile, kcal) }
-                      : { weeklyRate: rateForDailyDeficit(profile, kcal) },
-                  );
-              }}
-              suffix="kcal/day"
-              min={50}
-              step={25}
-              decimals={0}
-              hint={
-                inputs.fixedDeficit
-                  ? result.feasible && firstRate !== null && lastRate !== null
-                    ? `The same every week. Weekly loss goes from ${firstRate.toFixed(2)}% to ${lastRate.toFixed(2)}% of your weight as you get lighter.`
-                    : "The same every week."
-                  : result.feasible && lastDietWeek
-                    ? `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week. It eases as your weight drops: about ${lastDietWeek.dailyDeficit.toLocaleString()} kcal/day by week ${lastDietWeek.week + 1}.`
-                    : `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week.`
-              }
-              help="With 'Keep it the same every week' off, this sets the rate that gives this deficit in week 1, and the deficit shrinks a little as you get lighter. On, the deficit stays exactly this, so the weekly loss speeds up slightly instead."
-              containerClassName="border-t border-border pt-3"
-            />
-            <div className="flex items-center gap-2.5">
-              <label htmlFor={fixedId} className="min-w-0 flex-1 text-xs font-medium">
-                Keep it the same every week
-                <span className="block font-normal text-muted-foreground">
-                  {inputs.fixedDeficit ? "Moving the slider or a preset goes back to a rate." : "Off: the deficit eases as your weight drops."}
-                </span>
-              </label>
-              <Switch
-                id={fixedId}
-                checked={inputs.fixedDeficit !== null}
-                onCheckedChange={(on) => onChange(on ? { fixedDeficit: typedDeficit } : { fixedDeficit: null })}
-              />
-            </div>
 
             <p className="text-xs text-muted-foreground">
               Loss is taken as a percentage of <em>current</em> weight each week, so the
@@ -455,6 +416,52 @@ export function FatLossCalculator({
               </Field>
             )}
 
+          </div>
+
+          <AdvancedFold
+            hint="daily deficit, known maintenance, adaptation"
+            changed={inputs.fixedDeficit !== null || inputs.tdeeOverride !== null}
+          >
+            <NumberField
+              label="Or enter a daily deficit"
+              value={typedDeficit}
+              onValueChange={(kcal) => {
+                if (kcal > 0)
+                  onChange(
+                    inputs.fixedDeficit
+                      ? { fixedDeficit: Math.round(kcal), weeklyRate: rateForDailyDeficit(profile, kcal) }
+                      : { weeklyRate: rateForDailyDeficit(profile, kcal) },
+                  );
+              }}
+              suffix="kcal/day"
+              min={50}
+              step={25}
+              decimals={0}
+              hint={
+                inputs.fixedDeficit
+                  ? result.feasible && firstRate !== null && lastRate !== null
+                    ? `The same every week. Weekly loss goes from ${firstRate.toFixed(2)}% to ${lastRate.toFixed(2)}% of your weight as you get lighter.`
+                    : "The same every week."
+                  : result.feasible && lastDietWeek
+                    ? `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week. It eases as your weight drops: about ${lastDietWeek.dailyDeficit.toLocaleString()} kcal/day by week ${lastDietWeek.week + 1}.`
+                    : `That's ${(inputs.weeklyRate * 100).toFixed(2)}% a week.`
+              }
+              help="With 'Keep it the same every week' off, this sets the rate that gives this deficit in week 1, and the deficit shrinks a little as you get lighter. On, the deficit stays exactly this, so the weekly loss speeds up slightly instead."
+                          />
+            <div className="flex items-center gap-2.5">
+              <label htmlFor={fixedId} className="min-w-0 flex-1 text-xs font-medium">
+                Keep it the same every week
+                <span className="block font-normal text-muted-foreground">
+                  {inputs.fixedDeficit ? "Moving the slider or a preset goes back to a rate." : "Off: the deficit eases as your weight drops."}
+                </span>
+              </label>
+              <Switch
+                id={fixedId}
+                checked={inputs.fixedDeficit !== null}
+                onCheckedChange={(on) => onChange(on ? { fixedDeficit: typedDeficit } : { fixedDeficit: null })}
+              />
+            </div>
+
             <NumberField
               label="Known maintenance calories"
               value={inputs.tdeeOverride ?? 0}
@@ -491,7 +498,7 @@ export function FatLossCalculator({
                 aria-label="Model metabolic adaptation"
               />
             </label>
-          </div>
+          </AdvancedFold>
         </CardContent>
         </Card>
       </div>

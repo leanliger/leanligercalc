@@ -10,7 +10,9 @@ import {
   ChevronRight,
   Cloud,
   Copy,
+  GlassWater,
   HardDrive,
+  Info,
   ListChecks,
   Pencil,
   Plus,
@@ -18,6 +20,7 @@ import {
   Trash2,
   Undo2,
   Utensils,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Hint } from "@/components/ui/hint";
@@ -73,6 +76,7 @@ import type { HabitDef, HabitLog } from "@/lib/habits";
 import type { CalorieAdjustment } from "@/lib/tracking";
 import type { BiometricProfile, CarbCyclingInputs, DayType, FatLossInputs, WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { bottlesOn, liters, ounces, tapBottle, withBottles, WATER_GOAL_BOTTLES } from "@/lib/water";
 import { TrainingCarbsCard } from "@/components/training-carbs-card";
 import type { TrainingToday } from "@/lib/training-carbs";
 
@@ -158,6 +162,17 @@ export function MacrosTab({
   const [meal, setMeal] = React.useState<MealId>(() => defaultMeal(new Date().getHours()));
   const [mode, setMode] = React.useState<AddMode>({ kind: "menu" });
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Add food: always docked on wide screens; on phones a full-screen panel while open.
+  const [addOpen, setAddOpen] = React.useState(false);
+  // "Added … to Lunch", on the log after adding from the phone panel.
+  const [justAdded, setJustAdded] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!justAdded) return;
+    const t = setTimeout(() => setJustAdded(null), 5000);
+    return () => clearTimeout(t);
+  }, [justAdded]);
+  // Where the targets come from, and the scorecard note, behind the ⓘ.
+  const [showInfo, setShowInfo] = React.useState(false);
   // The last removal or saved-meal add, for Undo.
   const [undo, setUndo] = React.useState<{ date: string; entries: FoodEntry[]; message: string } | null>(null);
   // Which meal in the day's log is being saved as a saved meal.
@@ -275,8 +290,6 @@ export function MacrosTab({
       .then(() => setUndo({ date, entries: before, message: `Added ${what} to ${MEALS.find((m) => m.id === slot)?.label ?? "your log"}.` }))
       .catch(() => {});
   };
-  // Meals eaten yesterday that this day doesn't have yet.
-  const sameAsYesterday = MEALS.filter((m) => yesterday.some((e) => e.meal === m.id) && !entries.some((e) => e.meal === m.id));
   const recent = React.useMemo(() => recentMeals(foodLogs, date), [foodLogs, date]);
 
   React.useEffect(() => {
@@ -294,7 +307,17 @@ export function MacrosTab({
   };
 
   // Once Add food scrolls out of view, a floating button brings it back.
+  // On phones the panel is hidden until opened, so the button shows whenever it is closed.
   const [addInView, setAddInView] = React.useState(true);
+  const [wide, setWide] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   React.useEffect(() => {
     const el = addRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
@@ -305,6 +328,7 @@ export function MacrosTab({
 
   const openProduct = (p: FoodProduct) => {
     setMode({ kind: "product", product: p });
+    setAddOpen(true);
     addRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -357,20 +381,39 @@ export function MacrosTab({
     );
   }
 
+  const mealLabel = MEALS.find((m) => m.id === meal)?.label ?? "your log";
+  const isWide = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+  /** Open Add food for a meal: the docked panel on wide screens, a full-screen panel on phones. */
+  const openAdd = (slot?: MealId) => {
+    if (slot) setMeal(slot);
+    setMode({ kind: "menu" });
+    setAddOpen(true);
+    if (isWide()) addRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  /** After adding on a phone, back to the log, where the new food shows. */
+  const noteAdded = (text: string) => {
+    setJustAdded(text);
+    if (!isWide()) setAddOpen(false);
+  };
+  const addAndClose = async (entry: FoodEntry) => {
+    await addEntry(entry);
+    noteAdded(`Added ${entry.name} to ${MEALS.find((m) => m.id === entry.meal)?.label ?? mealLabel}.`);
+  };
+
   return (
     <div className="space-y-5">
       {nav}
-      {!addInView ? (
+      {!addOpen && (!wide || !addInView) ? (
         <Button
           className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 h-12 animate-fade-in rounded-full px-5 shadow-lg sm:bottom-6"
-          onClick={() => addRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onClick={() => openAdd()}
         >
           <Plus />
           Log food
         </Button>
       ) : null}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
-        <div className="space-y-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-start">
+        <div className="space-y-4">
           {/* --------------------------- day + targets --------------------------- */}
           <Card>
             <CardHeader className="space-y-3 pb-3">
@@ -398,22 +441,40 @@ export function MacrosTab({
                     </Button>
                   ) : null}
                 </div>
-                {target && !target.steady ? (
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
-                    {DAY_LABELS[target.type]}
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-1">
+                  {target && !target.steady ? (
+                    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", DAY_PILL[target.type])}>
+                      {DAY_LABELS[target.type]}
+                    </span>
+                  ) : null}
+                  {target ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground"
+                      aria-label="About these targets"
+                      aria-expanded={showInfo}
+                      onClick={() => setShowInfo((v) => !v)}
+                    >
+                      <Info />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {target ? (
                 <>
+                  <div className="grid items-center gap-4 sm:grid-cols-[auto_minmax(0,1fr)]">
                   <MacroDonut eaten={totals} kcal={totals.kcal} target={target} targetKcal={target.calories} />
                   <div className="space-y-3">
                     <MacroBar label="Protein" eaten={totals.protein} target={target.protein} color="bg-macro-protein" text="text-macro-protein" />
                     <MacroBar label="Carbs" eaten={totals.carbs} target={target.carbs} color="bg-macro-carb" text="text-macro-carb" />
                     <MacroBar label="Fat" eaten={totals.fat} target={target.fat} color="bg-macro-fat" text="text-macro-fat" />
                   </div>
+                  </div>
+                  {showInfo ? (
+                  <>
                   <p className="text-[12px] text-muted-foreground">
                     {target.source === "coach"
                       ? "Targets your coach set for you."
@@ -451,6 +512,8 @@ export function MacrosTab({
                       </Hint>
                     </div>
                   ) : null}
+                  </>
+                  ) : null}
                 </>
               ) : (
                 <div className="space-y-3">
@@ -470,35 +533,10 @@ export function MacrosTab({
 
           {isToday && target ? <TrainingCarbsCard training={trainingToday} target={target} /> : null}
 
-          <AddFoodCard
-            ref={addRef}
-            mode={mode}
-            setMode={setMode}
-            meal={meal}
-            setMeal={setMeal}
-            dayLabel={dayLabel}
-            myFoods={myFoods}
-            recents={recents}
-            leftAfter={leftAfter}
-            onAdd={addEntry}
-            onAddMany={async (added) => {
-              setUndo(null);
-              await commit(date, [...logFor(date), ...added]);
-            }}
-            onSaveMyFood={onSaveMyFood}
-            photoEnabled={session.mode === "cloud" && session.mealPhotos === true}
-          />
+          {date <= today ? (
+            <WaterStrip date={date} unit={unit} habits={habits} habitLogs={habitLogs} onSaveHabits={onSaveHabits} onOpen={() => setSection("water")} />
+          ) : null}
 
-          <SavedMealsCard
-            meals={savedMeals}
-            slotLabel={MEALS.find((m) => m.id === meal)?.label ?? "your log"}
-            onLog={logSavedMeal}
-            onRemove={(id) => onSavedMealsChange(savedMeals.filter((m) => m.id !== id))}
-          />
-          <RecentMealsCard meals={recent} today={today} onAdd={(r) => repeatMeal(r.items, r.meal, "it")} />
-        </div>
-
-        <div className="space-y-5">
           {/* ------------------------------ day log ------------------------------ */}
           <Card>
             <CardHeader className="pb-3">
@@ -506,11 +544,15 @@ export function MacrosTab({
                 <Utensils className="h-4 w-4 text-primary" />
                 {isToday ? "Today’s food" : `Food for ${formatShort(date)}`}
               </CardTitle>
-              <CardDescription>
-                {entries.length > 0 ? <MacroLine m={totals} /> : "Nothing logged yet."}
-              </CardDescription>
+              <CardDescription>{entries.length > 0 ? <MacroLine m={totals} /> : "Nothing logged yet."}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
+              {justAdded ? (
+                <p role="status" className="flex items-center gap-2 rounded-md bg-success/10 px-3 py-2 text-xs text-success">
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                  {justAdded}
+                </p>
+              ) : null}
               {undo && undo.date === date ? (
                 <p role="status" className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
                   <span className="min-w-0 truncate">{undo.message}</span>
@@ -529,50 +571,55 @@ export function MacrosTab({
                   </Button>
                 </p>
               ) : null}
-
               {saveError ? (
                 <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
                   {saveError}
                 </p>
               ) : null}
+              {entries.length === 0 && yesterday.length > 0 ? (
+                <Button variant="outline" size="sm" onClick={copyYesterday}>
+                  <Copy />
+                  Copy the whole day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
+                </Button>
+              ) : null}
+              {entries.length === 0 && date > today ? (
+                <p className="text-xs text-muted-foreground">Logging ahead counts as pre-logging your meals.</p>
+              ) : null}
 
-              {entries.length === 0 ? (
-                <div className="space-y-3 rounded-lg border border-dashed border-border p-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Scan, search or quick-add a food to start {isToday ? "today’s" : "this day’s"} log.
-                    {date > today ? " Logging ahead counts as pre-logging your meals." : ""}
-                  </p>
-                  {yesterday.length > 0 ? (
-                    <Button variant="outline" size="sm" onClick={copyYesterday}>
-                      <Copy />
-                      Copy the day before ({yesterday.length} {yesterday.length === 1 ? "food" : "foods"})
-                    </Button>
-                  ) : null}
-                </div>
-              ) : (
-                MEALS.map((m) => {
-                  const items = entries.filter((e) => e.meal === m.id);
-                  if (items.length === 0) return null;
-                  return (
-                    <section key={m.id} aria-label={m.label} className="space-y-1.5">
-                      <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-border pb-1">
+              {MEALS.map((m) => {
+                const items = entries.filter((e) => e.meal === m.id);
+                const fromYesterday = yesterday.filter((e) => e.meal === m.id);
+                return (
+                  <section key={m.id} aria-label={m.label} className="rounded-lg border border-border">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <div className="min-w-0 flex-1">
                         <h3 className="text-sm font-semibold">{m.label}</h3>
-                        <span className="flex items-center gap-1">
-                          <MacroLine m={sumMacros(items)} />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground"
-                            aria-label={`Save ${m.label.toLowerCase()} as a meal`}
-                            title="Save as a meal"
-                            aria-expanded={savingMeal === m.id}
-                            onClick={() => setSavingMeal(savingMeal === m.id ? null : m.id)}
-                          >
-                            <BookmarkPlus />
-                          </Button>
-                        </span>
+                        {items.length > 0 ? (
+                          <MacroLine m={sumMacros(items)} className="block truncate text-[12px]" />
+                        ) : (
+                          <p className="text-[12px] text-muted-foreground">Nothing yet</p>
+                        )}
                       </div>
-                      {savingMeal === m.id ? (
+                      {items.length > 0 ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-muted-foreground"
+                          aria-label={`Save ${m.label.toLowerCase()} as a meal`}
+                          title="Save as a meal"
+                          aria-expanded={savingMeal === m.id}
+                          onClick={() => setSavingMeal(savingMeal === m.id ? null : m.id)}
+                        >
+                          <BookmarkPlus />
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="secondary" className="h-9 shrink-0" onClick={() => openAdd(m.id)} aria-label={`Add food to ${m.label}`}>
+                        <Plus />
+                        Add
+                      </Button>
+                    </div>
+                    {savingMeal === m.id ? (
+                      <div className="px-3 pb-2">
                         <SaveMealForm
                           defaultName={`My usual ${m.label.toLowerCase()}`}
                           count={items.length}
@@ -580,42 +627,32 @@ export function MacrosTab({
                           onSave={(name) => saveAsMeal(m.id, name)}
                           onCancel={() => setSavingMeal(null)}
                         />
-                      ) : null}
-                      <ul className="divide-y divide-border/60">
+                      </div>
+                    ) : null}
+                    {items.length > 0 ? (
+                      <ul className="divide-y divide-border/60 border-t border-border px-3">
                         {items.map((e) => (
-                          <EntryRow
-                            key={e.id}
-                            entry={e}
-                            onRemove={() => removeEntry(e.id)}
-                            onAmount={(q) => changeAmount(e.id, q)}
-                          />
+                          <EntryRow key={e.id} entry={e} onRemove={() => removeEntry(e.id)} onAmount={(q) => changeAmount(e.id, q)} />
                         ))}
                       </ul>
-                    </section>
-                  );
-                })
-              )}
-              {entries.length > 0 && sameAsYesterday.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
-                  <span className="text-xs text-muted-foreground">Same as yesterday:</span>
-                  {sameAsYesterday.map((m) => (
-                    <Button
-                      key={m.id}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() => repeatMeal(yesterday.filter((e) => e.meal === m.id), m.id, `yesterday's ${m.label.toLowerCase()}`)}
-                    >
-                      <Copy />
-                      {m.label}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
+                    ) : fromYesterday.length > 0 ? (
+                      <div className="border-t border-border px-2 py-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => repeatMeal(fromYesterday, m.id, `yesterday’s ${m.label.toLowerCase()}`)}
+                        >
+                          <Copy />
+                          Copy yesterday’s {m.label.toLowerCase()} ({Math.round(sumMacros(fromYesterday).kcal).toLocaleString()} kcal)
+                        </Button>
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
             </CardContent>
           </Card>
-
-          <MyFoodsCard foods={myFoods} onPick={openProduct} onRemove={onRemoveMyFood} />
 
           <p className="flex gap-2 text-[12px] leading-relaxed text-muted-foreground">
             {session.mode === "cloud" ? (
@@ -631,6 +668,93 @@ export function MacrosTab({
               </>
             )}
           </p>
+        </div>
+
+        {/* ------------------------- add food panel ------------------------- */}
+        <div
+          role={addOpen ? "dialog" : undefined}
+          aria-modal={addOpen ? true : undefined}
+          aria-label="Add food"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && addOpen) setAddOpen(false);
+          }}
+          className={cn(
+            "space-y-4 lg:sticky lg:top-4",
+            addOpen
+              ? "fixed inset-0 z-50 overflow-y-auto bg-background p-4 pb-24 lg:inset-auto lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0"
+              : "hidden lg:block",
+          )}
+        >
+          <div className="flex items-center justify-between gap-2 lg:hidden">
+            <span className="text-base font-semibold">Add to {mealLabel}</span>
+            <Button variant="ghost" size="icon" aria-label="Close" onClick={() => setAddOpen(false)}>
+              <X />
+            </Button>
+          </div>
+          <AddFoodCard
+            ref={addRef}
+            mode={mode}
+            setMode={setMode}
+            meal={meal}
+            setMeal={setMeal}
+            dayLabel={dayLabel}
+            myFoods={myFoods}
+            recents={recents}
+            leftAfter={leftAfter}
+            onAdd={addAndClose}
+            onAddMany={async (added) => {
+              setUndo(null);
+              await commit(date, [...logFor(date), ...added]);
+              noteAdded(`Added ${added.length} food${added.length === 1 ? "" : "s"} to ${mealLabel}.`);
+            }}
+            onSaveMyFood={onSaveMyFood}
+            photoEnabled={session.mode === "cloud" && session.mealPhotos === true}
+          />
+
+          <LibraryTabs
+            tabs={[
+              {
+                id: "recent",
+                label: "Recent meals",
+                count: recent.length,
+                empty: "Meals you log show up here for two weeks, ready to repeat.",
+                node: (
+                  <RecentMealsCard
+                    meals={recent}
+                    today={today}
+                    onAdd={(r) => {
+                      repeatMeal(r.items, r.meal, "it");
+                      if (!isWide()) setAddOpen(false);
+                    }}
+                  />
+                ),
+              },
+              {
+                id: "saved",
+                label: "Saved meals",
+                count: savedMeals.length,
+                empty: "Save a meal from your log with the bookmark next to it, then log it in one tap.",
+                node: (
+                  <SavedMealsCard
+                    meals={savedMeals}
+                    slotLabel={mealLabel}
+                    onLog={(sm) => {
+                      logSavedMeal(sm);
+                      if (!isWide()) setAddOpen(false);
+                    }}
+                    onRemove={(id) => onSavedMealsChange(savedMeals.filter((m) => m.id !== id))}
+                  />
+                ),
+              },
+              {
+                id: "mine",
+                label: "My foods",
+                count: myFoods.length,
+                empty: "Foods you type in yourself are kept here.",
+                node: <MyFoodsCard foods={myFoods} onPick={openProduct} onRemove={onRemoveMyFood} />,
+              },
+            ]}
+          />
         </div>
       </div>
     </div>
@@ -1054,5 +1178,116 @@ function MyFoodsCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/* ------------------------------- water strip ------------------------------- */
+
+/**
+ * The day's water on the food log: the six bottles, tappable in place
+ * (the same count and habit tick as Food → Water, which has the history and
+ * reminders).
+ */
+function WaterStrip({
+  date,
+  unit,
+  habits,
+  habitLogs,
+  onSaveHabits,
+  onOpen,
+}: {
+  date: string;
+  unit: WeightUnit;
+  habits: HabitDef[];
+  habitLogs: HabitLog[];
+  onSaveHabits: (log: HabitLog) => Promise<void>;
+  onOpen: () => void;
+}) {
+  const entries = React.useMemo(() => habitLogs.find((l) => l.date === date)?.entries ?? {}, [habitLogs, date]);
+  const [local, setLocal] = React.useState<number | null>(null);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => setLocal(null), [date, entries]);
+  React.useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const bottles = local ?? bottlesOn(entries);
+  const tap = (i: number) => {
+    const n = tapBottle(bottles, i);
+    setLocal(n);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      onSaveHabits({ date, entries: withBottles(entries, habits, n) }).catch(() => setLocal(null));
+    }, 500);
+  };
+  const amount = unit === "kg" ? `${liters(bottles)} L` : `${ounces(bottles)} oz`;
+  return (
+    <section aria-label="Water" className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+      <button type="button" onClick={onOpen} className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="block text-sm font-semibold">Water</span>
+        <span className="tabular block text-[12px] text-muted-foreground">
+          {bottles} of {WATER_GOAL_BOTTLES} · {amount}
+        </span>
+      </button>
+      <div className="ml-auto flex gap-1">
+        {Array.from({ length: WATER_GOAL_BOTTLES }, (_, i) => {
+          const on = i < bottles;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => tap(i)}
+              aria-label={`Bottle ${i + 1}`}
+              aria-pressed={on}
+              className={cn(
+                "flex h-9 w-8 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                on ? "border-macro-carb/60 bg-macro-carb/15 text-macro-carb" : "border-border text-muted-foreground/60",
+              )}
+            >
+              <GlassWater className="h-4 w-4" />
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------ library tabs ------------------------------ */
+
+/** Recent meals · Saved meals · My foods, as tabs under Add food. */
+function LibraryTabs({
+  tabs,
+}: {
+  tabs: { id: string; label: string; count: number; empty: string; node: React.ReactNode }[];
+}) {
+  const [open, setOpen] = React.useState(tabs[0]!.id);
+  const current = tabs.find((t) => t.id === open) ?? tabs[0]!;
+  return (
+    <div className="space-y-3">
+      <div role="tablist" aria-label="Your foods" className="no-scrollbar flex gap-1 overflow-x-auto border-b border-border">
+        {tabs.map((t) => {
+          const on = t.id === current.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setOpen(t.id)}
+              className={cn(
+                "-mb-px flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                on ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t.label}
+              {t.count > 0 ? <span className="tabular text-[11px] text-muted-foreground">{t.count}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div role="tabpanel">
+        {current.count === 0 ? <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">{current.empty}</p> : current.node}
+      </div>
+    </div>
   );
 }

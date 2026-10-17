@@ -47,8 +47,8 @@ import { REVERSE_STEP_LIMITS } from "./reverse-diet";
 // shared profile, so old payloads no longer deserialise correctly.
 const STORAGE_KEY = "prep-calculator:v2";
 
-export type AppTab = "today" | "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
-const APP_TABS: readonly AppTab[] = ["today", "timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
+export type AppTab = "today" | "plan" | "timeline" | "carbs" | "roadmap" | "macros" | "training" | "checkin" | "leaderboard";
+const APP_TABS: readonly AppTab[] = ["today", "plan", "timeline", "carbs", "roadmap", "macros", "training", "checkin", "leaderboard"];
 
 /** The tab a link opens on (`?t=`), when the link carries no plan. */
 export function tabFromQuery(search: string): AppTab | null {

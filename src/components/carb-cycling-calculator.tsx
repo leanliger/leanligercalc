@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AdvancedFold } from "@/components/ui/advanced-fold";
 import { CalendarRange, Flame, Info, Percent, Sparkles, Utensils } from "lucide-react";
 import {
   Card,
@@ -407,8 +408,9 @@ export function CarbCyclingCalculator({
             </>
           )}
 
+          <AdvancedFold title="Advanced: protein and fat" hint="protein per lb, fat floor">
           {/* --------------------------- Protein -------------------------- */}
-          <div className="space-y-3 border-t border-border pt-4">
+          <div className="space-y-3">
             <Field label="Protein basis">
               <SegmentedControl
                 ariaLabel="Protein basis"
@@ -477,6 +479,7 @@ export function CarbCyclingCalculator({
               help="Hormone production and fat-soluble vitamin absorption both suffer below roughly 0.3g per pound of body weight."
             />
           </div>
+          </AdvancedFold>
 
           {inputs.cycleCarbs ? (
           <>
@@ -554,8 +557,9 @@ export function CarbCyclingCalculator({
             ) : null}
           </div>
 
+          <AdvancedFold title="Advanced: carb swing" hint={`+${Math.round(inputs.highCarbBoost * 100)}% high, −${Math.round(inputs.lowCarbCut * 100)}% low`}>
           {/* --------------------------- Amplitude ------------------------ */}
-          <div className="space-y-4 border-t border-border pt-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-baseline justify-between text-sm">
                 <span className="font-medium">High-day carb boost</span>
@@ -600,6 +604,7 @@ export function CarbCyclingCalculator({
               </p>
             </div>
           </div>
+          </AdvancedFold>
 
           </>
           ) : null}        </CardContent>

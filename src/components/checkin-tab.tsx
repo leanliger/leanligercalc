@@ -298,6 +298,12 @@ export function CheckinTab({
   }, [habits, habitLogs, pauses, today]);
 
   const foodDayTotals = React.useMemo(() => dayTotals(foodLogs), [foodLogs]);
+  // For the Weight vs calories graph: each week's calorie target and the plan's weight.
+  const weekTargetKcal = React.useCallback((weekStart: string) => weekTargets(weekStart)?.calories ?? null, [weekTargets]);
+  const planWeightFor = React.useCallback(
+    (date: string) => (timeline.feasible && date >= timeline.requiredStartDate ? predictedWeightOn(timeline, date) : null),
+    [timeline],
+  );
 
   // The steps the plan assumes; the step habit ticks itself at this count.
   const stepTarget = fatLoss.activitySource === "steps" ? fatLoss.dailySteps : DEFAULT_STEP_TARGET;
@@ -661,7 +667,15 @@ export function CheckinTab({
 
           <Card>
             <CardContent className="p-4 sm:p-6">
-              <WeeklyIntakeChart days={foodDayTotals} weighIns={weighIns} unit={unit} today={today} onNeedFrom={onEnsureFoodLoaded} />
+              <WeeklyIntakeChart
+                days={foodDayTotals}
+                weighIns={weighIns}
+                unit={unit}
+                today={today}
+                onNeedFrom={onEnsureFoodLoaded}
+                weekTarget={weekTargetKcal}
+                planWeightFor={planWeightFor}
+              />
             </CardContent>
           </Card>
 
