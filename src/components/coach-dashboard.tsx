@@ -19,6 +19,7 @@ import {
   Star,
   StickyNote,
   Sun,
+  Users,
   Utensils,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +41,7 @@ import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
 import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
-import { Avatar, CoachNav, TodayLanes, WeekStrip, isAtRisk } from "@/components/coach-today";
+import { Avatar, CoachBottomNav, CoachNav, PhoneToday, PhotoStorageMeter, TodayLanes, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
 import { CoachIntakeChart } from "@/components/coach-member-food";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
@@ -130,6 +131,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [unit, setUnit] = React.useState<WeightUnit>("lb");
   // Members (progress) or Assign (send programs and habit sets).
   const [view, setView] = React.useState<"members" | "assign" | "testimonials">("members");
+  // Within members: Today (the lanes, this week and the list) or just the list.
+  const [section, setSection] = React.useState<"today" | "members">("today");
   const [today] = React.useState(() => todayISO());
   // The open member's tab.
   const [tab, setTab] = React.useState<DetailTab>("overview");
@@ -247,9 +250,40 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   };
   const showMembers = (f: Filter) => {
     setView("members");
+    setSection("members");
     setFilter(f);
     setSelected(null);
   };
+  const showToday = () => {
+    setView("members");
+    setSection("today");
+    setFilter("all");
+    setSelected(null);
+  };
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const navItems: CoachNavItem[] = [
+    { id: "today", label: "Today", icon: <Sun />, active: view === "members" && section === "today", onSelect: showToday },
+    {
+      id: "checkins",
+      label: "Check-in inbox",
+      short: "Inbox",
+      icon: <Inbox />,
+      count: counts.toReview,
+      active: view === "members" && section === "members" && filter === "reply",
+      onSelect: () => showMembers("reply"),
+    },
+    {
+      id: "members",
+      label: "Members",
+      icon: <Users />,
+      note: summaries.length,
+      active: view === "members" && section === "members" && filter !== "reply",
+      onSelect: () => showMembers("all"),
+    },
+    { id: "assign", label: "Programs & habits", short: "Programs", icon: <ClipboardList />, active: view === "assign", onSelect: () => setView("assign") },
+    { id: "testimonials", label: "Testimonials", short: "Stories", icon: <Star />, active: view === "testimonials", onSelect: () => setView("testimonials") },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -264,50 +298,49 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             <p className="hidden truncate text-xs text-muted-foreground sm:block">Lean Stature System · your members at a glance</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => void load()} disabled={loading} aria-label="Refresh">
+            {overview ? (
+              <div className="relative hidden w-72 lg:block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <label htmlFor="coach-find" className="sr-only">
+                  Find a member
+                </label>
+                <Input
+                  id="coach-find"
+                  type="search"
+                  placeholder="Find a member"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    if (view !== "members") setView("members");
+                  }}
+                  className="pl-9"
+                />
+              </div>
+            ) : null}
+            <SegmentedControl
+              ariaLabel="Units"
+              size="sm"
+              value={unit}
+              onValueChange={setUnit}
+              options={[
+                { value: "lb" as const, label: "lb" },
+                { value: "kg" as const, label: "kg" },
+              ]}
+              className="hidden w-auto sm:flex"
+            />
+            <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading} aria-label="Refresh">
               <RefreshCw className={cn(loading && "animate-spin")} />
             </Button>
           </div>
         </div>
       </header>
 
-      <div className={cn(WRAP, "py-6 lg:grid lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:items-start lg:gap-6")}>
+      <div className={cn(WRAP, "py-6 pb-28 lg:grid lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:items-start lg:gap-6 lg:pb-6")}>
         {overview ? (
-          <CoachNav
-            className={cn("mb-5 lg:mb-0", anyOpen && view === "members" && "hidden lg:block")}
-            items={[
-              {
-                id: "today",
-                label: "Today",
-                icon: <Sun />,
-                active: view === "members" && filter !== "reply",
-                onSelect: () => showMembers("all"),
-              },
-              {
-                id: "checkins",
-                label: "Check-ins",
-                icon: <Inbox />,
-                count: counts.toReview,
-                active: view === "members" && filter === "reply",
-                onSelect: () => showMembers("reply"),
-              },
-              {
-                id: "assign",
-                label: "Programs & habits",
-                icon: <ClipboardList />,
-                active: view === "assign",
-                onSelect: () => setView("assign"),
-              },
-              {
-                id: "testimonials",
-                label: "Testimonials",
-                icon: <Star />,
-                active: view === "testimonials",
-                onSelect: () => setView("testimonials"),
-              },
-            ]}
-            footer={overview.photoStorage ? <PhotoStorageLine {...overview.photoStorage} /> : null}
-          />
+          <>
+            <CoachNav className="hidden lg:block" items={navItems} footer={overview.photoStorage ? <PhotoStorageMeter {...overview.photoStorage} /> : null} />
+            <CoachBottomNav items={navItems} />
+          </>
         ) : (
           <div aria-hidden className="hidden lg:block" />
         )}
@@ -345,14 +378,26 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
           ) : (
             <>
-              <div className={cn("space-y-5", anyOpen && "hidden xl:block")}>
+              {section === "today" && !anyOpen && summaries.length > 0 ? (
+                <PhoneToday
+                  members={summaries}
+                  today={today}
+                  onOpen={openMember}
+                  onSearch={() => {
+                    showMembers("all");
+                    requestAnimationFrame(() => document.getElementById("coach-search")?.focus());
+                  }}
+                />
+              ) : null}
+              <div className={cn("space-y-5", anyOpen && "hidden xl:block", section === "members" ? "hidden" : summaries.length > 0 && "max-lg:hidden")}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <div>
-                    <h2 className="text-xl font-semibold tracking-tight">Today</h2>
+                    <h2 className="text-2xl font-semibold tracking-tight">{greeting}, Coach</h2>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })} ·{" "}
-                      {counts.total} of {overview.members.length} member{overview.members.length === 1 ? "" : "s"} sharing with you
-                      {counts.attention > 0 ? ` · ${counts.attention} need${counts.attention === 1 ? "s" : ""} you` : ""}
+                      {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })} · {counts.total}{" "}
+                      member{counts.total === 1 ? "" : "s"} sharing
+                      {overview.members.length > counts.total ? ` of ${overview.members.length}` : ""}
+                      {counts.attention > 0 ? ` · ${counts.attention} need${counts.attention === 1 ? "s" : ""} you today` : ""}
                     </p>
                   </div>
                   <p className="text-[12px] text-muted-foreground">
@@ -390,7 +435,10 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
               <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
                 {/* ------------------------------ list ------------------------------ */}
-                <section aria-labelledby="coach-members" className={cn("min-w-0 space-y-3", anyOpen && "hidden xl:block")}>
+                <section
+                  aria-labelledby="coach-members"
+                  className={cn("min-w-0 space-y-3", anyOpen && "hidden xl:block", section === "today" && summaries.length > 0 && "max-lg:hidden")}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 id="coach-members" className="text-base font-semibold">
                       Members
@@ -421,7 +469,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <div className="relative min-w-[12rem] flex-1">
+                    <div className="relative min-w-[12rem] flex-1 lg:hidden">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <label htmlFor="coach-search" className="sr-only">
                         Search members
@@ -513,6 +561,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                         <span className="text-center">Health</span>
                         <span className="text-right">Week</span>
                         <span className="text-right">Wt / wk</span>
+                        <span>Last log</span>
                         <span>Check-in</span>
                       </div>
                       <ul className="divide-y divide-border">
@@ -588,29 +637,12 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   );
 }
 
-/**
- * How much of the app-wide progress photo storage is used. Uploads stop at the
- * cap (PHOTO_STORAGE_CAP_BYTES), so this tells the coach before members hit it.
- */
-function PhotoStorageLine({ usedBytes, capBytes }: { usedBytes: number; capBytes: number }) {
-  const gb = (b: number) => (b / 1024 ** 3).toFixed(b < 1024 ** 3 ? 2 : 1);
-  const share = capBytes > 0 ? usedBytes / capBytes : 0;
-  const full = share >= 1;
-  const nearly = share >= 0.8;
-  return (
-    <p className={cn("text-xs", nearly ? "text-warning" : "text-muted-foreground")}>
-      Progress photo storage: {gb(usedBytes)} of {gb(capBytes)} GB used, across everyone using the app.
-      {full ? " Full: members can't add new photos until space is freed or the cap is raised." : nearly ? " Nearly full." : ""}
-    </p>
-  );
-}
-
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 /** Member · health · week · weight per week · check-in; on phones the numbers move under the name. */
-const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:grid-cols-[minmax(0,1fr)_3rem_3.5rem_4.75rem_5.5rem]";
+const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:grid-cols-[minmax(0,1fr)_3rem_3.5rem_4.75rem_5.5rem_5.5rem]";
 
 function checkinStatus(m: MemberSummary): { label: string; className: string } {
   if (m.flags.includes("reply")) return { label: "To review", className: "font-semibold text-primary" };
@@ -662,9 +694,9 @@ function MemberRow({
             ) : null}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
-            {[m.data.username && m.data.name ? `@${m.data.username}` : null, `last log ${describeDaysAgo(m.daysSinceLog)}`]
-              .filter(Boolean)
-              .join(" · ")}
+            {m.data.username && m.data.name ? <span className="sm:hidden">@{m.data.username} · </span> : null}
+            <span className="sm:hidden">last log {describeDaysAgo(m.daysSinceLog)}</span>
+            {m.data.username && m.data.name ? <span className="hidden sm:inline">@{m.data.username}</span> : null}
           </span>
           <span className="tabular flex flex-wrap gap-x-3 text-xs text-muted-foreground sm:hidden">
             <span>
@@ -700,6 +732,10 @@ function MemberRow({
       <span className="tabular hidden text-right text-sm sm:block">
         {change}
         <span className="sr-only"> a week</span>
+      </span>
+      <span className="hidden text-sm text-muted-foreground sm:block">
+        <span className="sr-only">Last log </span>
+        {describeDaysAgo(m.daysSinceLog)}
       </span>
       <span className={cn("hidden text-sm sm:block", checkin.className)}>
         <span className="sr-only">Check-in: </span>

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, MessageSquare, PartyPopper } from "lucide-react";
-import { FLAG_LABELS, type MemberSummary } from "@/lib/coach";
+import { AlertTriangle, MessageSquare, PartyPopper, Search } from "lucide-react";
+import { FLAG_LABELS, healthZone, type MemberSummary } from "@/lib/coach";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,10 @@ export interface CoachNavItem {
   icon: React.ReactNode;
   /** A count badge (shown when above zero). */
   count?: number;
+  /** A plain count after the label, e.g. how many members. */
+  note?: number;
+  /** A shorter label for the bottom bar on phones. */
+  short?: string;
   active: boolean;
   onSelect: () => void;
 }
@@ -74,6 +78,7 @@ export function CoachNav({ items, footer, className }: { items: CoachNavItem[]; 
             >
               {it.icon}
               <span className="lg:flex-1 lg:text-left">{it.label}</span>
+              {it.note !== undefined ? <span className="tabular text-xs text-muted-foreground">{it.note}</span> : null}
               {it.count ? (
                 <span className="tabular min-w-[1.25rem] rounded-full bg-primary px-1.5 text-center text-[11px] font-bold leading-5 text-primary-foreground">
                   {it.count}
@@ -273,5 +278,207 @@ export function WeekStrip({ items }: { items: WeekNumber[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+/* ================================ on phones ================================ */
+
+const ZONE_CIRCLE = {
+  green: "border-success/45 bg-success/10 text-success",
+  yellow: "border-warning/45 bg-warning/10 text-warning",
+  red: "border-destructive/45 bg-destructive/10 text-destructive",
+} as const;
+
+/**
+ * Today on a phone: three counts (check-ins to reply, members to reach out
+ * to, wins), a Needs you · At risk · All switch, and one card per member with
+ * their health score and what to do. Wider screens get the lanes instead.
+ */
+export function PhoneToday({
+  members,
+  today,
+  onOpen,
+  onSearch,
+}: {
+  members: MemberSummary[];
+  today: string;
+  onOpen: (userId: string, tab: "checkins" | "overview") => void;
+  onSearch: () => void;
+}) {
+  const [show, setShow] = React.useState<"needs" | "risk" | "wins" | "all">("needs");
+  const now = Date.now();
+  const reply = members.filter((m) => m.flags.includes("reply"));
+  const risk = members.filter(isAtRisk);
+  const wins = members.filter((m) => (m.data.milestones ?? []).length > 0);
+  const needs = members.filter((m) => m.flags.length > 0);
+  const list = show === "needs" ? needs : show === "risk" ? risk : show === "wins" ? wins : members;
+  const reason = (m: MemberSummary) => {
+    const flags = m.flags.filter((f) => f !== "reply").map((f) => FLAG_LABELS[f]);
+    if (m.flags.includes("reply")) return [sentAgo(m.lastCheckin?.submittedAt, now).replace(/^Sent/, "Check-in waiting · sent"), ...flags.slice(0, 1)].join(" · ");
+    if (flags.length > 0) return flags.join(" · ");
+    const win = (m.data.milestones ?? [])[0];
+    return win ? "A milestone this week" : "On track";
+  };
+  const stats = [
+    { id: "needs" as const, n: reply.length, label: "Check-ins to reply", tone: "text-primary" },
+    { id: "risk" as const, n: risk.length, label: "Members to reach out to", tone: "text-destructive" },
+    { id: "wins" as const, n: wins.length, label: "Wins to celebrate", tone: "text-success" },
+  ];
+  const pills = [
+    { id: "needs" as const, label: "Needs you", n: needs.length },
+    { id: "risk" as const, label: "At risk", n: risk.length },
+    { id: "all" as const, label: "All", n: members.length },
+  ];
+  return (
+    <section aria-label="Today" className="space-y-4 lg:hidden">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] text-muted-foreground">
+            {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight">Today</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onSearch}
+          aria-label="Search members"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Search className="h-[18px] w-[18px]" />
+        </button>
+      </div>
+
+      <div className="no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4">
+        {stats.map((s) => (
+          <button
+            key={s.label}
+            type="button"
+            onClick={() => setShow(s.id)}
+            className="flex w-[7.5rem] shrink-0 flex-col gap-0.5 rounded-xl border border-border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className={cn("tabular text-2xl font-bold", s.tone)}>{s.n}</span>
+            <span className="text-[12px] leading-snug text-foreground/85">{s.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div role="radiogroup" aria-label="Show" className="no-scrollbar flex gap-1.5 overflow-x-auto">
+        {pills.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={show === p.id}
+            onClick={() => setShow(p.id)}
+            className={cn(
+              "h-9 shrink-0 rounded-full border px-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              show === p.id ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-border text-foreground/85",
+            )}
+          >
+            {p.label} <span className="tabular">{p.n}</span>
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
+          {show === "needs" ? "Nobody needs you right now." : show === "risk" ? "Nobody is drifting." : show === "wins" ? "No milestones this week." : "Nobody is sharing yet."}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {list.map((m) => {
+            const toReply = m.flags.includes("reply");
+            return (
+              <li key={m.data.userId}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(m.data.userId, toReply ? "checkins" : "overview")}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    toReply ? "border-primary/45" : "border-border",
+                  )}
+                >
+                  {m.health ? (
+                    <span
+                      className={cn(
+                        "tabular flex h-10 w-10 shrink-0 items-center justify-center rounded-full border font-bold",
+                        ZONE_CIRCLE[healthZone(m.health.score)],
+                      )}
+                    >
+                      {m.health.score}
+                      <span className="sr-only"> health score</span>
+                    </span>
+                  ) : (
+                    <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-10 w-10" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-muted-foreground">{reason(m)}</span>
+                  </span>
+                  <span className={cn("shrink-0 text-[13px] font-semibold", toReply ? "text-primary" : "text-foreground/85")}>
+                    {toReply ? "Reply" : "Open"}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The coach's sections as a bar along the bottom of a phone. */
+export function CoachBottomNav({ items }: { items: CoachNavItem[] }) {
+  return (
+    <nav
+      aria-label="Coach sections"
+      className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-1.5 backdrop-blur lg:hidden"
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
+      {items.map((it) => (
+        <button
+          key={it.id}
+          type="button"
+          onClick={it.onSelect}
+          aria-current={it.active ? "page" : undefined}
+          className={cn(
+            "relative flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:h-5 [&_svg]:w-5",
+            it.active ? "font-semibold text-primary" : "text-muted-foreground",
+          )}
+        >
+          {it.icon}
+          <span className="max-w-full truncate px-0.5">
+            {it.short ?? it.label}
+            {it.count ? ` ${it.count}` : ""}
+          </span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** Photo storage across the app, as a bar: uploads stop at the cap. */
+export function PhotoStorageMeter({ usedBytes, capBytes }: { usedBytes: number; capBytes: number }) {
+  const share = capBytes > 0 ? usedBytes / capBytes : 0;
+  const pct = Math.min(100, Math.round(share * 100));
+  const gb = (b: number) => (b / 1024 ** 3).toFixed(b < 1024 ** 3 ? 2 : 1);
+  return (
+    <div className="space-y-2" title={`${gb(usedBytes)} of ${gb(capBytes)} GB of progress photos, across everyone using the app`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Photo storage</p>
+      <div
+        role="progressbar"
+        aria-label="Progress photo storage used"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="h-1.5 overflow-hidden rounded-full bg-muted"
+      >
+        <div className={cn("h-full rounded-full", share >= 0.8 ? "bg-warning" : "bg-primary")} style={{ width: `${Math.max(pct, share > 0 ? 2 : 0)}%` }} />
+      </div>
+      <p className={cn("text-[12px]", share >= 0.8 ? "text-warning" : "text-muted-foreground")}>
+        {pct}% used{share >= 1 ? ": full, members can't add photos" : share >= 0.8 ? ": nearly full" : ""}
+      </p>
+    </div>
   );
 }
