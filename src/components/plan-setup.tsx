@@ -223,7 +223,7 @@ export function PlanSetup({
               })}
             </div>
             {picked.result.feasible ? (
-              <p className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm">
+              <p className="molten-card rounded-[1.25rem] border border-primary/15 bg-card px-3 py-2.5 text-sm">
                 At {picked.label.toLowerCase()}, you reach {w(target, 0)} on {formatMedium(picked.result.finishDate)} after {picked.result.weeksRequired} weeks,
                 eating about {Math.round(picked.result.averageTargetCalories).toLocaleString()} kcal a day on average. You can change this any time in
                 Settings.

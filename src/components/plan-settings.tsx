@@ -212,7 +212,7 @@ export function PlanSettings({
             <button
               type="button"
               onClick={() => (g.id === "eating" ? onOpenEatingPlan() : go(g.id))}
-              className="flex min-h-[60px] w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-[60px] w-full items-center gap-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="font-semibold">{g.label}</span>

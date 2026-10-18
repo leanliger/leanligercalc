@@ -306,6 +306,20 @@ export function CheckinTab({
   const foodDayTotals = React.useMemo(() => dayTotals(foodLogs), [foodLogs]);
   // For the Weight vs calories graph: each week's calorie target and the plan's weight.
   const weekTargetKcal = React.useCallback((weekStart: string) => weekTargets(weekStart)?.calories ?? null, [weekTargets]);
+  // What this week was meant to look like, for the check-in draft.
+  const checkinPlan = React.useMemo(() => {
+    const goal = fatLoss.goalType === "weight" ? fatLoss.targetWeight : null;
+    const direction: "lose" | "gain" | "maintain" =
+      goal === null ? "lose" : goal < profile.weight - 0.5 ? "lose" : goal > profile.weight + 0.5 ? "gain" : "maintain";
+    const t = today ? weekTargets(weekStartOf(today)) : null;
+    return {
+      direction,
+      kcal: t?.calories ?? null,
+      protein: t?.protein ?? null,
+      steps: fatLoss.activitySource === "steps" ? fatLoss.dailySteps : null,
+      trainingDays: fatLoss.activitySource === "steps" ? fatLoss.trainingDays : null,
+    };
+  }, [fatLoss, profile.weight, today, weekTargets]);
   const planWeightFor = React.useCallback(
     (date: string) => (timeline.feasible && date >= timeline.requiredStartDate ? predictedWeightOn(timeline, date) : null),
     [timeline],
@@ -406,7 +420,7 @@ export function CheckinTab({
             </div>
           ) : (
             <div className="space-y-5">
-            <CheckinCard cloud={session.mode === "cloud"} today={today} unit={unit} />
+            <CheckinCard cloud={session.mode === "cloud"} today={today} unit={unit} plan={checkinPlan} />
             {session.mode === "cloud" ? <MyReport unit={unit} /> : null}
             </div>
           )}
@@ -440,7 +454,7 @@ export function CheckinTab({
   return (
     <div className="space-y-5">
       {nav}
-      <form onSubmit={submit} noValidate className="space-y-3 rounded-xl border border-border bg-card p-3 lg:max-w-xl">
+      <form onSubmit={submit} noValidate className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-3 lg:max-w-xl">
         <div className="flex items-center gap-2">
           <Label htmlFor="wi-weight" className="shrink-0 text-sm font-semibold">
             {date === today ? "Today" : formatShort(date)}
@@ -804,7 +818,7 @@ function Fold({
   const setOpen = onOpenChange ?? setOwn;
   const id = React.useId();
   return (
-    <div className="rounded-xl border border-border bg-card">
+    <div className="molten-card rounded-[1.25rem] border border-primary/15 bg-card">
       <button
         type="button"
         aria-expanded={open}

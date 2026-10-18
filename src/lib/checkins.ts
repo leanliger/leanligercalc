@@ -142,3 +142,102 @@ export function computeCheckinStats(
 export function checkinReplyMessage(): { title: string; content: string } {
   return { title: "Your coach replied to your check-in", content: "Open Lean Stature System → Progress → Check-in to read it." };
 }
+
+/* --------------------------------- drafts --------------------------------- */
+
+/** What the week was meant to look like, for the draft. */
+export interface CheckinPlan {
+  /** Which way the scale should move. */
+  direction: "lose" | "gain" | "maintain";
+  /** The week's average daily targets, when there's a plan. */
+  kcal: number | null;
+  protein: number | null;
+  /** Daily steps aimed for, and training sessions a week. */
+  steps: number | null;
+  trainingDays: number | null;
+}
+
+/** Calories within this of target count as on target (as the scorecard's ±100). */
+const KCAL_NEAR = 150;
+const PROTEIN_NEAR = 10;
+const STEPS_NEAR = 1000;
+
+/**
+ * Wins, struggles and one focus for next week, written from the week's
+ * numbers so the member only adds how it felt (the ratings, and anything to
+ * change). Plain sentences, most important first; empty when there's nothing
+ * to say. Never sent as it is: it fills the form, and the member edits it.
+ */
+export function draftCheckin(
+  stats: CheckinStats,
+  plan: CheckinPlan,
+  unit: "lb" | "kg",
+): { wins: string; struggles: string; focus: string } {
+  const wins: string[] = [];
+  const struggles: string[] = [];
+  const focus: string[] = [];
+  const w = (lb: number) => `${Math.round((unit === "kg" ? lb / 2.2046226218 : lb) * 10) / 10} ${unit}`;
+  const n = (v: number) => Math.round(v).toLocaleString("en-US");
+
+  // Weight, against last week's average.
+  if (stats.avgWeightLb !== null && stats.prevAvgWeightLb !== null) {
+    const change = stats.avgWeightLb - stats.prevAvgWeightLb;
+    const moved = Math.abs(change) >= 0.2;
+    const text = `${change < 0 ? "Down" : "Up"} ${w(Math.abs(change))} on last week's average (now ${w(stats.avgWeightLb)}).`;
+    const good = plan.direction === "lose" ? change < 0 : plan.direction === "gain" ? change > 0 : Math.abs(change) < 0.5;
+    if (!moved) (plan.direction === "maintain" ? wins : struggles).push(`Weight held steady at ${w(stats.avgWeightLb)}.`);
+    else (good ? wins : struggles).push(text);
+  }
+  if (stats.weighIns >= 6) wins.push(`Weighed in ${stats.weighIns} of 7 mornings.`);
+  else if (stats.weighIns < 3) {
+    struggles.push(stats.weighIns === 0 ? "No weigh-ins this week." : `Only ${stats.weighIns} weigh-in${stats.weighIns === 1 ? "" : "s"} this week.`);
+    focus.push("Weigh in every morning, after the bathroom and before eating.");
+  }
+
+  // Food.
+  if (stats.foodDays >= 6) wins.push(`Logged food ${stats.foodDays} of 7 days.`);
+  else if (stats.foodDays <= 3) {
+    struggles.push(stats.foodDays === 0 ? "Didn't log food this week." : `Logged food only ${stats.foodDays} of 7 days.`);
+    focus.push("Log food every day, even the off-plan days.");
+  }
+  if (stats.avgKcal !== null && plan.kcal !== null && stats.foodDays >= 4) {
+    const gap = stats.avgKcal - plan.kcal;
+    if (Math.abs(gap) <= KCAL_NEAR) wins.push(`Calories on target: ${n(stats.avgKcal)} a day against ${n(plan.kcal)}.`);
+    else if (gap > 0) {
+      struggles.push(`Calories ${n(gap)} over target on average (${n(stats.avgKcal)} against ${n(plan.kcal)}).`);
+      focus.push(`Bring calories back to ${n(plan.kcal)} a day: plan the meals that ran over.`);
+    } else struggles.push(`Calories ${n(-gap)} under target on average (${n(stats.avgKcal)} against ${n(plan.kcal)}).`);
+  }
+  if (stats.avgProtein !== null && plan.protein !== null && stats.foodDays >= 4) {
+    if (stats.avgProtein >= plan.protein - PROTEIN_NEAR) wins.push(`Protein on target: ${n(stats.avgProtein)} g a day.`);
+    else {
+      struggles.push(`Protein short: ${n(stats.avgProtein)} g a day against ${n(plan.protein)} g.`);
+      focus.push(`Hit ${n(plan.protein)} g protein a day: a protein source at every meal.`);
+    }
+  }
+
+  // Training and steps.
+  if (plan.trainingDays !== null && plan.trainingDays > 0) {
+    if (stats.workouts >= plan.trainingDays) wins.push(`All ${plan.trainingDays} workouts done${stats.workouts > plan.trainingDays ? ` (${stats.workouts} in all)` : ""}.`);
+    else {
+      struggles.push(`${stats.workouts} of ${plan.trainingDays} workouts done.`);
+      focus.push(`Get all ${plan.trainingDays} workouts in: put them in the calendar.`);
+    }
+  } else if (stats.workouts > 0) wins.push(`${stats.workouts} workout${stats.workouts === 1 ? "" : "s"} done.`);
+  if (stats.avgSteps !== null && plan.steps !== null) {
+    if (stats.avgSteps >= plan.steps - STEPS_NEAR / 2) wins.push(`${n(stats.avgSteps)} steps a day (goal ${n(plan.steps)}).`);
+    else if (stats.avgSteps < plan.steps - STEPS_NEAR) {
+      struggles.push(`Steps at ${n(stats.avgSteps)} a day, under the ${n(plan.steps)} goal.`);
+      focus.push(`Get to ${n(plan.steps)} steps a day: a walk after the biggest meal.`);
+    }
+  }
+
+  // Habits and photos.
+  if (stats.habitPercent !== null) {
+    if (stats.habitPercent >= 80) wins.push(`Habits at ${stats.habitPercent}%, a green week.`);
+    else if (stats.habitPercent < 60) struggles.push(`Habits at ${stats.habitPercent}%.`);
+  }
+  if (stats.photos > 0) wins.push("Took progress photos.");
+
+  return { wins: wins.join("\n"), struggles: struggles.join("\n"), focus: focus[0] ?? "" };
+}

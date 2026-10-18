@@ -421,7 +421,7 @@ export function MacrosTab({
       {nav}
       {!addOpen && (!wide || !addInView) ? (
         <Button
-          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 h-12 animate-fade-in rounded-full px-5 shadow-lg sm:bottom-6"
+          className="fixed bottom-[calc(6.75rem+env(safe-area-inset-bottom))] right-4 z-30 h-12 animate-fade-in rounded-full px-5 shadow-lg sm:bottom-6"
           onClick={() => openAdd()}
         >
           <Plus />
@@ -594,7 +594,7 @@ export function MacrosTab({
               const items = entries.filter((e) => e.meal === m.id);
               const fromYesterday = yesterday.filter((e) => e.meal === m.id);
               return (
-                <section key={m.id} aria-label={m.label} className={cn("overflow-hidden rounded-xl border bg-card", items.length > 0 ? "border-border" : "border-border/60")}>
+                <section key={m.id} aria-label={m.label} className={cn("overflow-hidden molten-card rounded-[1.25rem] border bg-card", items.length > 0 ? "border-border" : "border-border/60")}>
                   <div className="flex items-center gap-2 py-2.5 pl-4 pr-2">
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold">{m.label}</h3>
@@ -1236,7 +1236,7 @@ function WaterStrip({
   };
   const amount = unit === "kg" ? `${liters(bottles)} L` : `${ounces(bottles)} oz`;
   return (
-    <section aria-label="Water" className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+    <section aria-label="Water" className="flex items-center gap-2 molten-card rounded-[1.25rem] border border-primary/15 bg-card px-3 py-2">
       <button type="button" onClick={onOpen} className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="block text-sm font-semibold">Water</span>
         <span className="tabular block text-[12px] text-muted-foreground">

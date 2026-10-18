@@ -158,7 +158,7 @@ export function MacroDonut({
                 cy={CY}
                 r={RA}
                 fill="none"
-                stroke={over ? "hsl(var(--warning))" : "hsl(var(--primary))"}
+                stroke={over ? "hsl(var(--warning))" : "url(#molten-gold) hsl(var(--primary))"}
                 strokeWidth={6}
                 strokeLinecap="round"
                 strokeDasharray={arc}

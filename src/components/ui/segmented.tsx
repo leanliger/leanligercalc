@@ -41,7 +41,7 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        "no-scrollbar flex w-full gap-1 overflow-x-auto rounded-md border border-border bg-muted/50 p-1",
+        "no-scrollbar flex w-full gap-1 overflow-x-auto rounded-full border border-primary/15 bg-primary/[0.04] p-1",
         className,
       )}
     >
@@ -63,11 +63,11 @@ export function SegmentedControl<T extends string>({
               htmlFor={id}
               title={option.hint}
               className={cn(
-                "flex h-full cursor-pointer flex-col items-center justify-center whitespace-nowrap rounded-sm text-center font-medium transition-colors",
+                "flex h-full cursor-pointer flex-col items-center justify-center whitespace-nowrap rounded-full text-center font-semibold transition-colors",
                 "text-muted-foreground hover:text-foreground",
                 "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-background",
                 size === "sm" ? "px-2 py-1.5 text-xs" : "px-3 py-2 text-sm",
-                selected && "bg-background text-foreground shadow-sm",
+                selected && "bg-primary/[0.16] text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.25)]",
               )}
             >
               <span>{option.label}</span>

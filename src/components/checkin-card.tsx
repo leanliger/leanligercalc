@@ -7,7 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CheckinAnswersText, CheckinRatings, CheckinStatsGrid } from "@/components/coach-tools";
-import { CHECKIN_SCALES, CHECKIN_TEXT_MAX, type Checkin, type CheckinAnswers, type CheckinScale, type CheckinStats } from "@/lib/checkins";
+import {
+  CHECKIN_SCALES,
+  CHECKIN_TEXT_MAX,
+  draftCheckin,
+  type Checkin,
+  type CheckinAnswers,
+  type CheckinPlan,
+  type CheckinScale,
+  type CheckinStats,
+} from "@/lib/checkins";
 import { formatShort } from "@/lib/dates";
 import { weekStartOf } from "@/lib/habits";
 import type { WeightUnit } from "@/lib/types";
@@ -18,6 +27,8 @@ import { VoicePlayer } from "@/components/voice-reply";
  * Progress → Check-in: this week's check-in for the coach (src/lib/checkins.ts),
  * the coach's replies, and past weeks. The numbers are filled in from the
  * member's logs by the server when they send it; a preview shows them first.
+ * A new week's form arrives drafted from those numbers (draftCheckin): wins,
+ * struggles and a focus, for the member to edit. The ratings are theirs.
  */
 
 const EMPTY: CheckinAnswers = {
@@ -39,7 +50,18 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: string; unit: WeightUnit }) {
+export function CheckinCard({
+  cloud,
+  today,
+  unit,
+  plan,
+}: {
+  cloud: boolean;
+  today: string;
+  unit: WeightUnit;
+  /** What the week was meant to look like, for the draft. */
+  plan?: CheckinPlan;
+}) {
   const [checkins, setCheckins] = React.useState<Checkin[] | null>(null);
   const [preview, setPreview] = React.useState<CheckinStats | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -48,6 +70,8 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
   const [sending, setSending] = React.useState(false);
   const [sendError, setSendError] = React.useState<string | null>(null);
   const [openPast, setOpenPast] = React.useState<string | null>(null);
+  // Whether the form was filled in from the week's numbers.
+  const [drafted, setDrafted] = React.useState(false);
   const week = today ? weekStartOf(today) : "";
 
   React.useEffect(() => {
@@ -66,6 +90,22 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
   }, [cloud, today]);
 
   const current = checkins?.find((c) => c.weekStart === week) ?? null;
+
+  // A new week's check-in starts from a draft of the numbers; only once, and only into empty boxes.
+  const draftedFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!preview || !plan || checkins === null || current || draftedFor.current === week) return;
+    draftedFor.current = week;
+    const d = draftCheckin(preview, plan, unit);
+    if (!d.wins && !d.struggles && !d.focus) return;
+    setAnswers((a) => ({
+      ...a,
+      wins: a.wins || d.wins.slice(0, CHECKIN_TEXT_MAX),
+      struggles: a.struggles || d.struggles.slice(0, CHECKIN_TEXT_MAX),
+      focus: a.focus || d.focus.slice(0, CHECKIN_TEXT_MAX),
+    }));
+    setDrafted(true);
+  }, [preview, plan, checkins, current, week, unit]);
   const past = (checkins ?? []).filter((c) => c.weekStart !== week);
   const showForm = !current || editing;
   const complete = CHECKIN_SCALES.every((s) => answers.ratings[s.key] >= 1);
@@ -141,6 +181,21 @@ export function CheckinCard({ cloud, today, unit }: { cloud: boolean; today: str
                   />
                 ))}
               </div>
+              {drafted && !current ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-primary/5 px-3 py-2 text-[12px]">
+                  <span>Drafted from your week&apos;s numbers. Change anything, then rate how it felt.</span>
+                  <button
+                    type="button"
+                    className="font-medium text-primary underline-offset-2 hover:underline"
+                    onClick={() => {
+                      setAnswers((a) => ({ ...a, wins: "", struggles: "", focus: "" }));
+                      setDrafted(false);
+                    }}
+                  >
+                    Clear the draft
+                  </button>
+                </div>
+              ) : null}
               <TextBox label="Wins this week" value={answers.wins} onChange={(wins) => setAnswers((a) => ({ ...a, wins }))} placeholder="Hit every workout, new bench PR…" />
               <TextBox
                 label="Struggles"
@@ -281,7 +336,7 @@ function TextBox({ label, value, onChange, placeholder }: { label: string; value
         value={value}
         onChange={(e) => onChange(e.target.value)}
         maxLength={CHECKIN_TEXT_MAX}
-        rows={2}
+        rows={Math.min(6, Math.max(2, value.split("\n").length))}
         placeholder={placeholder}
         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />

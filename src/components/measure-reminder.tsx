@@ -44,7 +44,7 @@ export function MeasureReminder() {
   };
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3">
+    <div className="flex items-start gap-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card px-4 py-3">
       <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
         <label htmlFor={id} className="text-sm font-medium">

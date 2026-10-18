@@ -193,7 +193,7 @@ export function SettingsMenu({
         onClick={(e) => {
           if (e.target === dialog.current) setOpen(false);
         }}
-        className="fixed left-3 right-auto top-3 m-0 max-h-[calc(100dvh-1.5rem)] w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/40 sm:left-6 sm:top-4"
+        className="fixed left-3 right-auto top-3 m-0 max-h-[calc(100dvh-1.5rem)] w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain molten-card rounded-[1.25rem] border border-primary/15 bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/40 sm:left-6 sm:top-4"
       >
         <div className="space-y-5 p-4">
           <div className="flex items-center justify-between gap-2">

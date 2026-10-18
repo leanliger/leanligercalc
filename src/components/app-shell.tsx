@@ -1456,7 +1456,7 @@ export function AppShell() {
         className={cn(
           "min-h-screen bg-background",
           // Height of the phone tab bar, so the rest timer sits above it. Zero while it's hidden for typing.
-          !typing && "max-sm:[--bottom-nav:calc(4rem_+_env(safe-area-inset-bottom))]",
+          !typing && "max-sm:[--bottom-nav:calc(5.5rem_+_env(safe-area-inset-bottom))]",
         )}
       >
         <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -1531,7 +1531,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="container py-6 max-sm:pb-[calc(5.5rem_+_env(safe-area-inset-bottom))]">
+        <main className="container py-6 max-sm:pb-[calc(6.5rem_+_env(safe-area-inset-bottom))]">
           {/* The calculators render client-side only. This is a static
               export, so anything rendered at build time is frozen at the build
               date — and nearly everything here depends on "today". Rendering it
@@ -1558,9 +1558,9 @@ export function AppShell() {
                 <TabsList
                   className={cn(
                     "scrollbar-thin sm:relative sm:max-w-full sm:gap-1 sm:overflow-x-auto sm:[&>button]:px-3 md:[&>button]:px-4",
-                    "max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-40 max-sm:grid max-sm:grid-cols-6 max-sm:gap-0 max-sm:rounded-none max-sm:border-x-0 max-sm:border-b-0 max-sm:bg-background/95 max-sm:px-1 max-sm:pb-[max(0.25rem,env(safe-area-inset-bottom))] max-sm:pt-1 max-sm:backdrop-blur",
-                    "max-sm:[&>button]:h-14 max-sm:[&>button]:flex-col max-sm:[&>button]:gap-1 max-sm:[&>button]:px-0 max-sm:[&>button]:text-[12px] max-sm:[&_svg]:size-5",
-                    "max-sm:[&>button[data-state=active]]:bg-primary/10 max-sm:[&>button[data-state=active]]:text-primary max-sm:[&>button[data-state=active]]:shadow-none",
+                    "max-sm:fixed max-sm:inset-x-3 max-sm:bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:z-40 max-sm:grid max-sm:w-auto max-sm:grid-cols-6 max-sm:gap-0.5 max-sm:rounded-[1.75rem] max-sm:border max-sm:border-primary/20 max-sm:bg-card/95 max-sm:p-1.5 max-sm:shadow-[0_14px_34px_-8px_rgb(0_0_0/0.55)] max-sm:backdrop-blur",
+                    "max-sm:[&>button]:h-14 max-sm:[&>button]:flex-col max-sm:[&>button]:gap-1 max-sm:[&>button]:rounded-[1.25rem] max-sm:[&>button]:px-0 max-sm:[&>button]:text-[11px] max-sm:[&_svg]:size-5",
+                    "max-sm:[&>button[data-state=active]]:bg-primary/[0.16] max-sm:[&>button[data-state=active]]:text-primary max-sm:[&>button[data-state=active]]:font-bold",
                     typing && "max-sm:hidden",
                   )}
                 >

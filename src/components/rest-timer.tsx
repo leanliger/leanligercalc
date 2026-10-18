@@ -189,7 +189,7 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
         role="timer"
         aria-label="Rest timer"
         className={cn(
-          "pointer-events-auto mx-auto max-w-md space-y-2.5 rounded-xl border bg-card/95 p-3 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-card/85",
+          "pointer-events-auto mx-auto max-w-md space-y-2.5 molten-card rounded-[1.25rem] border bg-card/95 p-3 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-card/85",
           done ? "border-success/60" : "border-primary/40",
         )}
       >

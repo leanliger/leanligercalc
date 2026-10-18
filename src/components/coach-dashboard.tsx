@@ -549,7 +549,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   ) : shown.length === 0 ? (
                     <EmptyNote>Nobody matches this filter.</EmptyNote>
                   ) : (
-                    <div className="overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card">
                       <div
                         aria-hidden
                         className={cn(
@@ -1010,7 +1010,7 @@ function MemberDetail({
         All members
       </Button>
 
-      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
         <div className="flex items-center gap-3">
           <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-12 w-12" />
           <div className="min-w-0 flex-1">

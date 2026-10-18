@@ -211,7 +211,7 @@ function Lane({
 }) {
   const t = TONE[tone];
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-card p-4">
+    <div className="flex min-w-0 flex-col gap-2 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
       <div className="flex items-center gap-2">
         <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&_svg]:h-4 [&_svg]:w-4", t.icon)}>{icon}</span>
         <h3 className="flex-1 text-sm font-semibold">{title}</h3>
@@ -354,7 +354,7 @@ export function PhoneToday({
             key={s.label}
             type="button"
             onClick={() => setShow(s.id)}
-            className="flex w-[7.5rem] shrink-0 flex-col gap-0.5 rounded-xl border border-border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex w-[7.5rem] shrink-0 flex-col gap-0.5 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className={cn("tabular text-2xl font-bold", s.tone)}>{s.n}</span>
             <span className="text-[12px] leading-snug text-foreground/85">{s.label}</span>
@@ -394,7 +394,7 @@ export function PhoneToday({
                   type="button"
                   onClick={() => onOpen(m.data.userId, toReply ? "checkins" : "overview")}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex w-full items-center gap-3 molten-card rounded-[1.25rem] border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     toReply ? "border-primary/45" : "border-border",
                   )}
                 >
