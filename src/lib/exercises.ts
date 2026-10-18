@@ -80,6 +80,10 @@ export interface Exercise {
   video: string | null;
   /** Other names it goes by, matched by search. */
   aka?: string;
+  /** Done one arm or leg at a time: sets are logged per side. */
+  oneSide?: boolean;
+  /** A built-in exercise whose drawings it shares (a one-sided version of it). */
+  artOf?: string;
   /** True for exercises a member added themselves. */
   custom: boolean;
 }
@@ -196,7 +200,26 @@ const ALIASES: Partial<Record<string, string>> = {
   "leg-press-calf-raise": "calf press",
 };
 
-export const LIBRARY: readonly Exercise[] = ROWS.map(([id, name, muscle, equipment, cue1, cue2]) => ({
+/**
+ * One-arm and one-leg versions of library exercises, kept as exercises of
+ * their own so their weights don't mix with the two-sided version's. They
+ * share its drawings, and are the only exercises logged one side at a time.
+ */
+type OneSideRow = [id: string, name: string, muscle: Muscle, equipment: Equipment, cue1: string, cue2: string, artOf: string, aka: string];
+
+const ONE_SIDE_ROWS: OneSideRow[] = [
+  ["single-arm-lat-pulldown", "Single-arm lat pulldown", "back", "cable", "Let the shoulder stretch up at the top", "Drive the elbow down to your hip", "lat-pulldown", "one arm unilateral"],
+  ["single-arm-cable-row", "Single-arm seated cable row", "back", "cable", "Sit tall, no twisting", "Pull your elbow back past your ribs", "seated-cable-row", "one arm unilateral"],
+  ["single-arm-cable-curl", "Single-arm cable curl", "biceps", "cable", "Elbow by your side", "Squeeze at the top", "cable-curl", "one arm unilateral"],
+  ["single-arm-triceps-pushdown", "Single-arm cable triceps pushdown", "triceps", "cable", "Elbow pinned to your side", "Straighten fully, slow on the way up", "triceps-pushdown", "one arm unilateral pressdown"],
+  ["single-arm-machine-lateral-raise", "Single-arm machine lateral raise", "shoulders", "machine", "Pad just above the elbow", "Raise to shoulder height, slow on the way down", "machine-lateral-raise", "one arm unilateral side raise"],
+  ["single-arm-overhead-triceps-extension", "Single-arm overhead cable triceps extension", "triceps", "cable", "Elbow points up and stays still", "Full stretch behind your head", "overhead-triceps-extension", "one arm unilateral"],
+  ["single-leg-pendulum-squat", "Single-leg pendulum squat", "quads", "machine", "Working foot mid-platform, the other off", "Control the depth, drive through the whole foot", "pendulum-squat", "one leg unilateral"],
+  ["single-leg-extension", "Single-leg leg extension", "quads", "machine", "Pad just above the ankle", "Squeeze at the top", "leg-extension", "one leg unilateral"],
+  ["single-leg-curl", "Single-leg seated leg curl", "hamstrings", "machine", "Pad just above the ankle", "Squeeze at the bottom", "seated-leg-curl", "one leg unilateral"],
+];
+
+const TWO_SIDED: readonly Exercise[] = ROWS.map(([id, name, muscle, equipment, cue1, cue2]) => ({
   id,
   name,
   muscle,
@@ -207,6 +230,26 @@ export const LIBRARY: readonly Exercise[] = ROWS.map(([id, name, muscle, equipme
   aka: ALIASES[id],
   custom: false,
 }));
+
+/** Each one-sided version sits right after the exercise it's a version of. */
+export const LIBRARY: readonly Exercise[] = TWO_SIDED.flatMap((e) => [
+  e,
+  ...ONE_SIDE_ROWS.filter((r) => r[6] === e.id).map(
+    ([id, name, muscle, equipment, cue1, cue2, artOf, aka]): Exercise => ({
+      id,
+      name,
+      muscle,
+      equipment,
+      cues: [cue1, cue2],
+      bodyweight: false,
+      video: null,
+      aka,
+      custom: false,
+      oneSide: true,
+      artOf,
+    }),
+  ),
+]);
 
 const BY_ID = new Map(LIBRARY.map((e) => [e.id, e]));
 

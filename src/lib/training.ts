@@ -107,6 +107,12 @@ export interface WorkoutSet {
    * not recorded (older workouts never have it).
    */
   rir?: number | null;
+  /**
+   * One side at a time, when the two sides differed: reps for each. `reps` is
+   * then the weaker side's, so records and advice follow it.
+   */
+  left?: number;
+  right?: number;
 }
 
 /** The highest reps-in-reserve choice; it stands for "this many or more". */
@@ -128,6 +134,8 @@ export interface WorkoutExercise {
   target: SetTarget | null;
   restSec: number | null;
   sets: WorkoutSet[];
+  /** Done one arm or leg at a time: reps are per side, and volume counts both. */
+  oneSide?: boolean;
 }
 
 export interface Workout {
@@ -238,9 +246,27 @@ export function validateWorkout(raw: unknown, id: string, now: Date = new Date()
       const set: WorkoutSet = { weight: weight === null ? null : round2(weight), reps, done: s.done };
       // Only a completed set has an effort to record.
       if (s.done && rir !== null) set.rir = rir;
+      // Left and right reps, for a one-sided exercise whose sides differed.
+      if (e.oneSide === true && (s.left !== undefined || s.right !== undefined)) {
+        if (!isInt(s.left, 0, MAX_REPS) || !isInt(s.right, 0, MAX_REPS)) return bad("Left and right reps must be whole numbers.");
+        if (s.left !== s.right) {
+          set.left = s.left;
+          set.right = s.right;
+          set.reps = Math.min(s.left, s.right);
+          if (s.done && set.reps < 1 && Math.max(s.left, s.right) < 1) return bad("A completed set needs at least 1 rep.");
+        }
+      }
       sets.push(set);
     }
-    exercises.push({ exerciseId, name: exName, bodyweight: e.bodyweight === true, target, restSec, sets });
+    exercises.push({
+      exerciseId,
+      name: exName,
+      bodyweight: e.bodyweight === true,
+      target,
+      restSec,
+      sets,
+      ...(e.oneSide === true ? { oneSide: true } : {}),
+    });
   }
 
   return {
@@ -512,15 +538,62 @@ export function e1rm(weight: number, reps: number): number {
 
 export interface DoneSet {
   weight: number;
+  /** Per side for a one-sided exercise (the weaker side's when they differed). */
   reps: number;
   /** Reps in reserve, when recorded. */
   rir: number | null;
+  /** 2 for an exercise done one side at a time. */
+  sides?: 1 | 2;
+  /** Each side's reps, when they differed. */
+  left?: number;
+  right?: number;
 }
 
 export function doneSets(e: WorkoutExercise): DoneSet[] {
   return e.sets
-    .filter((s) => s.done && s.reps !== null && s.reps > 0)
-    .map((s) => ({ weight: s.weight ?? 0, reps: s.reps!, rir: typeof s.rir === "number" ? s.rir : null }));
+    .filter((s) => s.done && ((s.reps !== null && s.reps > 0) || (s.left ?? 0) > 0 || (s.right ?? 0) > 0))
+    .map((s) => {
+      const d: DoneSet = { weight: s.weight ?? 0, reps: s.reps ?? 0, rir: typeof s.rir === "number" ? s.rir : null };
+      if (e.oneSide) {
+        d.sides = 2;
+        if (s.left !== undefined && s.right !== undefined) {
+          d.left = s.left;
+          d.right = s.right;
+        }
+      }
+      return d;
+    });
+}
+
+/** Reps across both sides of a one-sided set; just the reps otherwise. */
+export function setReps(s: DoneSet): number {
+  if (s.left !== undefined && s.right !== undefined) return s.left + s.right;
+  return s.reps * (s.sides ?? 1);
+}
+
+/** Weight × reps, counting both sides of a one-sided set. */
+export function setVolume(s: DoneSet): number {
+  return s.weight * setReps(s);
+}
+
+/** Whether an exercise is done one side at a time: the one-arm and one-leg library exercises. */
+export function isOneSide(exerciseId: string): boolean {
+  return libraryExercise(exerciseId)?.oneSide === true;
+}
+
+/**
+ * Which side was behind in a session's one-sided sets, when every set where
+ * they differed had the same side weaker: "left" or "right", and by how many
+ * reps on average.
+ */
+export function weakerSide(sets: readonly DoneSet[]): { side: "left" | "right"; by: number } | null {
+  const split = sets.filter((s) => s.left !== undefined && s.right !== undefined && s.left !== s.right);
+  if (split.length === 0) return null;
+  const leftBehind = split.every((s) => s.left! < s.right!);
+  const rightBehind = split.every((s) => s.right! < s.left!);
+  if (!leftBehind && !rightBehind) return null;
+  const by = split.reduce((n, s) => n + Math.abs(s.left! - s.right!), 0) / split.length;
+  return { side: leftBehind ? "left" : "right", by: Math.round(by * 10) / 10 };
 }
 
 const byTime = (a: Workout, b: Workout) => (a.date === b.date ? a.startedAt - b.startedAt : a.date < b.date ? -1 : 1);
@@ -553,7 +626,7 @@ export function exerciseHistory(workouts: readonly Workout[], exerciseId: string
       e1rm: Math.max(...sets.map((x) => e1rm(x.weight, x.reps))),
       weight: Math.max(...sets.map((x) => x.weight)),
       reps: Math.max(...sets.map((x) => x.reps)),
-      volume: sets.reduce((sum, x) => sum + x.weight * x.reps, 0),
+      volume: sets.reduce((sum, x) => sum + setVolume(x), 0),
     };
     // The first session is the baseline, not a record.
     const first = out.length === 0;
@@ -687,9 +760,11 @@ export function workoutExerciseFor(
   pe: ProgramExercise,
   exercise: Exercise | undefined,
   workouts: readonly Workout[],
+  oneSide = false,
 ): WorkoutExercise {
   const bodyweight = exercise?.bodyweight ?? false;
   return {
+    ...(oneSide ? { oneSide: true } : {}),
     exerciseId: pe.exerciseId,
     name: exercise?.name ?? "Unknown exercise",
     bodyweight,
@@ -718,7 +793,9 @@ export function createWorkout(args: {
     dayId: day?.id ?? null,
     startedAt: args.now ?? Date.now(),
     finishedAt: null,
-    exercises: day ? day.exercises.map((pe) => workoutExerciseFor(pe, findExercise(pe.exerciseId, custom), workouts)) : [],
+    exercises: day
+      ? day.exercises.map((pe) => workoutExerciseFor(pe, findExercise(pe.exerciseId, custom), workouts, isOneSide(pe.exerciseId)))
+      : [],
     note: "",
   };
 }
@@ -749,12 +826,14 @@ export function swapExercise(
   index: number,
   replacement: Exercise,
   workouts: readonly Workout[],
+  oneSide = isOneSide(replacement.id),
 ): Workout {
   const original = workout.exercises[index];
   if (!original || !canSwap(workout, index) || replacement.id === original.exerciseId) return workout;
   const done = original.sets.filter((s) => s.done);
   const remaining = original.sets.length - done.length;
   const swapped: WorkoutExercise = {
+    ...(oneSide ? { oneSide: true } : {}),
     exerciseId: replacement.id,
     name: replacement.name,
     bodyweight: replacement.bodyweight,
@@ -838,8 +917,8 @@ export function summarizeWorkout(w: Workout): WorkoutSummary {
   return {
     exercises: all.filter((s) => s.length > 0).length,
     sets: flat.length,
-    reps: flat.reduce((n, s) => n + s.reps, 0),
-    volume: flat.reduce((n, s) => n + s.weight * s.reps, 0),
+    reps: flat.reduce((n, s) => n + setReps(s), 0),
+    volume: flat.reduce((n, s) => n + setVolume(s), 0),
     durationMs: w.finishedAt === null ? null : w.finishedAt - w.startedAt,
   };
 }
@@ -853,8 +932,10 @@ export function formatLoad(lb: number, unit: WeightUnit): string {
 
 /** One set as text: "185 × 10", "BW × 12" or "BW+25 × 8". */
 export function formatSet(s: DoneSet, unit: WeightUnit, bodyweight: boolean): string {
-  if (bodyweight) return s.weight > 0 ? `BW+${formatLoad(s.weight, unit)} × ${s.reps}` : `BW × ${s.reps}`;
-  return `${formatLoad(s.weight, unit)} × ${s.reps}`;
+  const reps =
+    s.left !== undefined && s.right !== undefined ? `L${s.left}/R${s.right}` : s.sides === 2 ? `${s.reps}/side` : String(s.reps);
+  if (bodyweight) return s.weight > 0 ? `BW+${formatLoad(s.weight, unit)} × ${reps}` : `BW × ${reps}`;
+  return `${formatLoad(s.weight, unit)} × ${reps}`;
 }
 
 /** A set with its effort when recorded: "185 × 8 (2 left)". */

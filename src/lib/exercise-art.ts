@@ -39,10 +39,13 @@ export interface ExerciseArt {
 
 /** The drawings for a built-in exercise, or null for a member's own one. */
 export function exerciseArt(exerciseId: string): ExerciseArt | null {
-  if (!libraryExercise(exerciseId)) return null;
-  const base = `/exercise-art/${exerciseId}`;
+  const ex = libraryExercise(exerciseId);
+  if (!ex) return null;
+  // A one-arm or one-leg version shows its two-sided version's drawings.
+  const id = ex.artOf ?? exerciseId;
+  const base = `/exercise-art/${id}`;
   return {
     thumb: `${base}.webp`,
-    drawings: ONE_DRAWING.has(exerciseId) ? [`${base}-1.webp`] : [`${base}-1.webp`, `${base}-2.webp`],
+    drawings: ONE_DRAWING.has(id) ? [`${base}-1.webp`] : [`${base}-1.webp`, `${base}-2.webp`],
   };
 }

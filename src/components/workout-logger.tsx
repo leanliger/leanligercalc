@@ -35,6 +35,8 @@ import {
   progressionAdvice,
   formatRir,
   formatSetEffort,
+  isOneSide,
+  weakerSide,
   RIR_CHOICES,
   MAX_RIR,
   type AdviceKind,
@@ -168,6 +170,7 @@ export function WorkoutLogger({
     setPicking(false);
     const last = lastPerformance(workouts, e.id, workout.id);
     const next: WorkoutExercise = {
+      ...(isOneSide(e.id) ? { oneSide: true } : {}),
       exerciseId: e.id,
       name: e.name,
       bodyweight: e.bodyweight,
@@ -390,13 +393,15 @@ function ExerciseBlock({
   const bw = exercise.bodyweight;
   const rest = exercise.restSec ?? defaultRest;
   const doneCount = exercise.sets.filter((s) => s.done).length;
+  const oneSide = exercise.oneSide === true;
+  const behind = oneSide ? weakerSide(last) : null;
 
   const setSet = (i: number, s: WorkoutSet) => {
     const sets = exercise.sets.map((x, j) => (j === i ? s : x));
     // Ticking a set fills an empty next set with the same numbers.
     const next = sets[i + 1];
     if (s.done && !exercise.sets[i]!.done && next && !next.done && next.weight === null && next.reps === null) {
-      sets[i + 1] = { ...next, weight: s.weight, reps: s.reps };
+      sets[i + 1] = { ...next, weight: s.weight, reps: s.reps, ...(s.left !== undefined ? { left: s.left, right: s.right } : {}) };
     }
     onChange({ ...exercise, sets });
   };
@@ -464,11 +469,22 @@ function ExerciseBlock({
             />
           </div>
         </div>
+        {oneSide ? (
+          <p className="text-xs">
+            <span className="font-medium text-primary">One side at a time</span>
+            <span className="text-muted-foreground"> · reps are per arm or leg, log the set after both sides</span>
+          </p>
+        ) : null}
         <p className="tabular text-xs text-muted-foreground">
           {last.length > 0
             ? `Last time: ${last.map((s) => formatSetEffort(s, unit, bw)).join(", ")}`
             : "First time logging this — pick a weight you can lift with good form."}
         </p>
+        {behind ? (
+          <p className="text-xs font-medium text-warning">
+            Last time your {behind.side} side was {behind.by} rep{behind.by === 1 ? "" : "s"} behind. Start with it, and match it on the other side.
+          </p>
+        ) : null}
         {swap && swapping ? <SwapPicker exercise={exercise} options={swap} onDone={() => setSwapping(false)} /> : null}
         {advice ? (
           <p className={cn("flex items-start gap-1.5 text-xs font-medium", ADVICE_STYLE[advice.kind].text)}>
@@ -482,7 +498,7 @@ function ExerciseBlock({
           <span className="text-center">Set</span>
           {gym ? null : <span>Previous</span>}
           <span className="text-center">{bw ? `+${unit}` : unit}</span>
-          <span className="text-center">Reps</span>
+          <span className="text-center">{oneSide ? "Reps/side" : "Reps"}</span>
           <span className="text-center">Done</span>
         </div>
         {exercise.sets.map((s, i) => (
@@ -494,6 +510,7 @@ function ExerciseBlock({
             prev={last[i] ?? null}
             unit={unit}
             bodyweight={bw}
+            oneSide={oneSide}
             pr={isPR(s)}
             trackRir={trackRir}
             onChange={(next) => setSet(i, next)}
@@ -663,6 +680,7 @@ function SetRow({
   prev,
   unit,
   bodyweight,
+  oneSide,
   pr,
   trackRir,
   onChange,
@@ -674,6 +692,8 @@ function SetRow({
   prev: DoneSet | null;
   unit: WeightUnit;
   bodyweight: boolean;
+  /** Reps are per side; left and right can be entered when they differed. */
+  oneSide: boolean;
   pr: boolean;
   trackRir: boolean;
   onChange: (s: WorkoutSet) => void;
@@ -715,6 +735,26 @@ function SetRow({
     if (t === "") return onChange({ ...set, reps: null, done: false });
     const n = Number(t);
     if (Number.isInteger(n) && n >= 0 && n <= MAX_REPS) onChange({ ...set, reps: n, done: set.done && n > 0 });
+  };
+
+  // Left and right, when the sides didn't match.
+  const split = set.left !== undefined && set.right !== undefined;
+  const [splitOpen, setSplitOpen] = React.useState(split);
+  const changeSide = (side: "left" | "right", text: string) => {
+    const t = text.trim();
+    const n = t === "" ? null : Number(t);
+    if (n !== null && !(Number.isInteger(n) && n >= 0 && n <= MAX_REPS)) return;
+    const left = side === "left" ? n : (set.left ?? set.reps);
+    const right = side === "right" ? n : (set.right ?? set.reps);
+    if (left === null || right === null) return onChange({ ...set, left: left ?? undefined, right: right ?? undefined, reps: left ?? right, done: false });
+    setMissing(false);
+    // Records and advice follow the weaker side.
+    const weaker = Math.min(left, right);
+    onChange(left === right ? { ...set, left: undefined, right: undefined, reps: left } : { ...set, left, right, reps: weaker });
+  };
+  const closeSplit = () => {
+    setSplitOpen(false);
+    onChange({ ...set, left: undefined, right: undefined });
   };
 
   const toggle = () => {
@@ -778,6 +818,42 @@ function SetRow({
         <Check className={cn(gym ? "h-7 w-7" : "h-4 w-4", !set.done && "opacity-30", set.done && "animate-pop")} />
       </button>
     </div>
+    {oneSide ? (
+      splitOpen ? (
+        <div className="flex flex-wrap items-center gap-2 px-1 pb-1.5 pl-9 text-[12px]">
+          <span className="text-muted-foreground">Reps each side:</span>
+          <label className="flex items-center gap-1">
+            <span className="font-semibold">L</span>
+            <Input
+              value={set.left ?? (set.reps === null ? "" : String(set.reps))}
+              onChange={(e) => changeSide("left", e.target.value)}
+              inputMode="numeric"
+              aria-label={`Set ${n} left side reps`}
+              className="h-8 w-14 px-1.5 text-center"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="font-semibold">R</span>
+            <Input
+              value={set.right ?? (set.reps === null ? "" : String(set.reps))}
+              onChange={(e) => changeSide("right", e.target.value)}
+              inputMode="numeric"
+              aria-label={`Set ${n} right side reps`}
+              className="h-8 w-14 px-1.5 text-center"
+            />
+          </label>
+          <button type="button" onClick={closeSplit} className="text-muted-foreground underline underline-offset-2">
+            Same both sides
+          </button>
+        </div>
+      ) : (
+        <div className="px-1 pb-1 pl-9">
+          <button type="button" onClick={() => setSplitOpen(true)} className="text-[12px] text-muted-foreground underline-offset-2 hover:underline">
+            Left/right differ?
+          </button>
+        </div>
+      )
+    ) : null}
     {set.done && trackRir ? <RirPicker n={n} value={typeof set.rir === "number" ? set.rir : null} onChange={(rir) => onChange({ ...set, rir })} /> : null}
     </div>
   );
