@@ -16,7 +16,6 @@ import {
   Send,
   Scale,
   Search,
-  Star,
   StickyNote,
   Sun,
   Users,
@@ -130,9 +129,13 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   );
   const [unit, setUnit] = React.useState<WeightUnit>("lb");
   // Members (progress) or Assign (send programs and habit sets).
-  const [view, setView] = React.useState<"members" | "assign" | "testimonials">("members");
-  // Within members: Today (the lanes, this week and the list) or just the list.
-  const [section, setSection] = React.useState<"today" | "members">("today");
+  // Today (what needs you), Inbox (check-ins to answer), Members (the list, or one member's page), Library.
+  const [view, setView] = React.useState<"today" | "inbox" | "members" | "library">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("member") ? "members" : "today",
+  );
+  const [libraryTab, setLibraryTab] = React.useState<"programs" | "testimonials">("programs");
+  // The check-in open in the inbox.
+  const [inboxId, setInboxId] = React.useState<string | null>(null);
   const [today] = React.useState(() => todayISO());
   // The open member's tab.
   const [tab, setTab] = React.useState<DetailTab>("overview");
@@ -228,7 +231,6 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
   const currentNotSharing = current ? null : (notSharing.find((m) => m.userId === selected) ?? null);
   const shownNotSharing = notSharing.filter((m) => !q || `${m.name ?? ""} ${m.username ?? ""}`.toLowerCase().includes(q));
-  const anyOpen = Boolean(current || currentNotSharing);
 
   const counts = {
     total: summaries.length,
@@ -242,47 +244,56 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const scored = summaries.filter((m) => m.week.percent !== null);
   const avgWeek = scored.length > 0 ? Math.round(scored.reduce((s, m) => s + (m.week.percent ?? 0), 0) / scored.length) : null;
 
-  /** Open a member on a tab; on narrow screens the detail replaces the list, so start at the top. */
+  /** Open a member's own page on a tab. */
   const openMember = (id: string, t: DetailTab = "overview") => {
+    setView("members");
     setSelected(id);
     setTab(t);
-    if (window.innerWidth < 1280) window.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
   };
+  /** Open a member's waiting check-in in the inbox. */
+  const openInbox = (id: string | null = null) => {
+    setView("inbox");
+    setSelected(null);
+    setInboxId(id);
+    window.scrollTo({ top: 0 });
+  };
+  /** From Today's lists: check-ins go to the inbox, everything else to the member's page. */
+  const openFromToday = (id: string, t: "checkins" | "overview") => (t === "checkins" ? openInbox(id) : openMember(id, t));
   const showMembers = (f: Filter) => {
+    if (f === "reply") return openInbox();
     setView("members");
-    setSection("members");
     setFilter(f);
     setSelected(null);
   };
   const showToday = () => {
-    setView("members");
-    setSection("today");
-    setFilter("all");
+    setView("today");
     setSelected(null);
+  };
+  // Check-ins waiting, oldest first: the order to answer them in.
+  const inbox = summaries
+    .filter((m) => m.flags.includes("reply"))
+    .sort((a, b) => (a.lastCheckin?.submittedAt ?? "").localeCompare(b.lastCheckin?.submittedAt ?? ""));
+  /** After a reply: that check-in is answered (until the next load) and the next one opens. */
+  const markReplied = (userId: string) => {
+    setOverview((prev) =>
+      prev
+        ? {
+            ...prev,
+            members: prev.members.map((m) =>
+              m.userId === userId ? { ...m, checkins: m.checkins.map((c, i) => (i === 0 ? { ...c, replied: true } : c)) } : m,
+            ),
+          }
+        : prev,
+    );
   };
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const navItems: CoachNavItem[] = [
-    { id: "today", label: "Today", icon: <Sun />, active: view === "members" && section === "today", onSelect: showToday },
-    {
-      id: "checkins",
-      label: "Check-in inbox",
-      short: "Inbox",
-      icon: <Inbox />,
-      count: counts.toReview,
-      active: view === "members" && section === "members" && filter === "reply",
-      onSelect: () => showMembers("reply"),
-    },
-    {
-      id: "members",
-      label: "Members",
-      icon: <Users />,
-      note: summaries.length,
-      active: view === "members" && section === "members" && filter !== "reply",
-      onSelect: () => showMembers("all"),
-    },
-    { id: "assign", label: "Programs & habits", short: "Programs", icon: <ClipboardList />, active: view === "assign", onSelect: () => setView("assign") },
-    { id: "testimonials", label: "Testimonials", short: "Stories", icon: <Star />, active: view === "testimonials", onSelect: () => setView("testimonials") },
+    { id: "today", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
+    { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview, active: view === "inbox", onSelect: () => openInbox() },
+    { id: "members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
+    { id: "library", label: "Library", icon: <ClipboardList />, active: view === "library", onSelect: () => setView("library") },
   ];
 
   return (
@@ -311,7 +322,10 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value);
-                    if (view !== "members") setView("members");
+                    if (view !== "members" || selected) {
+                      setView("members");
+                      setSelected(null);
+                    }
                   }}
                   className="pl-9"
                 />
@@ -338,7 +352,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
       <div className={cn(WRAP, "py-6 pb-28 lg:grid lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:items-start lg:gap-6 lg:pb-6")}>
         {overview ? (
           <>
-            <CoachNav className="hidden lg:block" items={navItems} footer={overview.photoStorage ? <PhotoStorageMeter {...overview.photoStorage} /> : null} />
+            <CoachNav className="hidden lg:block" items={navItems} />
             <CoachBottomNav items={navItems} />
           </>
         ) : (
@@ -368,268 +382,289 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               <div className="h-20 animate-pulse rounded-lg bg-muted/30" />
               <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
             </div>
-          ) : view === "testimonials" ? (
-            <CoachTestimonials
+          ) : view === "library" ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-2xl font-bold tracking-tight">Library</h2>
+                <SegmentedControl
+                  ariaLabel="Library section"
+                  value={libraryTab}
+                  onValueChange={setLibraryTab}
+                  options={[
+                    { value: "programs" as const, label: "Programs & habits" },
+                    { value: "testimonials" as const, label: "Wins & testimonials" },
+                  ]}
+                  className="w-auto"
+                />
+              </div>
+              {libraryTab === "programs" ? (
+                <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
+              ) : (
+                <CoachTestimonials
+                  companyId={companyId}
+                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
+                  unit={unit}
+                />
+              )}
+              {overview.photoStorage ? (
+                <div className="max-w-xs rounded-[1.25rem] border border-primary/15 p-4">
+                  <PhotoStorageMeter {...overview.photoStorage} />
+                </div>
+              ) : null}
+            </div>
+          ) : view === "inbox" ? (
+            <CoachInbox
+              items={inbox}
+              openId={inboxId}
+              onOpenId={setInboxId}
               companyId={companyId}
-              names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
               unit={unit}
+              onReplied={markReplied}
+              onOpenProfile={(id) => openMember(id)}
             />
-          ) : view === "assign" ? (
-            <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
-          ) : (
-            <>
-              {section === "today" && !anyOpen && summaries.length > 0 ? (
+          ) : view === "today" ? (
+            <div className="space-y-5">
+              {summaries.length > 0 ? (
                 <PhoneToday
                   members={summaries}
                   today={today}
-                  onOpen={openMember}
+                  onOpen={openFromToday}
                   onSearch={() => {
                     showMembers("all");
                     requestAnimationFrame(() => document.getElementById("coach-search")?.focus());
                   }}
                 />
               ) : null}
-              <div className={cn("space-y-5", anyOpen && "hidden xl:block", section === "members" ? "hidden" : summaries.length > 0 && "max-lg:hidden")}>
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <div>
-                    <h2 className="text-2xl font-semibold tracking-tight">{greeting}, Coach</h2>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })} · {counts.total}{" "}
-                      member{counts.total === 1 ? "" : "s"} sharing
-                      {overview.members.length > counts.total ? ` of ${overview.members.length}` : ""}
-                      {counts.attention > 0 ? ` · ${counts.attention} need${counts.attention === 1 ? "s" : ""} you today` : ""}
-                    </p>
-                  </div>
-                  <p className="text-[12px] text-muted-foreground">
-                    Updated {new Date(overview.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              <div className={cn("space-y-5", summaries.length > 0 && "max-lg:hidden")}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight">{greeting}, Coach</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })} · {counts.total}{" "}
+                    member{counts.total === 1 ? "" : "s"} sharing
+                    {overview.members.length > counts.total ? ` of ${overview.members.length}` : ""}
+                    {counts.attention > 0 ? ` · ${counts.attention} need${counts.attention === 1 ? "s" : ""} you today` : ""}
                   </p>
                 </div>
-                {summaries.length > 0 ? (
-                  <>
-                    <TodayLanes members={summaries} unit={unit} onOpen={openMember} onShowAll={showMembers} />
-                    <WeekStrip
-                      items={[
-                        { label: "Logged this week", value: counts.loggedWeek, of: `of ${counts.total}`, sub: "any log in the last 7 days" },
-                        {
-                          label: "Avg adherence",
-                          value: avgWeek === null ? "—" : `${avgWeek}%`,
-                          sub: scored.length > 0 ? `habit scorecard, ${scored.length} scored` : "no habit logs this week",
-                        },
-                        {
-                          label: "Workouts",
-                          value: counts.workouts,
-                          sub: `last 7 days, ${counts.training} member${counts.training === 1 ? "" : "s"} training`,
-                        },
-                        {
-                          label: "Check-ins",
-                          value: counts.checkedIn,
-                          of: `of ${counts.total}`,
-                          sub: counts.toReview > 0 ? `${counts.toReview} waiting on you` : "last 7 days, all reviewed",
-                          emphasis: counts.toReview > 0,
-                        },
-                      ]}
-                    />
-                  </>
+                <p className="text-[12px] text-muted-foreground">
+                  Updated {new Date(overview.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </p>
+              </div>
+              {summaries.length > 0 ? (
+                <>
+                  <TodayLanes members={summaries} unit={unit} onOpen={openFromToday} onShowAll={showMembers} />
+                  <WeekStrip
+                    items={[
+                      { label: "Logged this week", value: counts.loggedWeek, of: `of ${counts.total}`, sub: "any log in the last 7 days" },
+                      {
+                        label: "Avg adherence",
+                        value: avgWeek === null ? "—" : `${avgWeek}%`,
+                        sub: scored.length > 0 ? `habit scorecard, ${scored.length} scored` : "no habit logs this week",
+                      },
+                      {
+                        label: "Workouts",
+                        value: counts.workouts,
+                        sub: `last 7 days, ${counts.training} member${counts.training === 1 ? "" : "s"} training`,
+                      },
+                      {
+                        label: "Check-ins",
+                        value: counts.checkedIn,
+                        of: `of ${counts.total}`,
+                        sub: counts.toReview > 0 ? `${counts.toReview} waiting on you` : "last 7 days, all reviewed",
+                        emphasis: counts.toReview > 0,
+                      },
+                    ]}
+                  />
+                </>
+              ) : null}
+              </div>
+              {summaries.length === 0 ? (
+                <EmptyNote>
+                  {overview.members.length === 0
+                    ? "No members yet. Once people join your whop, they'll appear here."
+                    : "Nobody is sharing their progress with you yet. Ask them from Members, or they can turn on sharing in their app's Settings."}
+                </EmptyNote>
+              ) : null}
+            </div>
+          ) : current ? (
+            <MemberDetail
+              tags={<MemberTagsCard companyId={companyId} memberId={current.data.userId} data={tagsData} onChange={setTagsData} />}
+              m={current}
+              unit={unit}
+              today={today}
+              companyId={companyId}
+              tab={tab}
+              onTab={setTab}
+              onBack={() => setSelected(null)}
+              onStopped={(sharing) => {
+                setSharing(current.data.userId, sharing, true);
+                setSelected(null);
+              }}
+            />
+          ) : currentNotSharing ? (
+            <NotSharingDetail m={currentNotSharing} companyId={companyId} today={today} onBack={() => setSelected(null)} onChange={setSharing} />
+          ) : (
+            <section
+              aria-labelledby="coach-members"
+              className="min-w-0 space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 id="coach-members" className="text-base font-semibold">
+                  Members
+                </h2>
+                <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
+                  {FILTERS.map((f) => {
+                    const n = summaries.filter((m) => matchesFilter(m, f.value)).length;
+                    return (
+                      <button
+                        key={f.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={filter === f.value}
+                        onClick={() => setFilter(f.value)}
+                        className={cn(
+                          "h-8 rounded-full border px-3 text-xs font-medium transition-colors",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          filter === f.value
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:bg-muted/40",
+                        )}
+                      >
+                        {f.label} <span className="tabular opacity-80">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <div className="relative min-w-[12rem] flex-1 lg:hidden">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <label htmlFor="coach-search" className="sr-only">
+                    Search members
+                  </label>
+                  <Input
+                    id="coach-search"
+                    type="search"
+                    placeholder="Search by name or username"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <label className="sr-only" htmlFor="coach-flag">
+                  Filter by flag
+                </label>
+                <select
+                  id="coach-flag"
+                  value={(FLAG_FILTERS as readonly string[]).includes(filter) ? filter : ""}
+                  onChange={(e) => setFilter((e.target.value || "all") as Filter)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Any flag</option>
+                  {FLAG_FILTERS.map((f) => (
+                    <option key={f} value={f}>
+                      {FLAG_LABELS[f]} ({summaries.filter((m) => m.flags.includes(f)).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <SegmentedControl
+                  ariaLabel="Sort members"
+                  size="sm"
+                  value={sort}
+                  onValueChange={setSort}
+                  options={[
+                    { value: "attention" as const, label: "Most urgent" },
+                    { value: "health" as const, label: "Health score" },
+                    { value: "name" as const, label: "Name" },
+                  ]}
+                  className="w-auto"
+                />
+                {tagsData && tagsData.tags.length > 0 ? (
+                  <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[12px] text-muted-foreground">Tags:</span>
+                    {tagsData.tags.map((t) => {
+                      const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
+                      const on = tagFilter === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => setTagFilter(on ? null : t.id)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-0.5 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
+                          )}
+                        >
+                          {t.name} <span className="tabular opacity-80">{n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
-                {/* ------------------------------ list ------------------------------ */}
-                <section
-                  aria-labelledby="coach-members"
-                  className={cn("min-w-0 space-y-3", anyOpen && "hidden xl:block", section === "today" && summaries.length > 0 && "max-lg:hidden")}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 id="coach-members" className="text-base font-semibold">
-                      Members
-                    </h2>
-                    <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
-                      {FILTERS.map((f) => {
-                        const n = summaries.filter((m) => matchesFilter(m, f.value)).length;
-                        return (
-                          <button
-                            key={f.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={filter === f.value}
-                            onClick={() => setFilter(f.value)}
-                            className={cn(
-                              "h-8 rounded-full border px-3 text-xs font-medium transition-colors",
-                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              filter === f.value
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border text-muted-foreground hover:bg-muted/40",
-                            )}
-                          >
-                            {f.label} <span className="tabular opacity-80">{n}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+              {summaries.length === 0 ? (
+                <EmptyNote>
+                  {overview.members.length === 0
+                    ? "No members yet. Once people join your whop, they'll appear here."
+                    : "Nobody is sharing their progress with you yet. Ask a member below, or they can turn on sharing in their app's Settings."}
+                </EmptyNote>
+              ) : shown.length === 0 ? (
+                <EmptyNote>Nobody matches this filter.</EmptyNote>
+              ) : (
+                <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card">
+                  <div
+                    aria-hidden
+                    className={cn(
+                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
+                      ROW_GRID,
+                    )}
+                  >
+                    <span>Member</span>
+                    <span className="text-center">Health</span>
+                    <span className="text-right">Week</span>
+                    <span className="text-right">Wt / wk</span>
+                    <span>Last log</span>
+                    <span>Check-in</span>
                   </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <div className="relative min-w-[12rem] flex-1 lg:hidden">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <label htmlFor="coach-search" className="sr-only">
-                        Search members
-                      </label>
-                      <Input
-                        id="coach-search"
-                        type="search"
-                        placeholder="Search by name or username"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="pl-9"
-                      />
-                    </div>
-                    <label className="sr-only" htmlFor="coach-flag">
-                      Filter by flag
-                    </label>
-                    <select
-                      id="coach-flag"
-                      value={(FLAG_FILTERS as readonly string[]).includes(filter) ? filter : ""}
-                      onChange={(e) => setFilter((e.target.value || "all") as Filter)}
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="">Any flag</option>
-                      {FLAG_FILTERS.map((f) => (
-                        <option key={f} value={f}>
-                          {FLAG_LABELS[f]} ({summaries.filter((m) => m.flags.includes(f)).length})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <SegmentedControl
-                      ariaLabel="Sort members"
-                      size="sm"
-                      value={sort}
-                      onValueChange={setSort}
-                      options={[
-                        { value: "attention" as const, label: "Most urgent" },
-                        { value: "health" as const, label: "Health score" },
-                        { value: "name" as const, label: "Name" },
-                      ]}
-                      className="w-auto"
-                    />
-                    {tagsData && tagsData.tags.length > 0 ? (
-                      <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[12px] text-muted-foreground">Tags:</span>
-                        {tagsData.tags.map((t) => {
-                          const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
-                          const on = tagFilter === t.id;
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              role="radio"
-                              aria-checked={on}
-                              onClick={() => setTagFilter(on ? null : t.id)}
-                              className={cn(
-                                "rounded-full border px-2.5 py-0.5 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
-                              )}
-                            >
-                              {t.name} <span className="tabular opacity-80">{n}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {summaries.length === 0 ? (
-                    <EmptyNote>
-                      {overview.members.length === 0
-                        ? "No members yet. Once people join your whop, they'll appear here."
-                        : "Nobody is sharing their progress with you yet. Ask a member below, or they can turn on sharing in their app's Settings."}
-                    </EmptyNote>
-                  ) : shown.length === 0 ? (
-                    <EmptyNote>Nobody matches this filter.</EmptyNote>
-                  ) : (
-                    <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card">
-                      <div
-                        aria-hidden
-                        className={cn(
-                          "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
-                          ROW_GRID,
-                        )}
-                      >
-                        <span>Member</span>
-                        <span className="text-center">Health</span>
-                        <span className="text-right">Week</span>
-                        <span className="text-right">Wt / wk</span>
-                        <span>Last log</span>
-                        <span>Check-in</span>
-                      </div>
-                      <ul className="divide-y divide-border">
-                        {shown.map((m) => (
-                          <li key={m.data.userId}>
-                            <MemberRow
-                              m={m}
-                              unit={unit}
-                              selected={m.data.userId === selected}
-                              onOpen={() => openMember(m.data.userId)}
-                              tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {notSharing.length > 0 ? (
-                    <NotSharingList
-                      members={shownNotSharing}
-                      total={notSharing.length}
-                      selected={selected}
-                      companyId={companyId}
-                      today={today}
-                      onOpen={(id) => openMember(id)}
-                      onChange={setSharing}
-                    />
-                  ) : null}
-
-                  <p className="text-[12px] text-muted-foreground">
-                    Read-only: members&apos; plans and logs can only be changed from their own app. You only see members who share their
-                    progress with you.
-                  </p>
-                </section>
-
-                {/* ----------------------------- detail ----------------------------- */}
-                <div className={cn("min-w-0", !anyOpen && "hidden xl:block")}>
-                  {current ? (
-                    <MemberDetail
-                      tags={
-                        <MemberTagsCard companyId={companyId} memberId={current.data.userId} data={tagsData} onChange={setTagsData} />
-                      }
-                      m={current}
-                      unit={unit}
-                      today={today}
-                      companyId={companyId}
-                      tab={tab}
-                      onTab={setTab}
-                      onBack={() => setSelected(null)}
-                      onStopped={(sharing) => {
-                        setSharing(current.data.userId, sharing, true);
-                        setSelected(null);
-                      }}
-                    />
-                  ) : currentNotSharing ? (
-                    <NotSharingDetail
-                      m={currentNotSharing}
-                      companyId={companyId}
-                      today={today}
-                      onBack={() => setSelected(null)}
-                      onChange={setSharing}
-                    />
-                  ) : (
-                    <EmptyNote>Select a member to see their progress, check-ins, food and training.</EmptyNote>
-                  )}
+                  <ul className="divide-y divide-border">
+                    {shown.map((m) => (
+                      <li key={m.data.userId}>
+                        <MemberRow
+                          m={m}
+                          unit={unit}
+                          selected={m.data.userId === selected}
+                          onOpen={() => openMember(m.data.userId)}
+                          tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
+                        />
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
-            </>
+              )}
+              {notSharing.length > 0 ? (
+                <NotSharingList
+                  members={shownNotSharing}
+                  total={notSharing.length}
+                  selected={selected}
+                  companyId={companyId}
+                  today={today}
+                  onOpen={(id) => openMember(id)}
+                  onChange={setSharing}
+                />
+              ) : null}
+
+              <p className="text-[12px] text-muted-foreground">
+                Read-only: members&apos; plans and logs can only be changed from their own app. You only see members who share their
+                progress with you.
+              </p>
+            </section>
           )}
         </main>
       </div>
@@ -951,15 +986,14 @@ function pausedLabel(p: PausePeriod): string {
 
 /* ================================= detail ================================= */
 
-type DetailTab = "overview" | "checkins" | "food" | "training" | "body" | "notes";
+type DetailTab = "overview" | "checkins" | "food" | "training" | "body";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "checkins", label: "Check-ins" },
-  { id: "food", label: "Food" },
+  { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
   { id: "body", label: "Body" },
-  { id: "notes", label: "Notes" },
 ];
 
 function MemberDetail({
@@ -1005,10 +1039,12 @@ function MemberDetail({
 
   return (
     <div className="space-y-4">
-      <Button variant="ghost" size="sm" className="h-8 px-2 xl:hidden" onClick={onBack}>
+      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onBack}>
         <ArrowLeft />
         All members
       </Button>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className="min-w-0 space-y-4">
 
       <div className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
         <div className="flex items-center gap-3">
@@ -1045,7 +1081,23 @@ function MemberDetail({
               Reply to check-in
             </Button>
           ) : null}
-          <Button size="sm" variant="outline" onClick={() => onTab("notes")}>
+          <Button size="sm" variant="outline" onClick={() => onTab("food")}>
+            <Utensils />
+            Set macros
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onTab("training")}>
+            <ClipboardList />
+            Assign program
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const notes = document.getElementById("member-notes");
+              notes?.scrollIntoView({ behavior: "smooth", block: "start" });
+              notes?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+            }}
+          >
             <StickyNote />
             Add note
           </Button>
@@ -1291,12 +1343,14 @@ function MemberDetail({
               <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
             ) : null}
           </>
-        ) : (
-          <>
-            <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
-            {tags}
-          </>
-        )}
+        ) : null}
+      </div>
+      </div>
+      {/* Notes and tags stay beside the member's page on a computer, under it on a phone. */}
+      <aside id="member-notes" aria-label="Notes and tags" className="min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20">
+        <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
+        {tags}
+      </aside>
       </div>
     </div>
   );
@@ -1307,6 +1361,171 @@ function Mini({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-border px-3 py-2">
       <p className="text-[12px] text-muted-foreground">{label}</p>
       <p className="font-semibold">{value}</p>
+    </div>
+  );
+}
+
+/* ================================== inbox ================================== */
+
+function sentAgo(iso: string | undefined, now: number): string {
+  if (!iso) return "Check-in waiting";
+  const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
+  if (h < 1) return "Sent just now";
+  if (h < 24) return `Sent ${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "Sent yesterday" : `Sent ${d} days ago`;
+}
+
+/**
+ * Check-ins to answer, oldest first: the list on the left, the open one on
+ * the right with its numbers, the AI draft and voice reply. "Send & next"
+ * answers it and opens the next, so the week's batch is one sitting. On a
+ * phone the list and the check-in take turns.
+ */
+function CoachInbox({
+  items,
+  openId,
+  onOpenId,
+  companyId,
+  unit,
+  onReplied,
+  onOpenProfile,
+}: {
+  items: MemberSummary[];
+  openId: string | null;
+  onOpenId: (id: string | null) => void;
+  companyId: string;
+  unit: WeightUnit;
+  onReplied: (userId: string) => void;
+  onOpenProfile: (userId: string) => void;
+}) {
+  const [wide, setWide] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  const now = Date.now();
+  // On a computer the oldest opens by itself; on a phone the list shows first.
+  const current = items.find((m) => m.data.userId === openId) ?? (wide ? (items[0] ?? null) : null);
+  const nextAfter = (id: string) => {
+    const i = items.findIndex((m) => m.data.userId === id);
+    return items[i + 1]?.data.userId ?? items.find((m) => m.data.userId !== id)?.data.userId ?? null;
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="space-y-5">
+        <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
+        <EmptyNote>All caught up. No check-ins are waiting for a reply.</EmptyNote>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
+        <p className="text-sm text-muted-foreground">
+          {items.length} check-in{items.length === 1 ? "" : "s"} waiting · oldest first
+        </p>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start">
+        <ul aria-label="Check-ins waiting" className={cn("molten-card space-y-1 rounded-[1.25rem] border border-primary/15 bg-card p-2", current && "max-lg:hidden")}>
+          {items.map((m) => {
+            const on = current?.data.userId === m.data.userId;
+            return (
+              <li key={m.data.userId}>
+                <button
+                  type="button"
+                  onClick={() => onOpenId(m.data.userId)}
+                  aria-current={on ? "true" : undefined}
+                  className={cn(
+                    "flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    on ? "bg-primary/[0.14]" : "hover:bg-muted/40",
+                  )}
+                >
+                  <Avatar name={m.displayName} url={m.data.avatarUrl} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{m.displayName}</span>
+                    <span className="block truncate text-[12px] text-muted-foreground">{sentAgo(m.lastCheckin?.submittedAt, now)}</span>
+                  </span>
+                  <HealthPill health={m.health} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {current ? (
+          <div className="min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={() => onOpenId(null)}>
+                <ArrowLeft />
+                All check-ins
+              </Button>
+            </div>
+            <div className="molten-card flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-primary/15 bg-card p-4">
+              <Avatar name={current.displayName} url={current.data.avatarUrl} size="h-11 w-11" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-lg font-bold">{current.displayName}</p>
+                <p className="tabular text-xs text-muted-foreground">
+                  {[
+                    current.week.percent === null ? null : `Week ${current.week.percent}%`,
+                    current.weekChangeLb === null ? null : `${signedWeight(current.weekChangeLb, unit)} / wk`,
+                    current.food7 ? `food ${current.food7.days}/7 days` : "no food logged",
+                    `last log ${describeDaysAgo(current.daysSinceLog)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {current.flags.filter((f) => f !== "reply").length > 0 ? (
+                  <span className="mt-1 flex flex-wrap gap-1">
+                    {current.flags
+                      .filter((f) => f !== "reply")
+                      .map((f) => (
+                        <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
+                          {FLAG_LABELS[f]}
+                        </Badge>
+                      ))}
+                  </span>
+                ) : null}
+              </div>
+              <HealthPill health={current.health} large />
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                <Button size="sm" variant="outline" onClick={() => onOpenProfile(current.data.userId)}>
+                  Open profile
+                </Button>
+                {items.length > 1 ? (
+                  <Button size="sm" variant="ghost" onClick={() => onOpenId(nextAfter(current.data.userId))}>
+                    Skip for now
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <MemberCheckinsCard
+              key={current.data.userId}
+              companyId={companyId}
+              memberId={current.data.userId}
+              memberName={current.displayName}
+              unit={unit}
+              sendLabel={items.length > 1 ? "Send & next" : "Send reply"}
+              onReplied={() => {
+                const id = current.data.userId;
+                const next = nextAfter(id);
+                // A moment to see "Sent", then on to the next one.
+                window.setTimeout(() => {
+                  onReplied(id);
+                  onOpenId(next);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }, 1200);
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -260,7 +260,23 @@ export function CheckinAnswersText({ c }: { c: Checkin }) {
   );
 }
 
-export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { companyId: string; memberId: string; memberName: string; unit: WeightUnit }) {
+export function MemberCheckinsCard({
+  companyId,
+  memberId,
+  memberName,
+  unit,
+  onReplied,
+  sendLabel,
+}: {
+  companyId: string;
+  memberId: string;
+  memberName: string;
+  unit: WeightUnit;
+  /** A reply (written or voice) went out: the inbox moves on to the next check-in. */
+  onReplied?: () => void;
+  /** The send button's words ("Send & next" in the inbox). */
+  sendLabel?: string;
+}) {
   const [checkins, setCheckins] = React.useState<Checkin[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState<string | null>(null);
@@ -317,6 +333,7 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
       setCheckins(r.checkins);
       setReply("");
       setMessage(r.notified ? `Sent. ${first(memberName)} got a notification.` : `Sent. ${first(memberName)} sees it next time they open the app.`);
+      onReplied?.();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Couldn't send. Try again.");
     } finally {
@@ -422,13 +439,14 @@ export function MemberCheckinsCard({ companyId, memberId, memberName, unit }: { 
                         </details>
                         <Button size="sm" onClick={() => void send(c.weekStart)} disabled={!reply.trim() || sending}>
                           <Send />
-                          {sending ? "Sending…" : c.replyAudio ? "Add a written reply" : "Send reply"}
+                          {sending ? "Sending…" : c.replyAudio ? "Add a written reply" : (sendLabel ?? "Send reply")}
                         </Button>
                         {!c.replyAudio ? (
                           <VoiceRecorder
                             uploadUrl={`/api/coach/checkins/voice?${qs(companyId, memberId)}&weekStart=${c.weekStart}`}
                             onSent={(notified) => {
                               setMessage(notified ? `Voice reply sent. ${first(memberName)} got a notification.` : `Voice reply sent. ${first(memberName)} hears it next time they open the app.`);
+                              onReplied?.();
                               void call<{ checkins: Checkin[] }>(`/api/coach/checkins?${qs(companyId, memberId)}`).then((r) => setCheckins(r.checkins));
                             }}
                           />
