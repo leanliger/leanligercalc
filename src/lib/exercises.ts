@@ -213,15 +213,18 @@ const ALIASES: Partial<Record<string, string>> = {
 
 /**
  * One-arm and one-leg versions of library exercises, kept as exercises of
- * their own so their weights don't mix with the two-sided version's. They
- * share its drawings, and are the only exercises logged one side at a time.
+ * their own so their weights don't mix with the two-sided version's, and the
+ * only exercises logged one side at a time. Each sits after its two-sided
+ * version (`base`) and shares its drawings, unless `art` says it has its own.
  */
-type OneSideRow = [id: string, name: string, muscle: Muscle, equipment: Equipment, cue1: string, cue2: string, artOf: string, aka: string];
+type OneSideRow = [id: string, name: string, muscle: Muscle, equipment: Equipment, cue1: string, cue2: string, base: string, aka: string, art?: boolean];
 
 const ONE_SIDE_ROWS: OneSideRow[] = [
   ["single-arm-lat-pulldown", "Single-arm lat pulldown", "back", "cable", "Let the shoulder stretch up at the top", "Drive the elbow down to your hip", "lat-pulldown", "one arm unilateral"],
   ["single-arm-cable-row", "Single-arm seated cable row", "back", "cable", "Sit tall, no twisting", "Pull your elbow back past your ribs", "seated-cable-row", "one arm unilateral"],
   ["single-arm-cable-curl", "Single-arm cable curl", "biceps", "cable", "Elbow by your side", "Squeeze at the top", "cable-curl", "one arm unilateral"],
+  ["single-arm-incline-db-curl", "Single-arm incline dumbbell curl", "biceps", "dumbbell", "Bench at about 45°, working arm hangs straight down", "Curl without moving the elbow forward", "incline-db-curl", "one arm unilateral", true],
+  ["single-arm-preacher-curl", "Single-arm dumbbell preacher curl", "biceps", "dumbbell", "Back of the arm flat on the pad", "Lower all the way, don't fully relax at the bottom", "preacher-curl", "one arm unilateral", true],
   ["single-arm-triceps-pushdown", "Single-arm cable triceps pushdown", "triceps", "cable", "Elbow pinned to your side", "Straighten fully, slow on the way up", "triceps-pushdown", "one arm unilateral pressdown"],
   ["single-arm-machine-lateral-raise", "Single-arm machine lateral raise", "shoulders", "machine", "Pad just above the elbow", "Raise to shoulder height, slow on the way down", "machine-lateral-raise", "one arm unilateral side raise"],
   ["single-arm-overhead-triceps-extension", "Single-arm overhead cable triceps extension", "triceps", "cable", "Elbow points up and stays still", "Full stretch behind your head", "overhead-triceps-extension", "one arm unilateral"],
@@ -247,7 +250,7 @@ const TWO_SIDED: readonly Exercise[] = ROWS.map(([id, name, muscle, equipment, c
 export const LIBRARY: readonly Exercise[] = TWO_SIDED.flatMap((e) => [
   e,
   ...ONE_SIDE_ROWS.filter((r) => r[6] === e.id).map(
-    ([id, name, muscle, equipment, cue1, cue2, artOf, aka]): Exercise => ({
+    ([id, name, muscle, equipment, cue1, cue2, base, aka, art]): Exercise => ({
       id,
       name,
       muscle,
@@ -258,7 +261,7 @@ export const LIBRARY: readonly Exercise[] = TWO_SIDED.flatMap((e) => [
       aka,
       custom: false,
       oneSide: true,
-      artOf,
+      artOf: art ? undefined : base,
     }),
   ),
 ]);

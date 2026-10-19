@@ -11,9 +11,12 @@ Changes: the original SVG drawings were rasterized to WebP and resized
 (128 px thumbnails, 384 px drawings), and two of the three drawings per
 exercise were selected. Files are renamed to the app's exercise ids.
 
-machine-triceps-extension*.webp come straight from Everkinetic
-(github.com/everkinetic/data, exercise 0210 "Triceps extensions using
-machine", same license), rasterized and resized the same way.
+machine-triceps-extension*.webp, single-arm-incline-db-curl*.webp and
+single-arm-preacher-curl*.webp come straight from Everkinetic
+(github.com/everkinetic/data, exercises 0210 "Triceps extensions using
+machine", 0214 "Alternating incline curl with dumbbell" and 0237 "One arm
+preacher curl with dumbbell", same license), rasterized and resized the
+same way.
 
 incline-machine-press*.webp are not from Workout Guide or Everkinetic:
 they were made from a drawing supplied by the app's owner, and are not
