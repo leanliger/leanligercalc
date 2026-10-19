@@ -192,7 +192,6 @@ const ROWS: Row[] = [
 /** Built-in exercises with no drawing of their own, shown with a close one's. */
 const ART_OF: Partial<Record<string, string>> = {
   "incline-machine-press": "machine-chest-press",
-  "machine-triceps-extension": "skull-crusher",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
