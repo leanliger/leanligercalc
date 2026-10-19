@@ -223,6 +223,7 @@ const ONE_SIDE_ROWS: OneSideRow[] = [
   ["single-arm-lat-pulldown", "Single-arm lat pulldown", "back", "cable", "Let the shoulder stretch up at the top", "Drive the elbow down to your hip", "lat-pulldown", "one arm unilateral"],
   ["single-arm-cable-row", "Single-arm seated cable row", "back", "cable", "Sit tall, no twisting", "Pull your elbow back past your ribs", "seated-cable-row", "one arm unilateral"],
   ["single-arm-cable-curl", "Single-arm cable curl", "biceps", "cable", "Elbow by your side", "Squeeze at the top", "cable-curl", "one arm unilateral"],
+  ["single-arm-cable-hammer-curl", "Single-arm cable hammer curl", "biceps", "cable", "Palm faces in, elbow by your side", "Curl up without turning the wrist", "cable-curl", "one arm unilateral hammer", true],
   ["single-arm-incline-db-curl", "Single-arm incline dumbbell curl", "biceps", "dumbbell", "Bench at about 45°, working arm hangs straight down", "Curl without moving the elbow forward", "incline-db-curl", "one arm unilateral", true],
   ["single-arm-preacher-curl", "Single-arm dumbbell preacher curl", "biceps", "dumbbell", "Back of the arm flat on the pad", "Lower all the way, don't fully relax at the bottom", "preacher-curl", "one arm unilateral", true],
   ["single-arm-triceps-pushdown", "Single-arm cable triceps pushdown", "triceps", "cable", "Elbow pinned to your side", "Straighten fully, slow on the way up", "triceps-pushdown", "one arm unilateral pressdown"],
