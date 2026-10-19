@@ -42,6 +42,7 @@ import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
 import { Avatar, CoachBottomNav, CoachNav, PhoneToday, PhotoStorageMeter, TodayLanes, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
 import { CoachIntakeChart } from "@/components/coach-member-food";
+import { MemberTimelineCard } from "@/components/coach-member-timeline";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
   FLAG_LABELS,
@@ -986,10 +987,11 @@ function pausedLabel(p: PausePeriod): string {
 
 /* ================================= detail ================================= */
 
-type DetailTab = "overview" | "checkins" | "food" | "training" | "body";
+type DetailTab = "overview" | "timeline" | "checkins" | "food" | "training" | "body";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "timeline", label: "Timeline" },
   { id: "checkins", label: "Check-ins" },
   { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
@@ -1239,6 +1241,8 @@ function MemberDetail({
               This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
             </p>
           </>
+        ) : tab === "timeline" ? (
+          <MemberTimelineCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} today={today} />
         ) : tab === "checkins" ? (
           <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
         ) : tab === "food" ? (
