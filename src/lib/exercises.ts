@@ -82,7 +82,7 @@ export interface Exercise {
   aka?: string;
   /** Done one arm or leg at a time: sets are logged per side. */
   oneSide?: boolean;
-  /** A built-in exercise whose drawings it shares (a one-sided version of it). */
+  /** A built-in exercise whose drawings it shares (its two-sided version, or a close one). */
   artOf?: string;
   /** True for exercises a member added themselves. */
   custom: boolean;
@@ -97,6 +97,7 @@ const ROWS: Row[] = [
   ["db-bench-press", "Dumbbell bench press", "chest", "dumbbell", "Lower to a deep stretch at the chest", "Press up and slightly in"],
   ["incline-db-press", "Incline dumbbell press", "chest", "dumbbell", "Bench at about 30°", "Elbows slightly tucked, not flared"],
   ["machine-chest-press", "Machine chest press", "chest", "machine", "Handles level with mid-chest", "Shoulder blades stay back on the pad"],
+  ["incline-machine-press", "Incline machine chest press", "chest", "machine", "Seat so the handles line up with your upper chest", "Shoulder blades back on the pad, press up and out"],
   ["smith-bench-press", "Smith machine bench press", "chest", "smith", "Set the bench so the bar meets mid-chest", "Shoulder blades pinched, control the lowering"],
   ["smith-incline-press", "Smith machine incline bench press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
   ["cable-fly", "Cable fly", "chest", "cable", "Slight bend in the elbows, fixed throughout", "Squeeze hands together in front of the chest"],
@@ -146,6 +147,7 @@ const ROWS: Row[] = [
   ["db-overhead-extension", "Dumbbell overhead extension", "triceps", "dumbbell", "Hold one dumbbell with both hands", "Elbows close to your head"],
   ["triceps-dip", "Triceps dip", "triceps", "bodyweight", "Body upright", "Lower to about 90° at the elbow"],
   ["triceps-dip-machine", "Triceps dip machine", "triceps", "machine", "Sit tall, elbows pointing back", "Press down to straight arms, slow on the way up"],
+  ["machine-triceps-extension", "Machine triceps extension", "triceps", "machine", "Elbows on the pad, in line with the machine's pivot", "Straighten fully, slow on the way back"],
   // Quads
   ["back-squat", "Barbell back squat", "quads", "barbell", "Brace, then sit down between your hips", "Knees track over your toes"],
   ["front-squat", "Front squat", "quads", "barbell", "Elbows high", "Stay upright through the lift"],
@@ -187,6 +189,12 @@ const ROWS: Row[] = [
   ["dead-bug", "Dead bug", "core", "bodyweight", "Lower back pressed to the floor", "Move opposite arm and leg slowly"],
 ];
 
+/** Built-in exercises with no drawing of their own, shown with a close one's. */
+const ART_OF: Partial<Record<string, string>> = {
+  "incline-machine-press": "machine-chest-press",
+  "machine-triceps-extension": "skull-crusher",
+};
+
 /** Optional demo videos for built-in exercises, by id (https links). */
 const VIDEOS: Partial<Record<string, string>> = {};
 
@@ -196,6 +204,8 @@ const ALIASES: Partial<Record<string, string>> = {
   "chest-supported-row": "chest supported row machine",
   "t-bar-row": "tbar",
   "smith-incline-press": "incline smith press",
+  "incline-machine-press": "incline press machine",
+  "machine-triceps-extension": "triceps extension machine seated",
   "triceps-dip-machine": "seated dip machine",
   "leg-press-calf-raise": "calf press",
 };
@@ -229,6 +239,7 @@ const TWO_SIDED: readonly Exercise[] = ROWS.map(([id, name, muscle, equipment, c
   video: VIDEOS[id] ?? null,
   aka: ALIASES[id],
   custom: false,
+  artOf: ART_OF[id],
 }));
 
 /** Each one-sided version sits right after the exercise it's a version of. */
