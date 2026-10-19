@@ -116,6 +116,7 @@ const ROWS: Row[] = [
   ["chest-supported-row", "Chest-supported row", "back", "machine", "Chest stays on the pad", "Squeeze shoulder blades at the top"],
   ["t-bar-row", "T-bar row", "back", "barbell", "Hinge with a flat back", "Pull to the chest without jerking"],
   ["straight-arm-pulldown", "Straight-arm pulldown", "back", "cable", "Arms nearly straight", "Sweep the bar down to your thighs"],
+  ["cable-lat-pullover", "Cable lat pullover", "back", "cable", "Soft bend in the elbows, start from a full stretch overhead", "Pull with the lats down toward your hips, ribs stay down"],
   ["rack-pull", "Rack pull", "back", "barbell", "Bar starts just below the knees", "Lock out with the hips, don't lean back"],
   ["smith-deadlift", "Smith machine deadlift", "back", "smith", "Bar over mid-foot, back flat", "Stand up tall, lower under control"],
   ["back-extension", "Back extension", "back", "bodyweight", "Hinge at the hips", "Stop when your body is in a straight line"],
@@ -193,6 +194,7 @@ const ROWS: Row[] = [
 /** Built-in exercises with no drawing of their own, shown with a close one's. */
 const ART_OF: Partial<Record<string, string>> = {
   "machine-reverse-v-squat": "hack-squat",
+  "cable-lat-pullover": "straight-arm-pulldown",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
@@ -206,6 +208,7 @@ const ALIASES: Partial<Record<string, string>> = {
   "smith-incline-press": "incline smith press",
   "incline-machine-press": "incline press machine",
   "machine-reverse-v-squat": "reverse v squat vsquat facing in",
+  "cable-lat-pullover": "rope pullover lying kneeling",
   "machine-triceps-extension": "triceps extension machine seated",
   "triceps-dip-machine": "seated dip machine",
   "leg-press-calf-raise": "calf press",
