@@ -9,12 +9,14 @@
  * (applyProgramEdit), then marks it applied.
  *
  * Only programs the member already has can be edited. The coach can change the
- * name, days and exercises; dates from a program calendar stay as they are.
+ * name, days and exercises, and the program's calendar: put it on dates, move
+ * them, or take it off. An edit that doesn't mention dates keeps the member's.
  * New exercises come from the library; the member's own exercises already in
  * the program can stay.
  */
 
 import { type Exercise } from "./exercises";
+import { sanitizeSchedule, type ProgramSchedule } from "./program-schedule";
 import { findExercise, sanitizeProgram, type Program, type TrainingSettings } from "./training";
 
 export const MEMBER_ID_PATTERN = /^user_[A-Za-z0-9_]{1,40}$/;
@@ -30,18 +32,31 @@ export interface MemberTraining {
   restSec: number;
   /** Programs with an edit the member's app hasn't picked up yet: program id → when it was saved. */
   pending: Record<string, string>;
+  /** Programs that came from a challenge: its leaderboard keeps the challenge's own dates. */
+  challenges?: string[];
 }
 
 /** An edit waiting for the member's app. */
 export interface ProgramEdit {
   id: string;
   programId: string;
+  /** The program without dates. */
   program: Program;
+  /** New dates for it: a calendar, null to take it off the calendar, or absent to keep the member's. */
+  schedule?: ProgramSchedule | null;
   createdAt: string;
 }
 
-/** Check a coach's edit against the member's current training. */
-export function validateProgramEdit(raw: unknown, training: TrainingSettings): { ok: true; program: Program } | { ok: false; error: string } {
+/**
+ * Check a coach's edit against the member's current training. `dates` is the
+ * program's calendar as the coach left it (null: none); leave it out to keep
+ * the member's.
+ */
+export function validateProgramEdit(
+  raw: unknown,
+  training: TrainingSettings,
+  dates?: unknown,
+): { ok: true; program: Program; schedule?: ProgramSchedule | null } | { ok: false; error: string } {
   const clean = sanitizeProgram(raw);
   if (!clean) return { ok: false, error: "That program isn't valid." };
   const current = training.programs.find((p) => p.id === clean.id);
@@ -52,15 +67,24 @@ export function validateProgramEdit(raw: unknown, training: TrainingSettings): {
       return { ok: false, error: "One of the exercises isn't available to this member." };
     }
   }
-  // The calendar dates are the member's (or came with an assignment); an edit doesn't change them.
   const { schedule: _ignored, ...rest } = clean;
-  return { ok: true, program: rest };
+  if (dates === undefined) return { ok: true, program: rest };
+  if (dates === null) return { ok: true, program: rest, schedule: null };
+  const schedule = sanitizeSchedule(dates);
+  if (!schedule) return { ok: false, error: "Those dates aren't valid. Pick a start date, at least one training day and 1–26 weeks." };
+  return { ok: true, program: rest, schedule };
+}
+
+/** The dates a program ends up with after an edit. */
+export function scheduleAfterEdit(current: ProgramSchedule | undefined, edit: Pick<ProgramEdit, "schedule">): ProgramSchedule | undefined {
+  if (edit.schedule === undefined) return current;
+  return edit.schedule ?? undefined;
 }
 
 /**
  * The member's training with a coach's edit applied, or null when the program
- * is gone (deleted since) or the edit can't be used. Keeps the program's id,
- * whether it's active, and its calendar dates.
+ * is gone (deleted since) or the edit can't be used. Keeps the program's id and
+ * whether it's active; its calendar dates change only if the edit sets them.
  */
 export function applyProgramEdit(settings: TrainingSettings, edit: ProgramEdit): TrainingSettings | null {
   const current = settings.programs.find((p) => p.id === edit.programId);
@@ -68,6 +92,7 @@ export function applyProgramEdit(settings: TrainingSettings, edit: ProgramEdit):
   if (!current || !clean) return null;
   const days = clean.days.map((d) => ({ ...d, exercises: d.exercises.filter((e) => findExercise(e.exerciseId, settings.customExercises)) }));
   const { schedule: _ignored, ...rest } = clean;
-  const next: Program = { ...rest, days, ...(current.schedule ? { schedule: current.schedule } : {}) };
+  const schedule = scheduleAfterEdit(current.schedule, edit);
+  const next: Program = { ...rest, days, ...(schedule ? { schedule } : {}) };
   return { ...settings, programs: settings.programs.map((p) => (p.id === current.id ? next : p)) };
 }

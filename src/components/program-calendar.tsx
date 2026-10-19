@@ -95,6 +95,47 @@ export function ProgramCalendar({
   );
 }
 
+const noop = () => {};
+
+/**
+ * Coach dashboard → a member → Training: the same calendar, read-only. Every
+ * workout by date with done, moved, missed or planned, from the member's logs.
+ */
+export function MemberProgramCalendar({
+  program,
+  isActive,
+  settings,
+  workouts,
+  today,
+  memberFirst,
+}: {
+  program: Program;
+  isActive: boolean;
+  settings: TrainingSettings;
+  workouts: readonly Workout[];
+  today: string;
+  memberFirst: string;
+}) {
+  if (!program.schedule) return null;
+  return (
+    <ScheduledProgram
+      key={`${program.id}-${program.schedule.startDate}-${program.schedule.weeks}-${program.schedule.weekdays.join("")}`}
+      program={program}
+      programs={[program]}
+      isActive={isActive}
+      settings={settings}
+      workouts={workouts}
+      today={today}
+      live={null}
+      onChoose={noop}
+      onStart={noop}
+      onMakeActive={noop}
+      onResume={noop}
+      coachView={{ first: memberFirst }}
+    />
+  );
+}
+
 function ScheduledProgram({
   program,
   programs,
@@ -107,6 +148,7 @@ function ScheduledProgram({
   onStart,
   onMakeActive,
   onResume,
+  coachView,
 }: {
   program: Program;
   programs: Program[];
@@ -119,6 +161,8 @@ function ScheduledProgram({
   onStart: (program: Program, day: ProgramDay) => void;
   onMakeActive: (id: string) => void;
   onResume: () => void;
+  /** Shown to the member's coach: read-only, nothing to start. */
+  coachView?: { first: string };
 }) {
   const schedule = program.schedule!;
   const end = scheduleEnd(program)!;
@@ -146,7 +190,7 @@ function ScheduledProgram({
   const pct = summary.total > 0 ? Math.round((summary.done / summary.total) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
+    <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5", !coachView && "lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start")}>
       <div className="space-y-5">
         {/* ------------------------------ the plan ------------------------------ */}
         <Card>
@@ -159,7 +203,7 @@ function ScheduledProgram({
                   {isCoachProgram(program) ? (
                     <Badge variant="secondary">
                       <UserCheck />
-                      From your coach
+                      {coachView ? "Assigned" : "From your coach"}
                     </Badge>
                   ) : null}
                 </CardTitle>
@@ -172,6 +216,8 @@ function ScheduledProgram({
                   <Check />
                   Active
                 </Badge>
+              ) : coachView ? (
+                <Badge variant="secondary">Not their active program</Badge>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => onMakeActive(program.id)}>
                   <Star />
@@ -210,7 +256,7 @@ function ScheduledProgram({
             </div>
           </CardHeader>
           <CardContent>
-            <TodayStrip plan={plan} live={live} program={program} onStart={onStart} onResume={onResume} />
+            <TodayStrip plan={plan} live={live} program={program} onStart={onStart} onResume={onResume} coachView={coachView} />
           </CardContent>
         </Card>
 
@@ -304,6 +350,7 @@ function ScheduledProgram({
         live={live}
         onStart={onStart}
         onResume={onResume}
+        readOnly={Boolean(coachView)}
       />
     </div>
   );
@@ -315,12 +362,14 @@ function TodayStrip({
   program,
   onStart,
   onResume,
+  coachView,
 }: {
   plan: ReturnType<typeof planToday>;
   live: Workout | null;
   program: Program;
   onStart: (program: Program, day: ProgramDay) => void;
   onResume: () => void;
+  coachView?: { first: string };
 }) {
   if (live) {
     return (
@@ -342,7 +391,7 @@ function TodayStrip({
         <span className="text-xs font-medium uppercase tracking-wide text-primary">{label}</span>
         <span className="block font-medium">{text}</span>
       </p>
-      {day ? (
+      {day && !coachView ? (
         <Button size="sm" onClick={() => onStart(program, day)}>
           <Play />
           {startLabel ?? `Start ${day.name}`}
@@ -352,7 +401,7 @@ function TodayStrip({
   );
   switch (plan.kind) {
     case "today":
-      return line("Today in your plan", plan.session.day.name, plan.session.day);
+      return line(coachView ? "Today in their plan" : "Today in your plan", plan.session.day.name, plan.session.day);
     case "done-today":
       return line("Done for today", plan.next ? `Next: ${formatShort(plan.next.date)} · ${plan.next.day.name}` : "That was the last one in this plan.");
     case "rest":
@@ -362,7 +411,7 @@ function TodayStrip({
     case "not-started":
       return line("Starts soon", `${formatShort(plan.next.date)} · ${plan.next.day.name}`);
     case "finished":
-      return line("Plan finished", `It ended ${formatShort(plan.end)}. Ask your coach what's next.`);
+      return line("Plan finished", coachView ? `It ended ${formatShort(plan.end)}.` : `It ended ${formatShort(plan.end)}. Ask your coach what's next.`);
   }
 }
 
@@ -374,6 +423,7 @@ function SessionDetail({
   live,
   onStart,
   onResume,
+  readOnly,
 }: {
   session: SessionState | null;
   program: Program;
@@ -382,6 +432,7 @@ function SessionDetail({
   live: Workout | null;
   onStart: (program: Program, day: ProgramDay) => void;
   onResume: () => void;
+  readOnly?: boolean;
 }) {
   if (!session) {
     return (
@@ -421,7 +472,7 @@ function SessionDetail({
             </li>
           ))}
         </ul>
-        {s.status !== "done" && s.date <= today ? (
+        {!readOnly && s.status !== "done" && s.date <= today ? (
           live ? (
             <Button variant="outline" className="w-full" onClick={onResume}>
               <Play />

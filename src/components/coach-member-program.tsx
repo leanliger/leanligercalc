@@ -1,15 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Dumbbell, Pencil, Save, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, Clock, Dumbbell, Pencil, Save, Trophy, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ProgramEditor } from "@/components/program-editor";
-import { formatShort } from "@/lib/dates";
+import { MemberProgramCalendar } from "@/components/program-calendar";
+import { ScheduleFields, scheduleDraftReady } from "@/components/schedule-fields";
+import { formatShort, todayISO } from "@/lib/dates";
 import type { MemberTraining } from "@/lib/program-edits";
-import { findExercise, formatTarget, type Program } from "@/lib/training";
+import { SCHEDULE_NOTE_MAX, defaultWeekdays, nextMonday, type ProgramSchedule } from "@/lib/program-schedule";
+import { findExercise, formatTarget, sanitizeTraining, type Program, type Workout } from "@/lib/training";
 import { cn } from "@/lib/utils";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -25,7 +28,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 /**
  * Coach dashboard → a member → their workout program. The coach can edit the
- * name, days and exercises of any program the member has; the edit reaches the
+ * name, days and exercises of any program the member has, and see and change
+ * its calendar (start date, training days, weeks, note); the edit reaches the
  * member's app the next time it opens (src/lib/program-edits.ts).
  */
 export function MemberProgramCard({ companyId, memberId, memberName }: { companyId: string; memberId: string; memberName: string }) {
@@ -35,7 +39,12 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
   const [editing, setEditing] = React.useState<Program | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null);
+  // The calendar being edited (null = not editing dates).
+  const [dates, setDates] = React.useState<ProgramSchedule | null>(null);
+  // Their logged workouts, for done and missed days on the calendar.
+  const [workouts, setWorkouts] = React.useState<Workout[] | null>(null);
   const first = memberName.split(" ")[0] || memberName;
+  const today = todayISO();
 
   const load = React.useCallback(async () => {
     try {
@@ -55,23 +64,41 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
   React.useEffect(() => {
     setData(null);
     setEditing(null);
+    setDates(null);
     setMessage(null);
     void load();
   }, [load]);
 
   const program = data?.programs.find((p) => p.id === programId) ?? null;
   const pendingSince = program ? data?.pending[program.id] : undefined;
+  const isChallenge = Boolean(program && data?.challenges?.includes(program.id));
+  const anyScheduled = Boolean(data?.programs.some((p) => p.schedule));
 
-  const save = async () => {
-    if (!editing) return;
+  // Workouts only matter once a program is on the calendar.
+  React.useEffect(() => {
+    if (!anyScheduled || workouts) return;
+    let live = true;
+    call<{ workouts: Workout[] }>(`/api/coach/member-workouts?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}`)
+      .then((r) => live && setWorkouts(r.workouts))
+      .catch(() => live && setWorkouts([]));
+    return () => {
+      live = false;
+    };
+  }, [anyScheduled, workouts, companyId, memberId]);
+
+  const calendarSettings = React.useMemo(() => ({ ...sanitizeTraining(null), customExercises: data?.customExercises ?? [] }), [data]);
+
+  /** Save the program as edited, with its dates: `schedule` (null: off the calendar). */
+  const send = async (next: Program, schedule: ProgramSchedule | null, done: () => void) => {
     setSaving(true);
     setMessage(null);
     try {
+      const { schedule: _shown, ...rest } = next;
       const r = await call<{ notified: boolean }>("/api/coach/member-training", {
         method: "PUT",
-        body: JSON.stringify({ company: companyId, member: memberId, program: editing }),
+        body: JSON.stringify({ company: companyId, member: memberId, program: rest, dates: schedule }),
       });
-      setEditing(null);
+      done();
       await load();
       setMessage({
         ok: true,
@@ -84,6 +111,15 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
     } finally {
       setSaving(false);
     }
+  };
+  // Editing days keeps the dates as shown (so a waiting date change isn't lost).
+  const save = () => (editing && program ? send(editing, program.schedule ?? null, () => setEditing(null)) : Promise.resolve());
+  const startDates = () => {
+    if (!program) return;
+    setMessage(null);
+    setDates(
+      program.schedule ?? { startDate: nextMonday(today), weekdays: defaultWeekdays(program.days.length), weeks: 6, note: "" },
+    );
   };
 
   return (
@@ -158,7 +194,7 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
                     {program.name}
                     {program.id === data.activeProgramId ? <Badge variant="secondary">Active</Badge> : null}
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => (setMessage(null), setEditing(program))}>
+                  <Button variant="outline" size="sm" disabled={dates !== null} onClick={() => (setMessage(null), setEditing(program))}>
                     <Pencil />
                     Edit program
                   </Button>
@@ -169,6 +205,81 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
                     Your changes from {formatShort(pendingSince.slice(0, 10))} reach {first}&apos;s app next time they open it.
                   </p>
                 ) : null}
+                <section aria-label="Calendar" className="space-y-3 border-y border-border py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <CalendarDays className="h-4 w-4 text-primary" />
+                        Calendar
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {program.schedule
+                          ? `Every workout by date, from what ${first} logged.`
+                          : `Not on a calendar: ${first} does the days in order, at their own pace.`}
+                      </p>
+                    </div>
+                    {dates ? null : (
+                      <Button variant="outline" size="sm" onClick={startDates}>
+                        {program.schedule ? <CalendarDays /> : <CalendarPlus />}
+                        {program.schedule ? "Change dates" : "Put on the calendar"}
+                      </Button>
+                    )}
+                  </div>
+                  {isChallenge ? (
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Trophy className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      This program is a challenge. Changing {first}&apos;s dates moves their calendar only; the leaderboard keeps the challenge&apos;s dates.
+                    </p>
+                  ) : null}
+                  {dates ? (
+                    <div className="space-y-3">
+                      <ScheduleFields value={dates} onChange={(d) => setDates({ ...dates, ...d })} program={program} />
+                      <label className="block space-y-1">
+                        <span className="block text-xs">Note on their calendar (optional)</span>
+                        <textarea
+                          value={dates.note}
+                          onChange={(e) => setDates({ ...dates, note: e.target.value })}
+                          maxLength={SCHEDULE_NOTE_MAX}
+                          rows={2}
+                          placeholder="e.g. Deload in week 5. Swap days around if you need to."
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          disabled={saving || !scheduleDraftReady(dates)}
+                          onClick={() => void send(program, { ...dates, note: dates.note.trim() }, () => setDates(null))}
+                        >
+                          <Save />
+                          {saving ? "Saving…" : "Save dates"}
+                        </Button>
+                        <Button variant="ghost" size="sm" disabled={saving} onClick={() => setDates(null)}>
+                          <X />
+                          Cancel
+                        </Button>
+                        {program.schedule ? (
+                          <Button variant="ghost" size="sm" className="text-destructive" disabled={saving} onClick={() => void send(program, null, () => setDates(null))}>
+                            Take off the calendar
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : program.schedule ? (
+                    workouts ? (
+                      <MemberProgramCalendar
+                        program={program}
+                        isActive={program.id === data.activeProgramId}
+                        settings={calendarSettings}
+                        workouts={workouts}
+                        today={today}
+                        memberFirst={first}
+                      />
+                    ) : (
+                      <div className="h-64 animate-pulse rounded-md bg-muted/30" aria-busy="true" aria-label="Loading their calendar" />
+                    )
+                  ) : null}
+                </section>
                 <ol className="space-y-3">
                   {program.days.map((d, i) => (
                     <li key={d.id} className="rounded-md border border-border p-3">

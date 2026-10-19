@@ -2,7 +2,8 @@
  * Coach edits to a member's workout program (src/lib/program-edits.ts).
  *
  *   GET  /api/coach/member-training?company&member   coaches: the member's programs, with any waiting edit applied
- *   PUT  /api/coach/member-training                  coaches: save an edit { company, member, program }
+ *   PUT  /api/coach/member-training                  coaches: save an edit { company, member, program, dates? }
+ *                                                    (dates: the calendar, null to take it off, absent to keep it)
  *   GET  /api/program-edits                          members: edits waiting for my app
  *   POST /api/program-edits/:id/applied              members: my app applied it
  *
@@ -13,7 +14,9 @@
  */
 
 import { sanitizeProgram, sanitizeTraining, type Program, type TrainingSettings, type Workout } from "../src/lib/training";
-import { validateProgramEdit, type MemberTraining, type ProgramEdit } from "../src/lib/program-edits";
+import { scheduleAfterEdit, validateProgramEdit, type MemberTraining, type ProgramEdit } from "../src/lib/program-edits";
+import { sanitizeSchedule } from "../src/lib/program-schedule";
+import { assignedProgramId } from "../src/lib/assignments";
 import { coachCheck, experienceOf, isSharingProgress, type SharingEnv } from "./sharing";
 import { sendWhop } from "./reminders";
 
@@ -52,8 +55,14 @@ async function waitingEdits(env: SharingEnv, memberId: string): Promise<ProgramE
   const out: ProgramEdit[] = [];
   for (const r of results) {
     try {
-      const program = sanitizeProgram(JSON.parse(r.program));
-      if (program) out.push({ id: r.id, programId: r.program_id, program, createdAt: r.created_at });
+      const raw = JSON.parse(r.program) as { datesChanged?: unknown; schedule?: unknown };
+      const clean = sanitizeProgram(raw);
+      if (!clean) continue;
+      const { schedule: _dates, ...program } = clean;
+      // Edits saved with `datesChanged` set the calendar (or take it off); older ones keep the member's.
+      const edit: ProgramEdit = { id: r.id, programId: r.program_id, program, createdAt: r.created_at };
+      if (raw.datesChanged === true) edit.schedule = sanitizeSchedule(raw.schedule) ?? null;
+      out.push(edit);
     } catch {
       /* skip a corrupt row */
     }
@@ -71,15 +80,25 @@ export async function coachMemberTraining(env: SharingEnv, viewerId: string, com
   let programs: Program[] = training.programs;
   for (const e of await waitingEdits(env, c.memberId)) {
     if (!programs.some((p) => p.id === e.programId)) continue;
-    programs = programs.map((p) => (p.id === e.programId ? { ...e.program, id: p.id, ...(p.schedule ? { schedule: p.schedule } : {}) } : p));
+    programs = programs.map((p) => {
+      if (p.id !== e.programId) return p;
+      const schedule = scheduleAfterEdit(p.schedule, e);
+      return { ...e.program, id: p.id, ...(schedule ? { schedule } : {}) };
+    });
     pending[e.programId] = e.createdAt;
   }
+  // Programs that came from one of this company's challenges.
+  const { results: challengeRows } = await env.DB.prepare("SELECT id FROM assignments WHERE company_id = ? AND challenge = 1")
+    .bind(companyId)
+    .all<{ id: string }>();
+  const challengeIds = new Set(challengeRows.map((r) => assignedProgramId(r.id)));
   const body: MemberTraining = {
     programs,
     activeProgramId: training.activeProgramId,
     customExercises: training.customExercises,
     restSec: training.restSec,
     pending,
+    challenges: programs.filter((p) => challengeIds.has(p.id)).map((p) => p.id),
   };
   return { ok: true, body: { training: body } };
 }
@@ -117,8 +136,8 @@ export async function saveMemberProgram(env: SharingEnv, viewerId: string, raw: 
   const c = await coachCheck(env, viewerId, raw);
   if ("error" in c) return c.error;
   if (!(await isSharingProgress(env, c.memberId))) return NOT_SHARING;
-  const b = raw as { company: string; program?: unknown };
-  const v = validateProgramEdit(b.program, await trainingOf(env, c.memberId));
+  const b = raw as { company: string; program?: unknown; dates?: unknown };
+  const v = validateProgramEdit(b.program, await trainingOf(env, c.memberId), b.dates);
   if (!v.ok) return { ok: false, status: 422, error: v.error };
 
   await env.DB.batch([
@@ -128,7 +147,14 @@ export async function saveMemberProgram(env: SharingEnv, viewerId: string, raw: 
     ),
     env.DB.prepare(
       "INSERT INTO coach_program_edits (id, company_id, member_id, program_id, program, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-    ).bind(newId(), b.company, c.memberId, v.program.id, JSON.stringify(v.program), viewerId),
+    ).bind(
+      newId(),
+      b.company,
+      c.memberId,
+      v.program.id,
+      JSON.stringify(v.schedule === undefined ? v.program : { ...v.program, datesChanged: true, schedule: v.schedule }),
+      viewerId,
+    ),
   ]);
 
   let notified = false;
