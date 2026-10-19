@@ -15,5 +15,9 @@ machine-triceps-extension*.webp come straight from Everkinetic
 (github.com/everkinetic/data, exercise 0210 "Triceps extensions using
 machine", same license), rasterized and resized the same way.
 
-These drawings, as changed here, are shared under the same CC BY-SA 4.0
+incline-machine-press*.webp are not from Workout Guide or Everkinetic:
+they were made from a drawing supplied by the app's owner, and are not
+covered by this notice.
+
+The Workout Guide and Everkinetic drawings, as changed here, are shared under the same CC BY-SA 4.0
 license. The rest of this project is not covered by this notice.

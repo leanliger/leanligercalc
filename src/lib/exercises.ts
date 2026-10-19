@@ -172,6 +172,7 @@ const ROWS: Row[] = [
   ["cable-kickback", "Cable glute kickback", "glutes", "cable", "Slight forward lean", "Kick back without arching your lower back"],
   ["hip-abduction", "Hip abduction machine", "glutes", "machine", "Sit tall or lean slightly forward", "Pause at the widest point"],
   ["hip-adduction", "Hip adduction machine", "glutes", "machine", "Sit tall, back against the pad", "Squeeze the knees together and pause"],
+  ["machine-reverse-v-squat", "Machine reverse V-squat", "glutes", "machine", "Face the machine, chest on the pad, shoulders under the pads", "Sit back and down, drive through your heels"],
   ["sumo-deadlift", "Sumo deadlift", "glutes", "barbell", "Wide stance, toes out", "Push your knees out as you stand"],
   ["kettlebell-swing", "Kettlebell swing", "glutes", "kettlebell", "Hinge, don't squat", "Snap your hips forward"],
   // Calves
@@ -191,7 +192,7 @@ const ROWS: Row[] = [
 
 /** Built-in exercises with no drawing of their own, shown with a close one's. */
 const ART_OF: Partial<Record<string, string>> = {
-  "incline-machine-press": "machine-chest-press",
+  "machine-reverse-v-squat": "hack-squat",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
@@ -204,6 +205,7 @@ const ALIASES: Partial<Record<string, string>> = {
   "t-bar-row": "tbar",
   "smith-incline-press": "incline smith press",
   "incline-machine-press": "incline press machine",
+  "machine-reverse-v-squat": "reverse v squat vsquat facing in",
   "machine-triceps-extension": "triceps extension machine seated",
   "triceps-dip-machine": "seated dip machine",
   "leg-press-calf-raise": "calf press",

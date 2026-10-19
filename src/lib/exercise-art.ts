@@ -28,8 +28,8 @@ export const ART_CREDIT = {
   licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
 } as const;
 
-/** Exercises where only one of the set's drawings shows the position properly. */
-const ONE_DRAWING = new Set(["ab-wheel", "cable-crunch"]);
+/** Exercises with one drawing: only one of the set shows the position properly, or only one exists. */
+const ONE_DRAWING = new Set(["ab-wheel", "cable-crunch", "incline-machine-press"]);
 
 export interface ExerciseArt {
   thumb: string;
