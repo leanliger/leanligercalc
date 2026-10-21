@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  BellRing,
   Camera,
   ClipboardList,
   Dumbbell,
@@ -35,6 +36,7 @@ const KIND_STYLE: Record<TimelineKind, { icon: React.ReactNode; tone: string }> 
   habits: { icon: <ListChecks />, tone: "text-violet-400 bg-violet-400/[0.12]" },
   macros: { icon: <Utensils />, tone: "text-violet-400 bg-violet-400/[0.12]" },
   note: { icon: <StickyNote />, tone: "text-violet-400 bg-violet-400/[0.12]" },
+  nudge: { icon: <BellRing />, tone: "text-violet-400 bg-violet-400/[0.12]" },
 };
 
 const FILTERS: { id: "all" | TimelineGroup; label: string }[] = [

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ProgramEditor } from "@/components/program-editor";
 import { MemberProgramCalendar } from "@/components/program-calendar";
+import { NextBlockPanel } from "@/components/coach-next-block";
 import { ScheduleFields, scheduleDraftReady } from "@/components/schedule-fields";
 import { formatShort, todayISO } from "@/lib/dates";
 import type { MemberTraining } from "@/lib/program-edits";
@@ -267,14 +268,28 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
                     </div>
                   ) : program.schedule ? (
                     workouts ? (
-                      <MemberProgramCalendar
-                        program={program}
-                        isActive={program.id === data.activeProgramId}
-                        settings={calendarSettings}
-                        workouts={workouts}
-                        today={today}
-                        memberFirst={first}
-                      />
+                      <>
+                        <MemberProgramCalendar
+                          program={program}
+                          isActive={program.id === data.activeProgramId}
+                          settings={calendarSettings}
+                          workouts={workouts}
+                          today={today}
+                          memberFirst={first}
+                        />
+                        <NextBlockPanel
+                          key={program.id}
+                          companyId={companyId}
+                          memberId={memberId}
+                          first={first}
+                          program={program}
+                          programs={data.programs}
+                          saving={saving}
+                          onQueueTheirs={(p, schedule) => send(p, schedule, () => {})}
+                          onSent={() => void load()}
+                          onOpen={(id) => (setMessage(null), setProgramId(id))}
+                        />
+                      </>
                     ) : (
                       <div className="h-64 animate-pulse rounded-md bg-muted/30" aria-busy="true" aria-label="Loading their calendar" />
                     )

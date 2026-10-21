@@ -5,7 +5,7 @@ import { Dumbbell, ListChecks } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { MemberAssignment } from "@/lib/assignments";
-import { formatShort } from "@/lib/dates";
+import { formatShort, todayISO } from "@/lib/dates";
 import type { CoachMacros } from "@/lib/coach-macros";
 import type { ProgramEdit } from "@/lib/program-edits";
 import { findExercise } from "@/lib/training";
@@ -92,6 +92,8 @@ function AssignmentCard({
             <p className="text-xs text-muted-foreground">
               {a.challenge && a.program?.schedule
                 ? `${a.program.schedule.weeks} weeks from ${formatShort(a.program.schedule.startDate)}. Join to get the program and a spot on the leaderboard (Ranks), ranked by workouts finished.`
+                : isProgram && a.program?.schedule && a.program.schedule.startDate > todayISO()
+                ? `${a.program.days.map((d) => d.name).join(" · ")}. It starts ${formatShort(a.program.schedule.startDate)}: if your current program is still running, it takes over when that one ends. Your own programs stay.`
                 : isProgram
                 ? `${a.program?.days.map((d) => d.name).join(" · ") ?? ""}. It becomes your active program; your own programs stay.`
                 : `${a.habits?.length ?? 0} habits. They replace your current list; past ticks and streaks stay.`}{" "}

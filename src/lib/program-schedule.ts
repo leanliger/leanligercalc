@@ -13,7 +13,7 @@
  */
 
 import { addDays, daysBetween, isValidISODate, parseISODate } from "./dates";
-import type { Program, ProgramDay, Workout } from "./training";
+import type { Program, ProgramDay, TrainingSettings, Workout } from "./training";
 
 export interface ProgramSchedule {
   startDate: string;
@@ -94,6 +94,40 @@ export function scheduleSessions(program: Program): Session[] {
 /** The last day of the plan. */
 export function scheduleEnd(program: Program): string | null {
   return program.schedule ? addDays(program.schedule.startDate, program.schedule.weeks * 7 - 1) : null;
+}
+
+/** Whether a program's calendar runs on this day (started and not yet finished). */
+export function scheduleCovers(program: Program, day: string): boolean {
+  const end = scheduleEnd(program);
+  return Boolean(program.schedule && end && program.schedule.startDate <= day && day <= end);
+}
+
+/**
+ * Program blocks: a coach can queue the next program to start the day after
+ * the current one's calendar ends. Once the active program's calendar has
+ * finished, the program whose calendar runs today becomes active (the latest
+ * to start, if more than one). Null when nothing should change, including
+ * when the active program has no calendar: that one the member picked.
+ */
+export function blockToActivate(settings: Pick<TrainingSettings, "programs" | "activeProgramId">, today: string): string | null {
+  const active = settings.programs.find((p) => p.id === settings.activeProgramId);
+  const end = active ? scheduleEnd(active) : null;
+  if (!active || !end || today <= end) return null;
+  const running = settings.programs
+    .filter((p) => p.id !== active.id && scheduleCovers(p, today))
+    .sort((a, b) => b.schedule!.startDate.localeCompare(a.schedule!.startDate));
+  return running[0]?.id ?? null;
+}
+
+/** The program queued after this one: on the calendar from the day after it ends (the earliest such). */
+export function nextBlock(programs: readonly Program[], current: Program): Program | null {
+  const end = scheduleEnd(current);
+  if (!end) return null;
+  return (
+    programs
+      .filter((p) => p.id !== current.id && p.schedule && p.schedule.startDate > end)
+      .sort((a, b) => a.schedule!.startDate.localeCompare(b.schedule!.startDate))[0] ?? null
+  );
 }
 
 export type SessionStatus = "done" | "missed" | "today" | "upcoming";

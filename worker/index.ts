@@ -36,6 +36,7 @@
  *   GET/PUT /api/measurement-settings    my "Time to measure" reminder switch { reminder } (see measure-day.ts)
  *   GET    /api/coach/member-food?company=…&member=…  coaches: a member's daily food totals, 26 weeks (see member-food.ts)
  *   GET    /api/coach/member-timeline?company=…&member=…&unit=…&days=…  coaches: one feed of what a member did and what you sent (see member-timeline.ts)
+ *   GET    /api/coach/nudges?company=…               coaches: automatic nudge rules and what was sent; PUT to save them (see nudges.ts)
  *   GET/PUT/DELETE /api/water-reminders  my hydration reminders (see water-reminders.ts)
  *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
@@ -103,6 +104,7 @@ import { describeMeal } from "./meal-describe";
 import { measurementSettings, sendMeasureDayReminders } from "./measure-day";
 import { coachMemberFood } from "./member-food";
 import { coachMemberTimeline } from "./member-timeline";
+import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
@@ -780,6 +782,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachMemberFood(env, userId, q("company"), q("member")));
   }
+  if (path === "/api/coach/nudges") {
+    if (method === "GET") return send(await getNudges(env, userId, q("company")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveNudges(env, userId, body.value));
+  }
   if (path === "/api/coach/member-timeline") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachMemberTimeline(env, userId, q("company"), q("member"), q("unit"), q("days")));
@@ -1264,6 +1273,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM weigh_ins WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_nudges_sent WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),
@@ -1358,6 +1368,17 @@ export default {
           })
           .catch((e) => console.error("milestones crashed", e)),
       );
+      // Coaches' automatic nudges: once a day per whop, checked 17:00–19:45 UTC.
+      const hour = when.getUTCHours();
+      if (hour >= 17 && hour <= 19) {
+        ctx.waitUntil(
+          sendCoachNudges(env, when)
+            .then((r) => {
+              if (r.sent > 0) console.log("coach nudges", r);
+            })
+            .catch((e) => console.error("coach nudges crashed", e)),
+        );
+      }
     }
   },
 } satisfies ExportedHandler<Env>;

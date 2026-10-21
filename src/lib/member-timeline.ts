@@ -9,6 +9,7 @@ import { CHECKIN_SCALES } from "./checkins";
 import { addDays } from "./dates";
 import { weekStartOf } from "./habits";
 import { milestoneLabel, type MilestoneKind } from "./milestones";
+import { NUDGE_INFO, type NudgeKind } from "./nudges";
 import type { WeightUnit } from "./types";
 import { fromLb } from "./units";
 
@@ -24,14 +25,15 @@ export type TimelineKind =
   | "milestone"
   | "photos"
   | "measurement"
-  | "workout";
+  | "workout"
+  | "nudge";
 
 /** Groups for the feed's filter. */
 export const TIMELINE_GROUPS = {
   checkins: ["check-in", "reply"],
   body: ["weigh-in", "measurement", "photos", "milestone"],
   training: ["workout", "program", "program-edit"],
-  coach: ["note", "macros", "habits", "program", "program-edit", "reply"],
+  coach: ["note", "macros", "habits", "program", "program-edit", "reply", "nudge"],
 } as const satisfies Record<string, readonly TimelineKind[]>;
 export type TimelineGroup = keyof typeof TIMELINE_GROUPS;
 
@@ -69,6 +71,8 @@ export interface TimelineRows {
   photos: { date: string; pose: string }[] | null;
   measurements: { date: string; waist: number | null; hips: number | null; chest: number | null; arms: number | null; thighs: number | null }[];
   workouts: { date: string; finishedAt: number | null; name: string; sets: number; volumeLb: number }[];
+  /** Automatic nudges sent (src/lib/nudges.ts). Optional for callers that don't read them. */
+  nudges?: { kind: NudgeKind; message: string | null; sentAt: string }[];
 }
 
 const clip = (s: string, n = 180) => {
@@ -215,6 +219,17 @@ export function buildTimeline(rows: TimelineRows, since: string, unit: WeightUni
       kind: "workout",
       title: `Finished ${wo.name}`,
       detail: `${wo.sets} set${wo.sets === 1 ? "" : "s"}${wo.volumeLb > 0 ? ` · ${Math.round(fromLb(wo.volumeLb, unit)).toLocaleString("en-US")} ${unit} lifted` : ""}`,
+    });
+  }
+
+  for (const n of rows.nudges ?? []) {
+    if (day(n.sentAt) < since) continue;
+    out.push({
+      date: day(n.sentAt),
+      at: n.sentAt,
+      kind: "nudge",
+      title: `Automatic nudge: ${NUDGE_INFO[n.kind].label.toLowerCase()}`,
+      detail: n.message ? `“${clip(n.message)}”` : undefined,
     });
   }
 

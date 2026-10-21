@@ -115,7 +115,7 @@ import {
   type DayBackupEntry,
 } from "@/lib/day-backup";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
-import { planToday } from "@/lib/program-schedule";
+import { blockToActivate, planToday } from "@/lib/program-schedule";
 import type { TrainingToday } from "@/lib/training-carbs";
 import type {
   BiometricProfile,
@@ -1303,6 +1303,16 @@ export function AppShell() {
   // save that includes it, so closing the app straight away can't lose it: an
   // unconfirmed edit is simply applied again next open.
   const [coachUpdated, setCoachUpdated] = React.useState<string[]>([]);
+  // The next block a coach queued, when it just took over as the active program.
+  const [blockStarted, setBlockStarted] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!ready || !today) return;
+    const training = state.tracking.training;
+    const id = blockToActivate(training, today);
+    if (!id) return;
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, training: { ...prev.tracking.training, activeProgramId: id } } }));
+    setBlockStarted(training.programs.find((p) => p.id === id)?.name ?? null);
+  }, [ready, today, state.tracking.training]);
   const trainingRef = React.useRef(state.tracking.training);
   trainingRef.current = state.tracking.training;
   const editsToConfirm = React.useRef<{ ids: string[]; since: number } | null>(null);
@@ -1366,7 +1376,7 @@ export function AppShell() {
       if (a.kind === "program") {
         const program = cleanAssignedProgram(a.program);
         if (!program) return "This program can't be used. Ask your coach to send it again.";
-        const applied = applyAssignedProgram(state.tracking.training, a.id, program);
+        const applied = applyAssignedProgram(state.tracking.training, a.id, program, today || undefined);
         if (!applied.ok) return applied.error;
         setState((prev) => ({ ...prev, tracking: { ...prev.tracking, training: applied.settings } }));
       } else {
@@ -1378,7 +1388,7 @@ export function AppShell() {
       setAssignments((prev) => prev.filter((x) => x.id !== a.id));
       return null;
     },
-    [state.tracking.training],
+    [state.tracking.training, today],
   );
 
   const declineAssignment = React.useCallback(async (a: MemberAssignment) => {
@@ -1622,6 +1632,28 @@ export function AppShell() {
                     </button>
                   </p>
                   <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Dismiss" onClick={() => setCoachUpdated([])}>
+                    <X />
+                  </Button>
+                </div>
+              ) : null}
+
+              {blockStarted ? (
+                <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+                  <Dumbbell className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <p className="min-w-0 flex-1">
+                    Your last program finished. Your next one, “{blockStarted}”, is now your active program.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                      onClick={() => {
+                        setTab("training");
+                        setBlockStarted(null);
+                      }}
+                    >
+                      See it in Training
+                    </button>
+                  </p>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label="Dismiss" onClick={() => setBlockStarted(null)}>
                     <X />
                   </Button>
                 </div>

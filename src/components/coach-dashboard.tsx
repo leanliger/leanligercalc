@@ -32,6 +32,7 @@ import { MeasurementsCard } from "@/components/measurements-card";
 import { PhotoGallery } from "@/components/photos-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CoachAssignPanel } from "@/components/coach-assign";
+import { CoachNudges } from "@/components/coach-nudges";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { PhysiqueFocusCard } from "@/components/physique-focus-card";
 import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-compare-card";
@@ -134,7 +135,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [view, setView] = React.useState<"today" | "inbox" | "members" | "library">(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("member") ? "members" : "today",
   );
-  const [libraryTab, setLibraryTab] = React.useState<"programs" | "testimonials">("programs");
+  const [libraryTab, setLibraryTab] = React.useState<"programs" | "nudges" | "testimonials">("programs");
   // The check-in open in the inbox.
   const [inboxId, setInboxId] = React.useState<string | null>(null);
   const [today] = React.useState(() => todayISO());
@@ -393,6 +394,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   onValueChange={setLibraryTab}
                   options={[
                     { value: "programs" as const, label: "Programs & habits" },
+                    { value: "nudges" as const, label: "Automatic nudges" },
                     { value: "testimonials" as const, label: "Wins & testimonials" },
                   ]}
                   className="w-auto"
@@ -400,6 +402,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               </div>
               {libraryTab === "programs" ? (
                 <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
+              ) : libraryTab === "nudges" ? (
+                <CoachNudges
+                  companyId={companyId}
+                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
+                />
               ) : (
                 <CoachTestimonials
                   companyId={companyId}

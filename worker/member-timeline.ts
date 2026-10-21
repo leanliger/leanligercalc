@@ -13,6 +13,7 @@
 import { addDays } from "../src/lib/dates";
 import { buildTimeline, TIMELINE_DAYS, TIMELINE_MAX_DAYS, type TimelineRows } from "../src/lib/member-timeline";
 import type { MilestoneKind } from "../src/lib/milestones";
+import type { NudgeKind } from "../src/lib/nudges";
 import { doneSets, setVolume, type Workout } from "../src/lib/training";
 import { coachCheck, isSharingProgress, type SharingEnv } from "./sharing";
 
@@ -50,7 +51,7 @@ export async function coachMemberTimeline(
   const m = c.memberId;
   const db = env.DB;
 
-  const [weighIns, checkins, note, assignments, edits, macros, milestones, photoShare, photos, measurements, workouts] = await Promise.all([
+  const [weighIns, checkins, note, assignments, edits, macros, milestones, photoShare, photos, measurements, workouts, nudges] = await Promise.all([
     db.prepare("SELECT date, weight_lb, note FROM weigh_ins WHERE user_id = ? AND date >= ? ORDER BY date").bind(m, weighFrom).all<{ date: string; weight_lb: number; note: string | null }>(),
     db
       .prepare(
@@ -86,6 +87,14 @@ export async function coachMemberTimeline(
       .bind(m, addDays(since, -120))
       .all<{ date: string; waist: number | null; hips: number | null; chest: number | null; arms: number | null; thighs: number | null }>(),
     db.prepare("SELECT date, data FROM workouts WHERE user_id = ? AND date >= ?").bind(m, since).all<{ date: string; data: string }>(),
+    db
+      .prepare(
+        `SELECT s.kind, s.sent_at, r.message FROM coach_nudges_sent s
+           LEFT JOIN coach_nudge_rules r ON r.company_id = s.company_id AND r.kind = s.kind
+          WHERE s.company_id = ? AND s.user_id = ? AND s.sent_at >= ?`,
+      )
+      .bind(companyId, m, since)
+      .all<{ kind: NudgeKind; sent_at: string; message: string | null }>(),
   ]);
 
   const rows: TimelineRows = {
@@ -108,6 +117,7 @@ export async function coachMemberTimeline(
       cancelledAt: r.cancelled_at,
     })),
     programEdits: edits.results.map((r) => ({ createdAt: r.created_at, appliedAt: r.applied_at })),
+    nudges: nudges.results.map((r) => ({ kind: r.kind, message: r.message, sentAt: r.sent_at })),
     macros: macros ? { kcal: macros.kcal, protein: macros.protein, carbs: macros.carbs, fat: macros.fat, setAt: macros.set_at } : null,
     milestones: milestones.results.map((r) => ({ kind: r.kind, level: r.level, reachedOn: r.reached_on })),
     photos: photoShare?.share_with_coach === 1 ? photos.results : null,

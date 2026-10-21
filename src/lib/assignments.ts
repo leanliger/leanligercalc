@@ -14,6 +14,7 @@ import { EXPERIENCE_ID_PATTERN } from "./fasting";
 import { MAX_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
 import { COMPANY_ID_PATTERN } from "./coach-api";
 import { MAX_PROGRAMS, findExercise, sanitizeProgram, type Program, type TrainingSettings } from "./training";
+import { scheduleCovers } from "./program-schedule";
 import type { ValidationResult } from "./tracking";
 
 export type AssignmentKind = "program" | "habits";
@@ -157,7 +158,7 @@ export function assignmentMessage(kind: AssignmentKind, title: string): { title:
   return kind === "program"
     ? {
         title: `Your coach sent you a program: ${title}`,
-        content: "Open Lean Stature System to add it to your training. It becomes your active program; your own programs stay.",
+        content: "Open Lean Stature System to add it to your training. Your own programs stay.",
       }
     : {
         title: `Your coach set new daily habits: ${title}`,
@@ -174,12 +175,16 @@ export function assignedProgramId(assignmentId: string): string {
 
 /**
  * Add an assigned program to a member's programs and make it active, or the
- * reason it can't be added (their program list is full).
+ * reason it can't be added (their program list is full). A program whose
+ * calendar starts after today, sent while the active one's calendar is still
+ * running, is the next block: it waits, and takes over when the current one
+ * ends (blockToActivate).
  */
 export function applyAssignedProgram(
   settings: TrainingSettings,
   assignmentId: string,
   program: Program,
+  today?: string,
 ): { ok: true; settings: TrainingSettings } | { ok: false; error: string } {
   const id = assignedProgramId(assignmentId);
   const p = { ...program, id };
@@ -192,9 +197,16 @@ export function applyAssignedProgram(
     settings: {
       ...settings,
       programs: exists ? settings.programs.map((x) => (x.id === id ? p : x)) : [...settings.programs, p],
-      activeProgramId: id,
+      activeProgramId: waitsForCurrent(settings, p, today) ? settings.activeProgramId : id,
     },
   };
+}
+
+/** Whether a program starting later should wait for the active program's calendar to finish. */
+function waitsForCurrent(settings: TrainingSettings, next: Program, today: string | undefined): boolean {
+  if (!today || !next.schedule || next.schedule.startDate <= today) return false;
+  const active = settings.programs.find((x) => x.id === settings.activeProgramId);
+  return Boolean(active && active.id !== next.id && scheduleCovers(active, today));
 }
 
 /* ---------------------------- coach program library ---------------------------- */
