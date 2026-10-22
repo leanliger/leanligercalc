@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { BadgeIcon } from "@/components/badges-card";
 import { Hint } from "@/components/ui/hint";
 import { stepFor } from "@/components/habits-card";
-import { ExerciseThumb } from "@/components/exercise-art";
 import { computeBadges, type Badge } from "@/lib/badges";
 import { dayTargetFinder } from "@/lib/day-targets";
 import type { CoachMacros } from "@/lib/coach-macros";
@@ -55,13 +54,12 @@ import type { MySharing } from "@/lib/sharing";
 import { CoachRequestCard } from "@/components/coach-access";
 import { AssignmentCards } from "@/components/assignment-cards";
 import type { MemberAssignment } from "@/lib/assignments";
-import { formatShort } from "@/lib/dates";
+import { addDays, formatShort } from "@/lib/dates";
 import { trendSeries } from "@/lib/adaptive";
 import type { CalorieAdjustment, WeighIn } from "@/lib/tracking";
 import {
   activeWorkout,
   formatDuration,
-  formatTarget,
   findExercise,
   nextProgramDay,
   summarizeWorkout,
@@ -199,6 +197,15 @@ export function TodayTab(props: TodayTabProps) {
     const t = trendSeries(weighIns);
     return t[t.length - 1]?.trend ?? null;
   }, [weighIns]);
+  // The trend's change over the last week, for the weigh-in line.
+  const weekChange = React.useMemo(() => {
+    const t = trendSeries(weighIns);
+    const last = t[t.length - 1];
+    if (!last) return null;
+    const weekAgo = addDays(last.date, -7);
+    const before = [...t].reverse().find((p) => p.date <= weekAgo);
+    return before ? last.trend - before.trend : null;
+  }, [weighIns]);
   const targetFor = React.useMemo(
     () => dayTargetFinder(profile, fatLoss, props.carbs, props.adjustments, props.coachMacros),
     [profile, fatLoss, props.carbs, props.adjustments, props.coachMacros],
@@ -295,7 +302,7 @@ export function TodayTab(props: TodayTabProps) {
   const allDone = doneCount === tasks.length;
   const day = new Date(`${today}T12:00:00`);
   const weekday = day.toLocaleDateString(undefined, { weekday: "long" });
-  const monthDay = day.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  const monthDay = day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
   // Done items fold to one line; tapping one opens it again (to untick a habit, say).
   const [expanded, setExpanded] = React.useState<Set<TaskId>>(() => new Set());
@@ -306,20 +313,38 @@ export function TodayTab(props: TodayTabProps) {
       else next.add(id);
       return next;
     });
-  const jumpTo = (t: TaskItem) => {
-    if (t.done) setExpanded((prev) => new Set(prev).add(t.id));
-    document.getElementById(`today-${t.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
-  // Food is a running total all day, so it always stays open.
-  const folds = (t: TaskItem) => t.done && t.id !== "food";
-  const pending = tasks.filter((t) => !folds(t));
+  // Food is a running total all day, so it always stays open. A logged
+  // weigh-in is already one line, so it stays too, at the end.
+  const folds = (t: TaskItem) => t.done && t.id !== "food" && t.id !== "weigh-in";
+  const pending = tasks
+    .filter((t) => !folds(t))
+    .sort((a, b) => Number(a.id === "weigh-in" && a.done) - Number(b.id === "weigh-in" && b.done));
   const finished = tasks.filter(folds);
   // One gold button on the page: the first thing still to do.
   const firstAction = pending.find((t) => t.id === "weigh-in" || t.id === "workout")?.id ?? null;
 
   const cards: Record<TaskId, React.ReactNode> = {
-    "weigh-in": (
+    "weigh-in": weighIn ? (
+      <button
+        type="button"
+        onClick={() => onOpen("weigh-in")}
+        aria-label={`Weigh-in: ${round(fromLb(weighIn.weightLb, unit), 1)} ${unit}. Open your weigh-in history`}
+        className="flex w-full items-center gap-2.5 rounded-full border border-primary/15 bg-[hsl(var(--gold-hi)/0.05)] px-5 py-3.5 text-left transition-colors hover:bg-[hsl(var(--gold-hi)/0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex-1 font-bold">Weigh-in</span>
+        <span className="tabular text-xl font-extrabold">
+          {round(fromLb(weighIn.weightLb, unit), 1)}
+          <span className="ml-1 text-xs font-medium text-muted-foreground">{unit}</span>
+        </span>
+        {weekChange !== null ? (
+          <span className={cn("tabular text-xs font-bold", weekChange <= 0 ? "text-success" : "text-muted-foreground")}>
+            {weekChange <= 0 ? "−" : "+"}
+            {round(Math.abs(fromLb(weekChange, unit)), 1)} {unit}
+          </span>
+        ) : null}
+      </button>
+    ) : (
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -329,19 +354,7 @@ export function TodayTab(props: TodayTabProps) {
           <OpenLink label="History" onClick={() => onOpen("weigh-in")} />
         </CardHeader>
         <CardContent>
-          {weighIn ? (
-            <div>
-              <p className="tabular text-3xl font-semibold leading-none">
-                {round(fromLb(weighIn.weightLb, unit), 1)}
-                <span className="ml-1 text-base font-normal text-muted-foreground">{unit}</span>
-              </p>
-              {trendToday !== null ? (
-                <p className="tabular mt-1.5 text-xs text-muted-foreground">
-                  Trend {round(fromLb(trendToday, unit), 1)} {unit}
-                </p>
-              ) : null}
-            </div>
-          ) : (
+          {(
             <QuickWeighIn
               unit={unit}
               primary={firstAction === "weigh-in"}
@@ -375,38 +388,22 @@ export function TodayTab(props: TodayTabProps) {
           </CardTitle>
           <OpenLink label="Food log" onClick={() => onOpen("food")} />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {target ? (
             <>
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <p
-                    className={cn(
-                      "tabular text-3xl font-semibold leading-none",
-                      eaten.kcal - target.calories > 100 && "text-warning",
-                    )}
-                  >
-                    {Math.abs(Math.round(target.calories - eaten.kcal)).toLocaleString()}
-                  </p>
-                  <p className="tabular mt-1.5 text-xs text-muted-foreground">
-                    kcal {eaten.kcal > target.calories ? "over" : "left"} · {Math.round(eaten.kcal).toLocaleString()} of{" "}
-                    {target.calories.toLocaleString()} eaten
-                  </p>
+              <div className="flex items-center gap-4 sm:gap-5">
+                <KcalRing eaten={eaten.kcal} target={target.calories} />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <MacroLine label="Protein" eaten={eaten.protein} target={target.protein} tone="protein" />
+                  <MacroLine label="Carbs" eaten={eaten.carbs} target={target.carbs} tone="carb" />
+                  <MacroLine label="Fat" eaten={eaten.fat} target={target.fat} tone="fat" />
                 </div>
-                <Button variant="outline" size="sm" className="shrink-0" onClick={() => onOpen("food")}>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => onOpen("food")}>
                   <Plus />
                   Log food
                 </Button>
-              </div>
-              <Bar value={eaten.kcal} target={target.calories} />
-              <div className="space-y-1">
-                <div className="tabular flex justify-between text-xs">
-                  <span className="font-medium text-macro-protein">Protein</span>
-                  <span className="text-muted-foreground">
-                    <span className="font-medium text-foreground">{Math.round(eaten.protein)}</span> / {target.protein} g
-                  </span>
-                </div>
-                <Bar value={eaten.protein} target={target.protein} className="bg-macro-protein" />
               </div>
             </>
           ) : (
@@ -427,17 +424,31 @@ export function TodayTab(props: TodayTabProps) {
           <CardTitle className="flex items-center gap-2 text-base">
             <ListChecks className="h-4 w-4 text-primary" />
             Daily non-negotiables
-            <span className="tabular text-xs font-normal text-muted-foreground">
-              {progress.done} / {progress.total}
-            </span>
           </CardTitle>
-          <OpenLink label="Your week" onClick={() => onOpen("habits")} />
+          <span className="tabular text-sm font-bold text-[hsl(var(--gold-hi))]">
+            {progress.done} / {progress.total}
+          </span>
         </CardHeader>
         <CardContent>
           {habits.length === 0 ? (
             <p className="text-sm text-muted-foreground">No habits set up yet.</p>
           ) : (
             <>
+            <div className="mb-3 flex flex-wrap justify-between gap-1.5" aria-hidden>
+              {habits
+                .filter((h) => counts(h, entries))
+                .map((h) => (
+                  <span
+                    key={h.id}
+                    className={cn(
+                      "h-9 w-9 rounded-full transition-colors",
+                      isDone(h, entries[h.id])
+                        ? "bg-gradient-to-br from-[hsl(148_62%_70%)] to-[hsl(152_55%_40%)] shadow-[0_0_12px_hsl(var(--success)/0.35)]"
+                        : "border-2 border-dashed border-primary/35",
+                    )}
+                  />
+                ))}
+            </div>
             {hasWorkoutHabit && doneToday.length === 0 ? (
               <button
                 type="button"
@@ -507,6 +518,9 @@ export function TodayTab(props: TodayTabProps) {
                 );
               })}
             </ul>
+            <div className="mt-2 flex justify-end">
+              <OpenLink label="Your week" onClick={() => onOpen("habits")} />
+            </div>
             </>
           )}
         </CardContent>
@@ -545,30 +559,24 @@ export function TodayTab(props: TodayTabProps) {
   return (
     <div className="space-y-5">
       {/* --------------- the day at a glance: one ring per task --------------- */}
-      <section
-        aria-label="Today at a glance"
-        className="rounded-xl border border-primary/25 bg-gradient-to-b from-primary/[0.12] to-card p-4 shadow-sm sm:p-6"
-      >
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">{weekday}</p>
-            <h2 className="text-2xl font-semibold leading-tight">{monthDay}</h2>
-          </div>
-          <p className="tabular shrink-0 text-right leading-tight">
-            <span className={cn("text-2xl font-semibold", allDone && "text-success")}>{doneCount}</span>
-            <span className="text-base text-muted-foreground"> / {tasks.length}</span>
-            <span className="block text-xs text-muted-foreground">done today</span>
+      <header aria-label="Today at a glance" className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">
+            {weekday}, {monthDay}
           </p>
+          <h2 className="text-[1.625rem] font-extrabold leading-tight tracking-tight">Today</h2>
         </div>
-        <div className="mt-4 grid gap-1" style={{ gridTemplateColumns: `repeat(${tasks.length}, minmax(0, 1fr))` }}>
-          {tasks.map((t) => (
-            <TaskRing key={t.id} item={t} onClick={() => jumpTo(t)} />
-          ))}
-        </div>
-        {allDone ? (
-          <p className="mt-3 animate-fade-in text-center text-sm font-medium text-success">Everything&apos;s done. Nice work.</p>
-        ) : null}
-      </section>
+        <span
+          className={cn(
+            "tabular shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold",
+            allDone
+              ? "animate-pop border-success/40 bg-success/15 text-success"
+              : "border-primary/35 bg-gradient-to-br from-[hsl(var(--gold-hi)/0.22)] to-primary/10 text-[hsl(var(--gold-hi))]",
+          )}
+        >
+          {allDone ? "All done. Nice work." : `${doneCount} of ${tasks.length} done`}
+        </span>
+      </header>
 
       <AssignmentCards assignments={props.assignments} onUse={props.onUseAssignment} onDecline={props.onDeclineAssignment} />
 
@@ -699,48 +707,65 @@ interface TaskItem {
   summary: string;
 }
 
-/** One task in the header: a ring that fills as it's done, and a tick when it is. */
-function TaskRing({ item, onClick }: { item: TaskItem; onClick: () => void }) {
-  const r = 20;
+/** Calories left (or over) in the middle of a gold ring that fills as the day's eaten. */
+function KcalRing({ eaten, target }: { eaten: number; target: number }) {
+  const r = 52;
   const c = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(1, item.fraction));
-  const Icon = item.icon;
+  const pct = target > 0 ? Math.min(1, eaten / target) : 0;
+  const left = Math.round(target - eaten);
+  const over = left < -100;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`${item.label}: ${item.done ? "done" : pct > 0 ? `${Math.round(pct * 100)}%` : "not done yet"}`}
-      className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <div
+      role="img"
+      aria-label={`${Math.abs(left).toLocaleString()} kcal ${left < 0 ? "over" : "left"} of ${target.toLocaleString()}`}
+      className="relative h-[7.375rem] w-[7.375rem] shrink-0 [filter:drop-shadow(0_0_14px_hsl(var(--primary)/0.35))]"
     >
-      <span className="relative flex h-12 w-12 items-center justify-center">
-        <svg viewBox="0 0 48 48" className="absolute inset-0 h-12 w-12 -rotate-90" aria-hidden>
-          <circle cx="24" cy="24" r={r} fill="none" strokeWidth="4" className="stroke-muted" />
-          {pct > 0 ? (
-            <circle
-              cx="24"
-              cy="24"
-              r={r}
-              fill="none"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeDasharray={c}
-              strokeDashoffset={c * (1 - pct)}
-              className={cn("transition-[stroke-dashoffset] duration-700 ease-out", item.done ? "stroke-success" : "stroke-primary")}
-            />
-          ) : null}
-        </svg>
-        {item.done ? (
-          <span className="flex h-7 w-7 animate-pop items-center justify-center rounded-full bg-success text-success-foreground">
-            <Check className="h-4 w-4" />
-          </span>
-        ) : (
-          <Icon className={cn("h-5 w-5", pct > 0 ? "text-primary" : "text-muted-foreground")} />
-        )}
-      </span>
-      <span className={cn("max-w-full truncate text-xs font-medium", item.done ? "text-success" : "text-foreground")}>
-        {item.label}
-      </span>
-    </button>
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" aria-hidden>
+        <circle cx="60" cy="60" r={r} fill="none" strokeWidth="12" className="stroke-muted/60" />
+        {pct > 0 ? (
+          <circle
+            cx="60"
+            cy="60"
+            r={r}
+            fill="none"
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={c * (1 - pct)}
+            className={cn("transition-[stroke-dashoffset] duration-700 ease-out", over ? "stroke-warning" : "stroke-primary")}
+          />
+        ) : null}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={cn("tabular text-[1.5625rem] font-extrabold leading-none tracking-tight", over && "text-warning")}>
+          {Math.abs(left).toLocaleString()}
+        </span>
+        <span className="mt-1 text-[11px] text-muted-foreground">kcal {left < 0 ? "over" : "left"}</span>
+      </div>
+    </div>
+  );
+}
+
+const MACRO_TONE = {
+  protein: { text: "text-macro-protein", bar: "bg-macro-protein" },
+  carb: { text: "text-macro-carb", bar: "bg-macro-carb" },
+  fat: { text: "text-macro-fat", bar: "bg-macro-fat" },
+} as const;
+
+function MacroLine({ label, eaten, target, tone }: { label: string; eaten: number; target: number; tone: keyof typeof MACRO_TONE }) {
+  const t = MACRO_TONE[tone];
+  return (
+    <div className="space-y-1">
+      <div className="tabular flex justify-between text-xs">
+        <span className={cn("font-bold", t.text)}>{label}</span>
+        <span className="text-muted-foreground">
+          {Math.round(eaten)} / {Math.round(target)} g
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted/60" aria-hidden>
+        <div className={cn("h-full rounded-full", t.bar)} style={{ width: `${target > 0 ? Math.min(100, (eaten / target) * 100) : 0}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -941,27 +966,18 @@ function WorkoutToday({
       </div>
     );
   } else if (program && next) {
+    const names = next.exercises.map((pe) => findExercise(pe.exerciseId, training.customExercises)?.name ?? "Exercise");
     body = (
-      <div className="space-y-3">
-        <div>
-          <p className="text-[12px] font-medium uppercase tracking-wide text-primary">{heading}</p>
-          <p className="text-lg font-semibold">{next.name}</p>
-        </div>
-        {next.exercises.length > 0 ? (
-          <ul className="space-y-1 text-sm">
-            {next.exercises.slice(0, 4).map((pe, i) => (
-              <li key={`${pe.exerciseId}-${i}`} className="flex items-center gap-2">
-                <ExerciseThumb exerciseId={pe.exerciseId} className="h-6 w-6 rounded" />
-                <span className="min-w-0 flex-1 truncate">{findExercise(pe.exerciseId, training.customExercises)?.name ?? "Exercise"}</span>
-                <span className="tabular shrink-0 text-muted-foreground">{formatTarget(pe)}</span>
-              </li>
-            ))}
-            {next.exercises.length > 4 ? (
-              <li className="text-muted-foreground">+{next.exercises.length - 4} more</li>
-            ) : null}
-          </ul>
+      <div className="space-y-2.5">
+        <p className="text-[1.1875rem] font-extrabold leading-tight tracking-tight">{next.name}</p>
+        {plan?.kind !== "today" ? <p className="text-xs text-muted-foreground">{heading}</p> : null}
+        {names.length > 0 ? (
+          <p className="text-[13px] text-foreground/85">
+            {names.slice(0, 3).join(" · ")}
+            {names.length > 3 ? ` +${names.length - 3}` : ""}
+          </p>
         ) : null}
-        <Button className="w-full" variant={plan?.kind === "rest" || !primary ? "outline" : "default"} onClick={() => onStart(program, next)}>
+        <Button className="h-12 w-full" variant={plan?.kind === "rest" || !primary ? "outline" : "default"} onClick={() => onStart(program, next)}>
           <Play />
           {plan?.kind === "rest" ? `Do ${next.name} today` : `Start ${next.name}`}
         </Button>
@@ -978,16 +994,25 @@ function WorkoutToday({
     );
   }
 
+  const count = !live && doneToday.length === 0 && !rest && program && next ? next.exercises.length : null;
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Dumbbell className="h-4 w-4 text-primary" />
-          Workout
-        </CardTitle>
-        <OpenLink label="Training" onClick={onOpen} />
-      </CardHeader>
-      <CardContent>{body}</CardContent>
+      <CardContent className="space-y-2.5 p-4 sm:p-5">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-primary">
+            <Dumbbell className="h-3.5 w-3.5" />
+            Workout
+          </h3>
+          {count !== null && count > 0 ? (
+            <button type="button" onClick={onOpen} className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              {count} {count === 1 ? "exercise" : "exercises"}
+            </button>
+          ) : (
+            <OpenLink label="Training" onClick={onOpen} />
+          )}
+        </div>
+        {body}
+      </CardContent>
     </Card>
   );
 }

@@ -189,33 +189,26 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
         role="timer"
         aria-label="Rest timer"
         className={cn(
-          "pointer-events-auto mx-auto max-w-md space-y-2.5 molten-card rounded-[1.25rem] border bg-card/95 p-3 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-card/85",
-          done ? "border-success/60" : "border-primary/40",
+          "pointer-events-auto mx-auto max-w-md space-y-2.5 rounded-[1.625rem] border bg-gradient-to-br from-[hsl(var(--surface-top))] to-card p-3.5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] backdrop-blur",
+          done ? "border-success/60" : "border-primary/35",
         )}
       >
-        <div className="flex items-center gap-3">
-          <span
-            className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-              done ? "bg-success/15 text-success" : "bg-primary/10 text-primary",
-            )}
-          >
-            {done ? <BellRing className="h-5 w-5" /> : <Timer className="h-5 w-5" />}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-[12px] text-muted-foreground" aria-live="polite">
+        <div className="flex items-center gap-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground" aria-live="polite">
+              {done ? <BellRing className="h-3.5 w-3.5 shrink-0 text-success" /> : <Timer className="h-3.5 w-3.5 shrink-0" />}
               {done ? "Rest over — next set" : `Rest · ${timer.label}`}
             </p>
-            <p className={cn("tabular text-2xl font-semibold leading-tight", done && "text-success")}>{formatRest(remaining)}</p>
+            <p className={cn("tabular text-[2.125rem] font-extrabold leading-none tracking-tight", done && "text-success")}>{formatRest(remaining)}</p>
           </div>
-          <div className="ml-auto flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => rest.adjust(-15)} aria-label="15 seconds less" disabled={done}>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="outline" size="icon" className="h-11 w-11 rounded-full border-primary/30 bg-transparent" onClick={() => rest.adjust(-15)} aria-label="15 seconds less" disabled={done}>
               <Minus />
             </Button>
-            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => rest.adjust(15)} aria-label="15 seconds more">
+            <Button variant="outline" size="icon" className="h-11 w-11 rounded-full border-primary/30 bg-transparent" onClick={() => rest.adjust(15)} aria-label="15 seconds more">
               <Plus />
             </Button>
-            <Button variant={done ? "default" : "ghost"} size="sm" className="h-9 px-2.5" onClick={rest.skip}>
+            <Button variant={done ? "default" : "ghost"} size="sm" className={cn("h-11 rounded-full px-3.5 font-bold", !done && "bg-[hsl(var(--gold-hi)/0.1)]")} onClick={rest.skip}>
               {done ? "OK" : (
                 <>
                   <SkipForward />
@@ -225,8 +218,11 @@ export function RestTimerBar({ rest, onPreset }: { rest: RestTimer; onPreset?: (
             </Button>
           </div>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-          <div className={cn("h-full rounded-full transition-[width] duration-200", done ? "bg-success" : "bg-primary")} style={{ width: `${pct}%` }} />
+        <div className="h-1.5 overflow-hidden rounded-full bg-[hsl(var(--gold-hi)/0.08)]" aria-hidden>
+          <div
+            className={cn("h-full rounded-full transition-[width] duration-200", done ? "bg-success" : "bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.6)]")}
+            style={{ width: `${pct}%` }}
+          />
         </div>
         {!done ? (
           <div className="flex items-center gap-1.5" role="group" aria-label="Rest length">

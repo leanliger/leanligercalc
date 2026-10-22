@@ -58,7 +58,7 @@ export async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export function Avatar({ name, url }: { name: string; url: string | null }) {
+export function Avatar({ name, url, className }: { name: string; url: string | null; className?: string }) {
   const [broken, setBroken] = React.useState(false);
   const initials = name
     .replace(/^@/, "")
@@ -75,10 +75,13 @@ export function Avatar({ name, url }: { name: string; url: string | null }) {
       loading="lazy"
       referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
-      className="h-8 w-8 shrink-0 rounded-full bg-muted object-cover"
+      className={cn("h-8 w-8 shrink-0 rounded-full bg-muted object-cover", className)}
     />
   ) : (
-    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary">
+    <span
+      aria-hidden
+      className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12px] font-semibold text-primary", className)}
+    >
       {initials || "?"}
     </span>
   );
@@ -190,17 +193,34 @@ function BoardCard({
   onChanged: () => Promise<void>;
 }) {
   const entries = data?.boards[lift] ?? [];
+  // The top three stand on the podium (only when there are at least three); the rest follow.
+  const podium = entries.length >= 3 ? entries.slice(0, 3) : [];
+  const rest = entries.slice(podium.length);
   return (
     <Card>
       <CardHeader className="space-y-3 pb-3">
-        <div className="space-y-1">
-          <CardTitle className="flex items-center gap-2">
-            <Dumbbell className="h-4 w-4 text-primary" />
-            Lift leaderboard
-          </CardTitle>
-          <CardDescription>Verified one-rep lifts, ranked by weight lifted ÷ bodyweight. Every entry has a coach-approved video.</CardDescription>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Lift">
+          {LIFT_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={lift === o.value}
+              onClick={() => onLift(o.value)}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                lift === o.value
+                  ? "bg-gradient-to-br from-[hsl(var(--gold-hi))] to-[hsl(var(--gold-lo))] font-extrabold text-primary-foreground"
+                  : "border border-primary/20 font-medium hover:bg-muted/40",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
         </div>
-        <SegmentedControl ariaLabel="Lift" size="sm" value={lift} onValueChange={onLift} options={LIFT_OPTIONS} />
+        <CardDescription className="flex items-center gap-1.5 text-xs">
+          <Dumbbell className="h-3.5 w-3.5 shrink-0 text-primary" />
+          Verified one-rep lifts, ranked by weight lifted ÷ bodyweight. Every entry has a coach-approved video.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {error ? (
@@ -214,9 +234,12 @@ function BoardCard({
             No approved {LIFT_LABELS[lift].toLowerCase()}s yet. Submit yours to be first on the board.
           </p>
         ) : null}
-        {entries.length > 0 ? (
-          <ol className="space-y-1.5" aria-label={`${LIFT_LABELS[lift]} leaderboard`}>
-            {entries.map((e, i) => (
+        {podium.length > 0 ? <Podium top={podium} lift={lift} unit={unit} isAdmin={Boolean(data?.isAdmin)} onChanged={onChanged} /> : null}
+        {rest.length > 0 ? (
+          <ol className="space-y-0.5" aria-label={`${LIFT_LABELS[lift]} leaderboard`} start={podium.length + 1}>
+            {rest.map((e, j) => {
+              const i = j + podium.length;
+              return (
               <React.Fragment key={`${e.rank}-${e.name}-${e.liftedOn}-${i}`}>
                 {/* Your own row, added below the top entries. */}
                 {i === LIFT_BOARD_MAX && e.isYou ? (
@@ -226,11 +249,82 @@ function BoardCard({
                 ) : null}
                 <BoardRow e={e} lift={lift} unit={unit} isAdmin={Boolean(data?.isAdmin)} onChanged={onChanged} />
               </React.Fragment>
-            ))}
+              );
+            })}
           </ol>
         ) : null}
+        {entries.length > 0 ? <p className="text-center text-xs text-muted-foreground">Verified lifts only · ranked by weight ÷ bodyweight</p> : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** The top three, first in the middle (tallest, glowing), second left, third right. */
+function Podium({
+  top,
+  lift,
+  unit,
+  isAdmin,
+  onChanged,
+}: {
+  top: LiftBoardEntry[];
+  lift: Lift;
+  unit: WeightUnit;
+  isAdmin: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  // Gold, silver, bronze, in rank order; CSS puts first in the middle.
+  const style = [
+    {
+      block: "h-28 from-[hsl(var(--gold-hi)/0.35)] to-primary/10",
+      avatar: "h-16 w-16 text-lg shadow-[0_0_24px_hsl(var(--primary)/0.5)] ring-2 ring-[hsl(var(--gold-hi))]",
+      num: "text-[1.75rem] text-[hsl(var(--gold-hi))]",
+      place: "order-2",
+    },
+    { block: "h-20 from-[hsl(40_14%_86%/0.25)] to-[hsl(40_14%_86%/0.05)]", avatar: "h-[3.25rem] w-[3.25rem] text-base", num: "text-[1.375rem]", place: "order-1" },
+    { block: "h-16 from-[hsl(24_52%_66%/0.25)] to-[hsl(24_52%_66%/0.05)]", avatar: "h-[3.25rem] w-[3.25rem] text-base", num: "text-[1.375rem]", place: "order-3" },
+  ];
+  return (
+    <ol className="grid grid-cols-3 items-end gap-2 pt-2" aria-label={`${LIFT_LABELS[lift]}: top three`}>
+      {top.map((e, i) => (
+        <li key={`${e.rank}-${e.name}`} className={cn("flex min-w-0 flex-col items-center gap-1.5", style[i]!.place)}>
+          <Avatar name={e.name} url={e.avatarUrl} className={style[i]!.avatar} />
+          <span className={cn("flex max-w-full items-center gap-1 text-[13px]", i === 0 ? "font-extrabold" : "font-bold")}>
+            <span className="truncate">{e.isYou ? "You" : e.name}</span>
+          </span>
+          <div
+            className={cn(
+              "flex w-full flex-col items-center justify-center rounded-t-[1.125rem] rounded-b-md bg-gradient-to-b",
+              style[i]!.block,
+              e.isYou && "ring-2 ring-primary/60",
+            )}
+          >
+            <span className={cn("tabular font-extrabold leading-none tracking-tight", style[i]!.num)} aria-label={`Rank ${e.rank}`}>
+              {e.rank}
+            </span>
+            <span className="tabular mt-1 text-xs font-bold">{formatRatio(e.ratio)}</span>
+            <span className="tabular text-[11px] text-muted-foreground">{load1(e.weightLb, unit)}</span>
+          </div>
+          <VideoLink url={e.videoUrl} label={`Watch ${e.name}'s ${LIFT_LABELS[lift].toLowerCase()} on ${videoHost(e.videoUrl)}`} compact />
+          {isAdmin && e.id ? (
+            <ConfirmButton
+              size="sm"
+              className="h-7 px-2 text-xs"
+              label="Remove"
+              icon={<X />}
+              confirmLabel="Remove"
+              onConfirm={async () => {
+                await call(`/api/lift-board/submissions/${e.id}/review`, {
+                  method: "PUT",
+                  body: JSON.stringify({ decision: "reject", note: "Removed by a coach." }),
+                });
+                await onChanged();
+              }}
+            />
+          ) : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -249,14 +343,19 @@ function BoardRow({
 }) {
   const medal = e.rank <= 3;
   return (
-    <li className={cn("flex items-center gap-3 rounded-md border px-3 py-2", e.isYou ? "border-primary bg-primary/10" : "border-border")}>
+    <li
+      className={cn(
+        "flex items-center gap-3 border-b border-primary/[0.08] px-1 py-2",
+        e.isYou && "-mx-1 rounded-2xl border-transparent bg-gradient-to-br from-[hsl(var(--gold-hi)/0.16)] to-primary/[0.06] px-2",
+      )}
+    >
       <span className={cn("tabular w-6 shrink-0 text-center text-sm font-semibold", medal ? MEDAL[e.rank - 1] : "text-muted-foreground")}>
         {medal ? <Trophy className="mx-auto h-4 w-4" aria-label={`Rank ${e.rank}`} /> : e.rank}
       </span>
-      <Avatar name={e.name} url={e.avatarUrl} />
+      <Avatar name={e.name} url={e.avatarUrl} className="h-[2.125rem] w-[2.125rem]" />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{e.name}</span>
+          <span className="truncate text-sm font-bold">{e.isYou ? "You" : e.name}</span>
           {/* On phones the highlighted row says it; the badge would crowd the name. */}
           {e.isYou ? (
             <Badge variant="default" className="hidden px-1.5 py-0 text-[11px] sm:inline-flex">
@@ -268,7 +367,7 @@ function BoardRow({
           {load1(e.weightLb, unit)} · {formatShort(e.liftedOn)}
         </span>
       </span>
-      <span className="tabular shrink-0 text-right text-sm font-semibold">{formatRatio(e.ratio)}</span>
+      <span className="tabular shrink-0 text-right text-sm font-extrabold">{formatRatio(e.ratio)}</span>
       <VideoLink url={e.videoUrl} label={`Watch ${e.name}'s ${LIFT_LABELS[lift].toLowerCase()} on ${videoHost(e.videoUrl)}`} compact />
       {isAdmin && e.id ? (
         <ConfirmButton

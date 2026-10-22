@@ -52,7 +52,9 @@ import type { WeightUnit } from "@/lib/types";
 import { fromLb, toLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
-const ROW_GRID = "grid grid-cols-[1.75rem_minmax(0,1fr)_4.5rem_3.75rem_2.5rem] items-center gap-1.5";
+const ROW_GRID = "grid grid-cols-[1.5rem_minmax(0,1fr)_4.375rem_4rem_2.875rem] items-center gap-1.5";
+/** The set boxes (weight, reps) and the done button, outside gym mode. */
+const SET_BOX = "h-11 rounded-[0.875rem] border-primary/15 bg-[hsl(var(--gold-hi)/0.06)] text-[1.0625rem] font-extrabold";
 /** Gym mode: thumb-sized boxes and a big done button; "Previous" is left out (it's in "Last time" above). */
 const ROW_GRID_GYM = "grid grid-cols-[1.75rem_minmax(0,1.3fr)_minmax(0,1fr)_4.5rem] items-center gap-2";
 
@@ -203,21 +205,20 @@ export function WorkoutLogger({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <Card className="border-primary/40">
+      <Card className="border-primary/35">
         <CardHeader className="space-y-2 p-4 sm:p-6">
-          <div className="flex items-start gap-3">
+          <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1 space-y-0.5">
-              <p className="text-[12px] font-medium uppercase tracking-wide text-primary">
-                {live ? "Workout in progress" : `Editing · ${formatLong(workout.date)}`}
+              <p className="tabular text-[11px] font-bold uppercase tracking-[0.1em] text-[hsl(var(--gold-hi))]">
+                {live ? `In progress · ${formatDuration(now - workout.startedAt)}` : `Editing · ${formatLong(workout.date)}`}
               </p>
-              <CardTitle className="truncate text-lg">{workout.name}</CardTitle>
+              <CardTitle className="truncate text-xl font-extrabold tracking-tight">{workout.name}</CardTitle>
               <p className="tabular text-xs text-muted-foreground">
-                {live ? `${formatDuration(now - workout.startedAt)} · ` : ""}
                 {summary.sets} of {totalSets} sets · {formatWork(summary, unit)}
                 {summary.volume > 0 ? " lifted" : ""}
               </p>
             </div>
-            <Button onClick={finish} disabled={busy} className={cn("shrink-0", gym && "h-12 px-5 text-base")}>
+            <Button onClick={finish} disabled={busy} className={cn("h-11 shrink-0 px-5 font-extrabold", gym && "h-12 text-base")}>
               {live ? <Flag /> : <Check />}
               {live ? "Finish" : "Done"}
             </Button>
@@ -429,7 +430,7 @@ function ExerciseBlock({
             <button
               type="button"
               onClick={onOpen}
-              className="text-left text-base font-semibold leading-snug underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+              className="text-left text-[1.0625rem] font-extrabold leading-snug tracking-tight underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
             >
               {exercise.name}
             </button>
@@ -470,9 +471,9 @@ function ExerciseBlock({
           </div>
         </div>
         {oneSide ? (
-          <p className="text-xs">
-            <span className="font-medium text-primary">One side at a time</span>
-            <span className="text-muted-foreground"> · reps are per arm or leg, log the set after both sides</span>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="rounded-full bg-primary/[0.12] px-2.5 py-1 font-bold text-[hsl(var(--gold-hi))]">One side at a time · reps per side</span>
+            <span className="text-muted-foreground">Log the set after both sides.</span>
           </p>
         ) : null}
         <p className="tabular text-xs text-muted-foreground">
@@ -481,7 +482,7 @@ function ExerciseBlock({
             : "First time logging this — pick a weight you can lift with good form."}
         </p>
         {behind ? (
-          <p className="text-xs font-medium text-warning">
+          <p className="text-xs font-bold text-warning">
             Last time your {behind.side} side was {behind.by} rep{behind.by === 1 ? "" : "s"} behind. Start with it, and match it on the other side.
           </p>
         ) : null}
@@ -769,9 +770,9 @@ function SetRow({
   };
 
   return (
-    <div className={cn("rounded-md transition-colors", set.done && "bg-success/10")}>
+    <div className={cn("rounded-2xl transition-colors", set.done && "bg-success/[0.08]")}>
     <div className={cn(gym ? ROW_GRID_GYM : ROW_GRID, "px-1 py-1")}>
-      <span className={cn("flex justify-center font-semibold tabular", gym ? "text-base" : "text-xs")}>
+      <span className={cn("flex justify-center font-extrabold tabular", gym ? "text-base" : "text-sm")}>
         {pr ? (
           <span title="Personal record" className="text-primary">
             <Trophy className="h-4 w-4" aria-hidden />
@@ -789,7 +790,7 @@ function SetRow({
         enterKeyHint="next"
         placeholder={bodyweight ? "0" : unit}
         aria-label={`Set ${n} ${bodyweight ? "added weight" : "weight"} (${unit})`}
-        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : "h-9")}
+        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX)}
       />
       <Input
         ref={repsRef}
@@ -800,7 +801,7 @@ function SetRow({
         placeholder="reps"
         aria-label={`Set ${n} reps`}
         aria-invalid={missing || undefined}
-        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : "h-9", missing && "border-destructive ring-1 ring-destructive")}
+        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX, missing && "border-destructive ring-1 ring-destructive")}
       />
       <button
         type="button"
@@ -809,10 +810,12 @@ function SetRow({
         aria-label={`Set ${n} done`}
         onClick={toggle}
         className={cn(
-          "flex w-full items-center justify-center rounded-md border transition-colors",
-          gym ? "h-14" : "h-9",
+          "flex w-full items-center justify-center border transition-colors",
+          gym ? "h-14 rounded-md" : "h-11 rounded-[0.875rem]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-          set.done ? "border-success bg-success text-success-foreground" : "border-border hover:bg-muted/50",
+          set.done
+            ? "border-transparent bg-gradient-to-br from-[hsl(148_62%_70%)] to-[hsl(152_55%_40%)] text-[hsl(150_60%_8%)] shadow-[0_0_14px_hsl(var(--success)/0.4)]"
+            : "border-primary/20 text-muted-foreground hover:bg-muted/50",
         )}
       >
         <Check className={cn(gym ? "h-7 w-7" : "h-4 w-4", !set.done && "opacity-30", set.done && "animate-pop")} />

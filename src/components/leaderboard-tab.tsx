@@ -30,7 +30,7 @@ export type Board = "streaks" | "lifts" | "challenges" | "badges";
 
 /** The Ranks tab (id "leaderboard"): habit streaks, or verified lifts. */
 export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, today, badges, startOn }: LeaderboardTabProps) {
-  const [board, setBoard] = React.useState<Board>(startOn ?? "streaks");
+  const [board, setBoard] = React.useState<Board>(startOn ?? "lifts");
   // Challenges the member joined; opening Ranks shows them first when there are any.
   const [challenges, setChallenges] = React.useState<ChallengeStandings[] | null>(null);
   const [challengeError, setChallengeError] = React.useState<string | null>(null);
@@ -52,6 +52,7 @@ export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, t
   }, []);
   return (
     <div className="space-y-5">
+      <h2 className="text-[1.625rem] font-extrabold leading-tight tracking-tight">Ranks</h2>
       <SegmentedControl
         ariaLabel="Leaderboard"
         value={board}
@@ -60,8 +61,8 @@ export function LeaderboardTab({ availability, onNavigate, unit, bodyweightLb, t
           setBoard(b);
         }}
         options={[
-          { value: "streaks", label: "Habit streaks" },
           { value: "lifts", label: "Lifts" },
+          { value: "streaks", label: "Habits" },
           { value: "challenges", label: "Challenges" },
           { value: "badges", label: "Badges" },
         ]}
