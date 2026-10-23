@@ -51,7 +51,7 @@ export async function coachMemberTimeline(
   const m = c.memberId;
   const db = env.DB;
 
-  const [weighIns, checkins, note, assignments, edits, macros, milestones, photoShare, photos, measurements, workouts, nudges] = await Promise.all([
+  const [weighIns, checkins, note, assignments, edits, macros, milestones, photoShare, photos, measurements, workouts, nudges, messages] = await Promise.all([
     db.prepare("SELECT date, weight_lb, note FROM weigh_ins WHERE user_id = ? AND date >= ? ORDER BY date").bind(m, weighFrom).all<{ date: string; weight_lb: number; note: string | null }>(),
     db
       .prepare(
@@ -95,6 +95,10 @@ export async function coachMemberTimeline(
       )
       .bind(companyId, m, since)
       .all<{ kind: NudgeKind; sent_at: string; message: string | null }>(),
+    db
+      .prepare("SELECT from_coach, body, created_at, attachment FROM coach_messages WHERE company_id = ? AND member_id = ? AND pending = 0 AND created_at >= ?")
+      .bind(companyId, m, since)
+      .all<{ from_coach: number; body: string; created_at: string; attachment: string | null }>(),
   ]);
 
   const rows: TimelineRows = {
@@ -118,6 +122,12 @@ export async function coachMemberTimeline(
     })),
     programEdits: edits.results.map((r) => ({ createdAt: r.created_at, appliedAt: r.applied_at })),
     nudges: nudges.results.map((r) => ({ kind: r.kind, message: r.message, sentAt: r.sent_at })),
+    messages: messages.results.map((r) => ({
+      fromCoach: r.from_coach === 1,
+      body: r.body,
+      at: r.created_at,
+      attachment: r.attachment === "photo" || r.attachment === "voice" ? r.attachment : null,
+    })),
     macros: macros ? { kcal: macros.kcal, protein: macros.protein, carbs: macros.carbs, fat: macros.fat, setAt: macros.set_at } : null,
     milestones: milestones.results.map((r) => ({ kind: r.kind, level: r.level, reachedOn: r.reached_on })),
     photos: photoShare?.share_with_coach === 1 ? photos.results : null,

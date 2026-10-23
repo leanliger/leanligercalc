@@ -22,6 +22,7 @@ import {
   type PendingFormCheck,
 } from "../src/lib/form-checks";
 import { EXPERIENCE_ID_PATTERN } from "../src/lib/fasting";
+import { alertCoaches } from "./messages";
 import { sendWhop } from "./reminders";
 import { accessLevel, hasWhopKey, whopGet, type WhopEnv } from "./whop";
 
@@ -140,6 +141,11 @@ export async function askFormCheck(env: FormCheckEnv, userId: string, raw: unkno
     .bind(id, s.experienceId, userId, s.exerciseId, s.exerciseName, s.videoUrl, s.question, clip(p?.name), clip(p?.username), avatar)
     .run();
   const row = await env.DB.prepare("SELECT * FROM form_checks WHERE id = ?").bind(id).first<Row>();
+  // Coach alert: a form check waiting for feedback.
+  await alertCoaches(env, s.experienceId, {
+    title: `${clip(p?.name) ?? (clip(p?.username) ? `@${clip(p?.username)}` : "A member")} asked for a form check`,
+    content: `${s.exerciseName}${s.question ? `: ${s.question}` : ""}`,
+  });
   return { ok: true, body: { formCheck: row ? toMine(row) : null } };
 }
 

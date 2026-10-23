@@ -13,6 +13,8 @@ import {
   Inbox,
   MessageCircle,
   MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   Send,
   Scale,
@@ -40,6 +42,7 @@ import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-co
 import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
 import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
+import { BulkBar } from "@/components/coach-bulk";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -142,6 +145,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [libraryTab, setLibraryTab] = React.useState<"programs" | "results" | "announcements" | "nudges" | "testimonials">("programs");
   // Inbox: check-ins to answer, or chats with members.
   const [inboxTab, setInboxTab] = React.useState<"checkins" | "messages">("checkins");
+  // Members ticked in the list for bulk actions, and the ones handed to Assign program.
+  const [picked, setPicked] = React.useState<string[]>([]);
+  const [assignPicked, setAssignPicked] = React.useState<string[]>([]);
   // Every chat, for the unread counts on Inbox and on each member's Message button.
   const chats = useCoachThreads(companyId);
   // The check-in open in the inbox.
@@ -299,6 +305,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         : prev,
     );
   };
+  /** Kudos from the Celebrate list: a chat message to the member. */
+  const sendKudos = async (memberId: string, text: string) => {
+    const res = await fetch("/api/coach/messages", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ company: companyId, member: memberId, body: text }),
+    });
+    if (!res.ok) throw new Error("Couldn't send kudos.");
+    void chats.refresh();
+  };
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const navItems: CoachNavItem[] = [
@@ -413,7 +430,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 />
               </div>
               {libraryTab === "programs" ? (
-                <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
+                <CoachAssignPanel key={assignPicked.join(",")} companyId={companyId} members={overview.members} tags={tagsData} picked={assignPicked} />
               ) : libraryTab === "announcements" ? (
                 <CoachAnnouncements companyId={companyId} tags={tagsData?.tags ?? []} />
               ) : libraryTab === "results" ? (
@@ -466,6 +483,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <PhoneToday
                   members={summaries}
                   today={today}
+                  unit={unit}
+                  onKudos={sendKudos}
                   onOpen={openFromToday}
                   onSearch={() => {
                     showMembers("all");
@@ -490,7 +509,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               </div>
               {summaries.length > 0 ? (
                 <>
-                  <TodayLanes members={summaries} unit={unit} onOpen={openFromToday} onShowAll={showMembers} />
+                  <TodayLanes members={summaries} unit={unit} onOpen={openFromToday} onShowAll={showMembers} onKudos={sendKudos} />
                   <WeekStrip
                     items={[
                       { label: "Logged this week", value: counts.loggedWeek, of: `of ${counts.total}`, sub: "any log in the last 7 days" },
@@ -659,11 +678,24 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               ) : shown.length === 0 ? (
                 <EmptyNote>Nobody matches this filter.</EmptyNote>
               ) : (
+                <>
+                <label className="flex w-fit cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[hsl(var(--primary))]"
+                    checked={shown.length > 0 && shown.every((m) => picked.includes(m.data.userId))}
+                    onChange={(e) => {
+                      const ids = shown.map((m) => m.data.userId);
+                      setPicked((p) => (e.target.checked ? [...new Set([...p, ...ids])] : p.filter((id) => !ids.includes(id))));
+                    }}
+                  />
+                  Select all {shown.length} shown, for bulk actions
+                </label>
                 <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card">
                   <div
                     aria-hidden
                     className={cn(
-                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
+                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent py-2 pl-12 pr-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
                       ROW_GRID,
                     )}
                   >
@@ -675,20 +707,51 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     <span>Check-in</span>
                   </div>
                   <ul className="divide-y divide-border">
-                    {shown.map((m) => (
-                      <li key={m.data.userId}>
-                        <MemberRow
-                          m={m}
-                          unit={unit}
-                          selected={m.data.userId === selected}
-                          onOpen={() => openMember(m.data.userId)}
-                          tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
-                        />
-                      </li>
-                    ))}
+                    {shown.map((m) => {
+                      const ticked = picked.includes(m.data.userId);
+                      return (
+                        <li key={m.data.userId} className={cn("flex items-stretch", ticked && "bg-primary/[0.06]")}>
+                          <label className="flex w-10 shrink-0 cursor-pointer items-center justify-center" title={`Select ${m.displayName}`}>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-[hsl(var(--primary))]"
+                              aria-label={`Select ${m.displayName}`}
+                              checked={ticked}
+                              onChange={(e) => setPicked((p) => (e.target.checked ? [...p, m.data.userId] : p.filter((id) => id !== m.data.userId)))}
+                            />
+                          </label>
+                          <div className="min-w-0 flex-1">
+                            <MemberRow
+                              m={m}
+                              unit={unit}
+                              selected={m.data.userId === selected}
+                              onOpen={() => openMember(m.data.userId)}
+                              tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
+                </>
               )}
+              {picked.length > 0 ? (
+                <BulkBar
+                  companyId={companyId}
+                  selected={picked}
+                  tags={tagsData}
+                  onClear={() => setPicked([])}
+                  onTagsChanged={setTagsData}
+                  onMessaged={() => void chats.refresh()}
+                  onAssign={() => {
+                    setAssignPicked(picked);
+                    setLibraryTab("programs");
+                    setView("library");
+                    window.scrollTo({ top: 0 });
+                  }}
+                />
+              ) : null}
               {notSharing.length > 0 ? (
                 <NotSharingList
                   members={shownNotSharing}
@@ -1080,7 +1143,25 @@ function MemberDetail({
   React.useEffect(() => {
     if (unreadMessages > 0) setChatOpen(true);
   }, [unreadMessages]);
+  // The notes column folds away on a computer, so the charts get the full width (remembered on this device).
+  const [notesHidden, setNotesHidden] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      setNotesHidden(localStorage.getItem("prep-calculator:coach-notes-hidden") === "1");
+    } catch {
+      /* no storage: shown */
+    }
+  }, []);
+  const showNotes = (show: boolean) => {
+    setNotesHidden(!show);
+    try {
+      localStorage.setItem("prep-calculator:coach-notes-hidden", show ? "0" : "1");
+    } catch {
+      /* not remembered */
+    }
+  };
   const openChat = () => {
+    showNotes(true);
     setChatOpen(true);
     requestAnimationFrame(() => {
       const chat = document.getElementById("member-chat");
@@ -1114,7 +1195,7 @@ function MemberDetail({
         <ArrowLeft />
         All members
       </Button>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5 lg:items-start", !notesHidden && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
       <div className="min-w-0 space-y-4">
 
       <div className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
@@ -1182,14 +1263,23 @@ function MemberDetail({
             size="sm"
             variant="outline"
             onClick={() => {
-              const notes = document.getElementById("member-notes");
-              notes?.scrollIntoView({ behavior: "smooth", block: "start" });
-              notes?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+              showNotes(true);
+              requestAnimationFrame(() => {
+                const notes = document.getElementById("member-notes");
+                notes?.scrollIntoView({ behavior: "smooth", block: "start" });
+                notes?.querySelector<HTMLTextAreaElement>("#notes-" + m.data.userId)?.focus({ preventScroll: true });
+              });
             }}
           >
             <StickyNote />
             Add note
           </Button>
+          {notesHidden ? (
+            <Button size="sm" variant="ghost" className="hidden lg:inline-flex" onClick={() => showNotes(true)}>
+              <PanelRightOpen />
+              Show notes column
+            </Button>
+          ) : null}
           <ConfirmButton
             label="Stop viewing"
             icon={<EyeOff />}
@@ -1452,7 +1542,13 @@ function MemberDetail({
       </div>
       </div>
       {/* Notes and tags stay beside the member's page on a computer, under it on a phone. */}
-      <aside id="member-notes" aria-label="Chat, notes and tags" className="min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20">
+      <aside id="member-notes" aria-label="Chat, notes and tags" className={cn("min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20", notesHidden && "lg:hidden")}>
+        <div className="hidden justify-end lg:flex">
+          <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" onClick={() => showNotes(false)}>
+            <PanelRightClose />
+            Hide this column
+          </Button>
+        </div>
         {chatOpen ? (
           <CoachChatPanel
             key={m.data.userId}

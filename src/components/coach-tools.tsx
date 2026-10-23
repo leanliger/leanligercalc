@@ -16,6 +16,7 @@ import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { VoicePlayer, VoiceRecorder } from "@/components/voice-reply";
+import { SavedRepliesButton } from "@/components/saved-replies";
 
 /** Coach dashboard pieces: private notes, check-ins, set macros, and the "look at today" list. */
 
@@ -402,16 +403,25 @@ export function MemberCheckinsCard({
                         <Label htmlFor={`reply-${c.weekStart}`} className="text-xs">
                           Your reply
                         </Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void draft(c.weekStart)}
-                          disabled={drafting || sending}
-                        >
-                          {drafting ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                          {drafting ? "Drafting…" : reply.trim() ? "Redraft with AI" : "Draft with AI"}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void draft(c.weekStart)}
+                            disabled={drafting || sending}
+                          >
+                            {drafting ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                            {drafting ? "Drafting…" : reply.trim() ? "Redraft with AI" : "Draft with AI"}
+                          </Button>
+                          {/* Saved replies drop in below what's written (or replace an empty box). */}
+                          <SavedRepliesButton
+                            companyId={companyId}
+                            firstName={first(memberName)}
+                            current={reply}
+                            onInsert={(text) => setReply((r) => (r.trim() ? `${r.trimEnd()}\n\n${text}` : text))}
+                          />
+                        </div>
                         <textarea
                           id={`reply-${c.weekStart}`}
                           value={reply}

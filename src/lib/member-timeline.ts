@@ -26,14 +26,17 @@ export type TimelineKind =
   | "photos"
   | "measurement"
   | "workout"
-  | "nudge";
+  | "nudge"
+  | "message-in"
+  | "message-out";
 
 /** Groups for the feed's filter. */
 export const TIMELINE_GROUPS = {
   checkins: ["check-in", "reply"],
   body: ["weigh-in", "measurement", "photos", "milestone"],
   training: ["workout", "program", "program-edit"],
-  coach: ["note", "macros", "habits", "program", "program-edit", "reply", "nudge"],
+  coach: ["note", "macros", "habits", "program", "program-edit", "reply", "nudge", "message-out"],
+  messages: ["message-in", "message-out"],
 } as const satisfies Record<string, readonly TimelineKind[]>;
 export type TimelineGroup = keyof typeof TIMELINE_GROUPS;
 
@@ -73,6 +76,8 @@ export interface TimelineRows {
   workouts: { date: string; finishedAt: number | null; name: string; sets: number; volumeLb: number }[];
   /** Automatic nudges sent (src/lib/nudges.ts). Optional for callers that don't read them. */
   nudges?: { kind: NudgeKind; message: string | null; sentAt: string }[];
+  /** Chat messages (src/lib/messages.ts), delivered ones only. Optional for callers that don't read them. */
+  messages?: { fromCoach: boolean; body: string; at: string; attachment: "photo" | "voice" | null }[];
 }
 
 const clip = (s: string, n = 180) => {
@@ -230,6 +235,31 @@ export function buildTimeline(rows: TimelineRows, since: string, unit: WeightUni
       kind: "nudge",
       title: `Automatic nudge: ${NUDGE_INFO[n.kind].label.toLowerCase()}`,
       detail: n.message ? `“${clip(n.message)}”` : undefined,
+    });
+  }
+
+  // Chat: one entry per day and side, so a long conversation doesn't bury everything else.
+  const chats = new Map<string, { fromCoach: boolean; n: number; last: { body: string; at: string; attachment: "photo" | "voice" | null } }>();
+  for (const msg of rows.messages ?? []) {
+    if (day(msg.at) < since) continue;
+    const key = `${day(msg.at)}|${msg.fromCoach ? 1 : 0}`;
+    const c = chats.get(key);
+    if (!c) chats.set(key, { fromCoach: msg.fromCoach, n: 1, last: msg });
+    else {
+      c.n++;
+      if (msg.at > c.last.at) c.last = msg;
+    }
+  }
+  for (const [key, c] of chats) {
+    const what = c.last.attachment === "photo" ? "[photo]" : c.last.attachment === "voice" ? "[voice note]" : "";
+    const text = [what, c.last.body].filter(Boolean).join(" ");
+    const times = c.n > 1 ? ` ${c.n} times` : "";
+    out.push({
+      date: key.slice(0, 10),
+      at: c.last.at,
+      kind: c.fromCoach ? "message-out" : "message-in",
+      title: c.fromCoach ? `You messaged them${times}` : `Messaged you${times}`,
+      detail: text ? `${c.n > 1 ? "Last: " : ""}“${clip(text)}”` : undefined,
     });
   }
 

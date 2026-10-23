@@ -30,6 +30,7 @@ import {
 } from "../src/lib/lift-board";
 import { EXPERIENCE_ID_PATTERN } from "../src/lib/fasting";
 import { fromLb } from "../src/lib/units";
+import { alertCoaches } from "./messages";
 import { sendWhop } from "./reminders";
 import { accessLevel, hasWhopKey, whopGet, type WhopEnv } from "./whop";
 
@@ -198,6 +199,11 @@ export async function submitLift(env: LiftBoardEnv, userId: string, raw: unknown
     .bind(id, s.experienceId, userId, s.lift, s.weightLb, s.bodyweightLb, ratio, s.liftedOn, s.videoUrl, s.note, clip(p?.name), clip(p?.username), avatar)
     .run();
   const row = await env.DB.prepare("SELECT * FROM lift_submissions WHERE id = ?").bind(id).first<Row>();
+  // Coach alert: a video waiting for approval.
+  await alertCoaches(env, s.experienceId, {
+    title: `${clip(p?.name) ?? (clip(p?.username) ? `@${clip(p?.username)}` : "A member")} submitted a lift`,
+    content: `${LIFT_LABELS[s.lift]}, ${Math.round(s.weightLb)} lb. Approve or reject it on the Lift board.`,
+  });
   return { ok: true, body: { submission: row ? toMine(row) : null } };
 }
 

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, MessageSquare, PartyPopper, Search } from "lucide-react";
+import { AlertTriangle, Check, Loader2, MessageSquare, PartyPopper, Search } from "lucide-react";
 import { FLAG_LABELS, healthZone, type Flag, type MemberSummary } from "@/lib/coach";
+import { kudosMessage } from "@/lib/messages";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -121,14 +122,89 @@ function sentAgo(iso: string | undefined, now: number): string {
  * Who needs the coach today, in two lists: check-ins waiting for a reply, and
  * members drifting (any other flag). Most urgent first, as the list sorts them.
  */
+/** A member's newest milestone, in words ("Down 10 lb since starting"). */
+const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => {
+  const w = [...(m.data.milestones ?? [])].sort((a, b) => b.reachedOn.localeCompare(a.reachedOn))[0];
+  return w ? milestoneLabel(w, unit) : null;
+};
+
+/**
+ * Kudos on the Celebrate list: one tap sends a congratulation as a chat
+ * message (they get a Whop notification). Remembered on this device per
+ * milestone, so it isn't sent twice.
+ */
+export function KudosButton({
+  m,
+  unit,
+  onKudos,
+  className,
+}: {
+  m: MemberSummary;
+  unit: WeightUnit;
+  onKudos: (memberId: string, text: string) => Promise<void>;
+  className?: string;
+}) {
+  const win = newestWinLabel(m, unit);
+  const key = `prep-calculator:kudos:${m.data.userId}:${newestWin(m)}`;
+  const [state, setState] = React.useState<"idle" | "sending" | "sent" | "failed">("idle");
+  React.useEffect(() => {
+    try {
+      if (localStorage.getItem(key)) setState("sent");
+    } catch {
+      /* no storage: the button stays available */
+    }
+    // The phone and computer layouts each have a button; sending from one marks both.
+    const on = (e: Event) => (e as CustomEvent<string>).detail === key && setState("sent");
+    window.addEventListener("kudos-sent", on);
+    return () => window.removeEventListener("kudos-sent", on);
+  }, [key]);
+  if (!win) return null;
+  const first = m.displayName.split(" ")[0] || m.displayName;
+  const send = async () => {
+    setState("sending");
+    try {
+      await onKudos(m.data.userId, kudosMessage(first, win));
+      setState("sent");
+      window.dispatchEvent(new CustomEvent("kudos-sent", { detail: key }));
+      try {
+        localStorage.setItem(key, "1");
+      } catch {
+        /* not remembered; still sent */
+      }
+    } catch {
+      setState("failed");
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void send()}
+      disabled={state === "sending" || state === "sent"}
+      title={state === "sent" ? "Kudos sent" : `Send: “${kudosMessage(first, win)}”`}
+      aria-label={state === "sent" ? `Kudos sent to ${m.displayName}` : `Send kudos to ${m.displayName}`}
+      className={cn(
+        "inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        state === "sent" ? "border-success/40 text-success" : state === "failed" ? "border-destructive/50 text-destructive" : "border-success/40 text-success hover:bg-success/10",
+        className,
+      )}
+    >
+      {state === "sending" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : state === "sent" ? <Check className="h-3.5 w-3.5" /> : <PartyPopper className="h-3.5 w-3.5" />}
+      {state === "sent" ? "Sent" : state === "failed" ? "Retry" : "Kudos"}
+    </button>
+  );
+}
+
 export function TodayLanes({
   members,
   unit,
   onOpen,
   onShowAll,
+  onKudos,
 }: {
   members: MemberSummary[];
   unit: WeightUnit;
+  /** Send kudos as a chat message. */
+  onKudos?: (memberId: string, text: string) => Promise<void>;
   /** Open a member, on the check-ins tab or their overview. */
   onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
   /** Show the whole list, filtered to this lane. */
@@ -188,6 +264,7 @@ export function TodayLanes({
         action="Open"
         onOpen={(id) => onOpen(id, "overview")}
         onMore={() => onShowAll("all")}
+        extra={onKudos ? (m) => <KudosButton m={m} unit={unit} onKudos={onKudos} /> : undefined}
       />
     </section>
   );
@@ -211,6 +288,7 @@ function Lane({
   action,
   onOpen,
   onMore,
+  extra,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -221,6 +299,8 @@ function Lane({
   action: string;
   onOpen: (userId: string) => void;
   onMore: () => void;
+  /** A button beside each row (kudos). */
+  extra?: (m: MemberSummary) => React.ReactNode;
 }) {
   const t = TONE[tone];
   return (
@@ -235,11 +315,11 @@ function Lane({
       ) : (
         <ul className="divide-y divide-border/70">
           {list.slice(0, LANE_LIMIT).map((m) => (
-            <li key={m.data.userId}>
+            <li key={m.data.userId} className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => onOpen(m.data.userId)}
-                className="flex min-h-11 w-full items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-8 w-8" />
                 <span className="min-w-0 flex-1">
@@ -248,6 +328,7 @@ function Lane({
                 </span>
                 <span className={cn("shrink-0 text-xs font-semibold", t.action)}>{action}</span>
               </button>
+              {extra?.(m)}
             </li>
           ))}
         </ul>
@@ -312,9 +393,13 @@ export function PhoneToday({
   today,
   onOpen,
   onSearch,
+  unit,
+  onKudos,
 }: {
   members: MemberSummary[];
   today: string;
+  unit: WeightUnit;
+  onKudos?: (memberId: string, text: string) => Promise<void>;
   onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
   onSearch: () => void;
 }) {
@@ -401,14 +486,16 @@ export function PhoneToday({
         <ul className="space-y-2">
           {list.map((m) => {
             const toReply = m.flags.includes("reply");
+            const win = onKudos && (m.data.milestones ?? []).length > 0;
             return (
-              <li key={m.data.userId}>
+              <li key={m.data.userId} className="relative">
                 <button
                   type="button"
                   onClick={() => onOpen(m.data.userId, toReply ? "checkins" : openTab(m))}
                   className={cn(
                     "flex w-full items-center gap-3 molten-card rounded-[1.25rem] border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     toReply ? "border-primary/45" : "border-border",
+                    win && "pb-12",
                   )}
                 >
                   {m.health ? (
@@ -432,6 +519,12 @@ export function PhoneToday({
                     {toReply ? "Reply" : "Open"}
                   </span>
                 </button>
+                {win ? (
+                  <span className="absolute bottom-2.5 left-[4.25rem] right-3 flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-success">{newestWinLabel(m, unit)}</span>
+                    <KudosButton m={m} unit={unit} onKudos={onKudos!} />
+                  </span>
+                ) : null}
               </li>
             );
           })}

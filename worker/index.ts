@@ -38,8 +38,12 @@
  *   GET    /api/coach/member-timeline?company=…&member=…&unit=…&days=…  coaches: one feed of what a member did and what you sent (see member-timeline.ts)
  *   GET    /api/coach/nudges?company=…               coaches: automatic nudge rules and what was sent; PUT to save them (see nudges.ts)
  *   GET    /api/coach/program-results?company=…      coaches: how members are doing on each program sent (see program-results.ts)
- *   GET/POST /api/messages?experience=…               members: my chat with my coach (see messages.ts)
+ *   GET/POST /api/messages?experience=…               members: my chat with my coach (see messages.ts); POST /api/messages/attachment, GET /api/messages/attachment/:id
  *   GET/POST /api/coach/messages?company&member       coaches: a member's chat; GET /api/coach/threads?company=… every chat
+ *   POST   /api/coach/messages/bulk, /api/coach/messages/attachment; GET /api/coach/messages/attachment/:id; DELETE /api/coach/messages/:id (scheduled)
+ *   GET/POST /api/coach/saved-replies?company=…       coaches: saved replies; DELETE /api/coach/saved-replies/:id (see saved-replies.ts)
+ *   POST   /api/coach/tags/bulk                       coaches: add or remove a tag for many members (see coaching.ts)
+ *   POST   /api/coach/macros/bulk                     coaches: set or adjust macros for many members (see coaching.ts)
  *   GET/POST /api/coach/announcements?company=…       coaches: announcements; DELETE /api/coach/announcements/:id?company=…
  *   GET    /api/notifications?experience=…           members: my notification bell; POST /api/notifications/seen (see notifications.ts)
  *   GET/PUT /api/coach/digest?company=…              coaches: my daily digest switch (see digest.ts)
@@ -112,7 +116,24 @@ import { coachMemberFood } from "./member-food";
 import { coachMemberTimeline } from "./member-timeline";
 import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
 import { coachProgramResults } from "./program-results";
-import { coachThreads, deleteAnnouncement, getAnnouncements, getMemberThread, getMyMessages, postAnnouncement, sendCoachMessage, sendMyMessage } from "./messages";
+import {
+  cancelScheduledMessage,
+  coachAttachment,
+  coachThreads,
+  deleteAnnouncement,
+  deleteChatAttachments,
+  deliverScheduled,
+  getAnnouncements,
+  getMemberThread,
+  getMyMessages,
+  memberAttachment,
+  postAnnouncement,
+  sendAttachment,
+  sendBulkMessage,
+  sendCoachMessage,
+  sendMyMessage,
+} from "./messages";
+import { deleteSavedReply, getSavedReplies, saveSavedReply } from "./saved-replies";
 import { getNotifications, markNotificationsSeen } from "./notifications";
 import { getDigest, saveDigest, sendCoachDigests } from "./digest";
 import { checkMilestones } from "./milestones";
@@ -129,6 +150,8 @@ import {
   getMyReport,
   getTags,
   saveTags,
+  bulkMacros,
+  bulkMemberTags,
   setMemberTags,
   shareReport,
   coachGetMacros,
@@ -748,6 +771,18 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!body.ok) return body.response;
     return send(await saveTags(env, userId, body.value));
   }
+  if (path === "/api/coach/macros/bulk") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await bulkMacros(env, userId, body.value));
+  }
+  if (path === "/api/coach/tags/bulk") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await bulkMemberTags(env, userId, body.value));
+  }
   if (path === "/api/coach/member-tags") {
     if (method !== "PUT") return error(405, "Method not allowed.");
     const body = await readJson(request);
@@ -811,6 +846,48 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const body = await readJson(request);
     if (!body.ok) return body.response;
     return send(await sendCoachMessage(env, userId, body.value));
+  }
+  if (path === "/api/messages/attachment") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    return send(await sendAttachment(env, { member: userId, experience: url.searchParams.get("experience") }, url, request));
+  }
+  const myAttachment = /^\/api\/messages\/attachment\/([0-9a-f]{32})$/.exec(path);
+  if (myAttachment) {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return (await memberAttachment(env, userId, myAttachment[1]!)) ?? error(404, "Not found.");
+  }
+  if (path === "/api/coach/messages/bulk") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await sendBulkMessage(env, userId, body.value));
+  }
+  if (path === "/api/coach/messages/attachment") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    return send(await sendAttachment(env, { coach: userId, company: q("company"), member: q("member") }, url, request));
+  }
+  const coachAttachmentMatch = /^\/api\/coach\/messages\/attachment\/([0-9a-f]{32})$/.exec(path);
+  if (coachAttachmentMatch) {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    const r = await coachAttachment(env, userId, q("company"), coachAttachmentMatch[1]!);
+    return r instanceof Response ? r : send(r);
+  }
+  const scheduledMatch = /^\/api\/coach\/messages\/([0-9a-f]{32})$/.exec(path);
+  if (scheduledMatch) {
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    return send(await cancelScheduledMessage(env, userId, q("company"), scheduledMatch[1]!));
+  }
+  if (path === "/api/coach/saved-replies") {
+    if (method === "GET") return send(await getSavedReplies(env, userId, q("company")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveSavedReply(env, userId, body.value));
+  }
+  const savedReplyMatch = /^\/api\/coach\/saved-replies\/([0-9a-f]{32})$/.exec(path);
+  if (savedReplyMatch) {
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    return send(await deleteSavedReply(env, userId, q("company"), savedReplyMatch[1]!));
   }
   if (path === "/api/coach/threads") {
     if (method !== "GET") return error(405, "Method not allowed.");
@@ -1311,6 +1388,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method !== "DELETE") return error(405, "Method not allowed.");
     await deleteAllPhotos(env, userId);
     await deleteVoiceReplies(env, userId);
+    await deleteChatAttachments(env, userId);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM measurements WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM workouts WHERE user_id = ?").bind(userId),
@@ -1392,6 +1470,14 @@ export default {
         .catch((e) => console.error("fasting reminders crashed", e)),
     );
     const when = new Date(controller.scheduledTime);
+    // Scheduled chat messages and announcements: every minute.
+    ctx.waitUntil(
+      deliverScheduled(env, when)
+        .then((r) => {
+          if (r.messages > 0 || r.announcements > 0) console.log("scheduled delivered", r);
+        })
+        .catch((e) => console.error("scheduled delivery crashed", e)),
+    );
     // Hydration reminders: every minute, like the other timed reminders.
     ctx.waitUntil(
       sendDueWaterReminders(env, when)

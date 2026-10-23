@@ -55,7 +55,10 @@ async function uploadsToday(env: PhotoEnv, userId: string): Promise<number> {
 
 /** Bytes of every member's photos together, for the app-wide cap. */
 export async function photoStorageUsed(env: PhotoEnv): Promise<number> {
-  const row = await env.DB.prepare("SELECT COALESCE(SUM(bytes), 0) AS total FROM progress_photos").first<{ total: number }>();
+  // Progress photos, and photos and voice notes sent in chat (worker/messages.ts).
+  const row = await env.DB.prepare(
+    "SELECT (SELECT COALESCE(SUM(bytes), 0) FROM progress_photos) + (SELECT COALESCE(SUM(attachment_bytes), 0) FROM coach_messages) AS total",
+  ).first<{ total: number }>();
   return row?.total ?? 0;
 }
 

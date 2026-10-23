@@ -51,8 +51,15 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
       since,
     ),
     q("SELECT tag_ids FROM member_tags WHERE company_id = ? AND member_id = ?", companyId ?? "", userId),
-    q("SELECT id, title, body, tag_id, created_at FROM announcements WHERE company_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 30", companyId ?? "", since),
-    q("SELECT COUNT(*) AS n FROM coach_messages WHERE member_id = ? AND company_id = ? AND from_coach = 1 AND read_at IS NULL", userId, companyId ?? ""),
+    // Scheduled announcements show from their send time.
+    q(
+      `SELECT id, title, body, tag_id, COALESCE(send_at, created_at) AS created_at FROM announcements
+        WHERE company_id = ? AND COALESCE(send_at, created_at) >= ? AND COALESCE(send_at, created_at) <= ? ORDER BY 5 DESC LIMIT 30`,
+      companyId ?? "",
+      since,
+      now.toISOString(),
+    ),
+    q("SELECT COUNT(*) AS n FROM coach_messages WHERE member_id = ? AND company_id = ? AND from_coach = 1 AND pending = 0 AND read_at IS NULL", userId, companyId ?? ""),
   ]);
   const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
 

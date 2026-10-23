@@ -38,6 +38,9 @@ import { coachMacrosMessage, validateCoachMacros, type CoachMacros } from "../sr
 import { buildProgressReport, type ReportPhoto } from "../src/lib/progress-report";
 import type { Measurement } from "../src/lib/measurements";
 import type { Workout } from "../src/lib/training";
+import { MEMBER_ID_PATTERN } from "../src/lib/program-edits";
+import { companyMembers } from "./coach";
+import { notifyMany } from "./messages";
 import { sendWhop } from "./reminders";
 import { coachCheck, experienceOf, isSharingProgress, type SharingEnv, type SharingResult } from "./sharing";
 import { accessLevel, hasWhopKey } from "./whop";
@@ -278,6 +281,75 @@ export async function coachSetMacros(env: SharingEnv, viewerId: string, raw: unk
   return { ok: true, body: { macros: await macrosOf(env, c.memberId), notified } };
 }
 
+/**
+ * Bulk actions: macros for many members { company, members, mode, … }.
+ * "set": the same protein, carbs and fat (and note) for all of them.
+ * "adjust": change calories by kcalDelta through carbs (4 kcal a gram), for
+ * members whose macros you set; members on their own plan's macros are skipped.
+ */
+export async function bulkMacros(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {
+  const b = obj(raw);
+  const denied = await adminOf(env, viewerId, b.company);
+  if (denied) return denied;
+  const company = b.company as string;
+  const asked = Array.isArray(b.members) ? [...new Set(b.members.filter((x): x is string => typeof x === "string" && MEMBER_ID_PATTERN.test(x)))] : [];
+  if (asked.length === 0 || asked.length > 200) return { ok: false, status: 422, error: "Pick between 1 and 200 members." };
+  const listed = await companyMembers(env, company);
+  if (!listed.ok) return { ok: false, status: 502, error: "Couldn't get your member list from Whop. Try again in a moment." };
+  const members = asked.filter((id) => listed.profiles.has(id));
+
+  type Row = { user_id: string; kcal: number; protein: number; carbs: number; fat: number; note: string };
+  const writes: { userId: string; m: Omit<CoachMacros, "setAt"> }[] = [];
+  const skipped: string[] = asked.filter((id) => !listed.profiles.has(id));
+  if (b.mode === "set") {
+    const v = validateCoachMacros(raw);
+    if (!v.ok) return { ok: false, status: 422, error: v.error };
+    for (const id of members) writes.push({ userId: id, m: v.value });
+  } else if (b.mode === "adjust") {
+    const delta = typeof b.kcalDelta === "number" && Number.isFinite(b.kcalDelta) ? Math.round(b.kcalDelta) : 0;
+    if (delta === 0 || Math.abs(delta) > 1000) return { ok: false, status: 422, error: "Change calories by between 1 and 1,000 kcal." };
+    const current = new Map<string, Row>();
+    for (let i = 0; i < members.length; i += 50) {
+      const chunk = members.slice(i, i + 50);
+      const { results } = await env.DB.prepare(`SELECT user_id, kcal, protein, carbs, fat, note FROM coach_macros WHERE user_id IN (${chunk.map(() => "?").join(",")})`)
+        .bind(...chunk)
+        .all<Row>();
+      for (const r of results) current.set(r.user_id, r);
+    }
+    for (const id of members) {
+      const c = current.get(id);
+      const v = c ? validateCoachMacros({ protein: c.protein, carbs: c.carbs + Math.round(delta / 4), fat: c.fat, note: c.note }) : null;
+      if (!v?.ok) skipped.push(id);
+      else writes.push({ userId: id, m: v.value });
+    }
+  } else {
+    return { ok: false, status: 422, error: "Bad request." };
+  }
+
+  for (let i = 0; i < writes.length; i += 40) {
+    await env.DB.batch(
+      writes.slice(i, i + 40).map((w) =>
+        env.DB.prepare(
+          `INSERT INTO coach_macros (user_id, company_id, kcal, protein, carbs, fat, note, set_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id) DO UPDATE SET company_id = excluded.company_id, kcal = excluded.kcal, protein = excluded.protein,
+             carbs = excluded.carbs, fat = excluded.fat, note = excluded.note, set_by = excluded.set_by, set_at = ${NOW_SQL}`,
+        ).bind(w.userId, company, w.m.kcal, w.m.protein, w.m.carbs, w.m.fat, w.m.note, viewerId),
+      ),
+    );
+  }
+  // One notification per community: the same words for everyone.
+  const notified =
+    writes.length === 0
+      ? 0
+      : b.mode === "set"
+        ? await notifyMany(env, writes.map((w) => w.userId), coachMacrosMessage(writes[0]!.m))
+        : await notifyMany(env, writes.map((w) => w.userId), {
+            title: "Your coach updated your macros",
+            content: "Your daily calories and macros changed. Open Food to see the new numbers.",
+          });
+  return { ok: true, body: { updated: writes.length, skipped: skipped.length, notified } };
+}
+
 export async function coachClearMacros(env: SharingEnv, viewerId: string, company: string, member: string): Promise<SharingResult> {
   const c = await coachCheck(env, viewerId, { company, member });
   if ("error" in c) return c.error;
@@ -413,6 +485,33 @@ export async function saveTags(env: SharingEnv, viewerId: string, raw: unknown):
     .bind(b.company, JSON.stringify(tags))
     .run();
   return { ok: true, body: { tags, members: await memberTagsOf(env, b.company as string, tags) } };
+}
+
+/** Bulk actions: add or remove one tag for many members { company, members, tagId, add }. */
+export async function bulkMemberTags(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {
+  const b = obj(raw);
+  const denied = await adminOf(env, viewerId, b.company);
+  if (denied) return denied;
+  const company = b.company as string;
+  const tags = await tagsOf(env, company);
+  const tagId = typeof b.tagId === "string" && tags.some((t) => t.id === b.tagId) ? b.tagId : null;
+  if (!tagId) return { ok: false, status: 422, error: "That tag doesn't exist any more." };
+  const members = Array.isArray(b.members) ? [...new Set(b.members.filter((x): x is string => typeof x === "string" && MEMBER_ID_PATTERN.test(x)))] : [];
+  if (members.length === 0 || members.length > 200) return { ok: false, status: 422, error: "Pick between 1 and 200 members." };
+  const add = b.add === true;
+  const current = await memberTagsOf(env, company, tags);
+  const writes = members.map((m) => {
+    const now = current[m] ?? [];
+    const next = add ? [...new Set([...now, tagId])] : now.filter((t) => t !== tagId);
+    return next.length > 0
+      ? env.DB.prepare(
+          `INSERT INTO member_tags (company_id, member_id, tag_ids) VALUES (?, ?, ?)
+           ON CONFLICT (company_id, member_id) DO UPDATE SET tag_ids = excluded.tag_ids`,
+        ).bind(company, m, JSON.stringify(next))
+      : env.DB.prepare("DELETE FROM member_tags WHERE company_id = ? AND member_id = ?").bind(company, m);
+  });
+  for (let i = 0; i < writes.length; i += 50) await env.DB.batch(writes.slice(i, i + 50));
+  return { ok: true, body: { tags, members: await memberTagsOf(env, company, tags) } };
 }
 
 export async function setMemberTags(env: SharingEnv, viewerId: string, raw: unknown): Promise<SharingResult> {

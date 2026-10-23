@@ -57,6 +57,9 @@ const ROW_GRID = "grid grid-cols-[1.5rem_minmax(0,1fr)_4.375rem_4rem_2.875rem] i
 const SET_BOX = "h-11 rounded-[0.875rem] border-primary/15 bg-[hsl(var(--gold-hi)/0.06)] text-[1.0625rem] font-extrabold";
 /** Gym mode: thumb-sized boxes and a big done button; "Previous" is left out (it's in "Last time" above). */
 const ROW_GRID_GYM = "grid grid-cols-[1.75rem_minmax(0,1.3fr)_minmax(0,1fr)_4.5rem] items-center gap-2";
+/** One-side exercises: Set · weight · Left · Right · Done (last time's set goes under the row). */
+const ROW_GRID_SIDES = "grid grid-cols-[1.5rem_minmax(0,1fr)_3.5rem_3.5rem_2.875rem] items-center gap-1.5";
+const ROW_GRID_SIDES_GYM = "grid grid-cols-[1.75rem_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_4.5rem] items-center gap-2";
 
 function useNow(intervalMs: number, active: boolean): number {
   const [now, setNow] = React.useState(() => Date.now());
@@ -472,8 +475,8 @@ function ExerciseBlock({
         </div>
         {oneSide ? (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <span className="rounded-full bg-primary/[0.12] px-2.5 py-1 font-bold text-[hsl(var(--gold-hi))]">One side at a time · reps per side</span>
-            <span className="text-muted-foreground">Log the set after both sides.</span>
+            <span className="rounded-full bg-primary/[0.12] px-2.5 py-1 font-bold text-[hsl(var(--gold-hi))]">One side at a time · reps for each side</span>
+            <span className="text-muted-foreground">Right copies Left as you type; change it if it differed.</span>
           </p>
         ) : null}
         <p className="tabular text-xs text-muted-foreground">
@@ -495,11 +498,21 @@ function ExerciseBlock({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-1.5 p-4 pt-1 sm:p-6 sm:pt-1">
-        <div className={cn(gym ? ROW_GRID_GYM : ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
+        <div
+          className={cn(oneSide ? (gym ? ROW_GRID_SIDES_GYM : ROW_GRID_SIDES) : gym ? ROW_GRID_GYM : ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")}
+          aria-hidden
+        >
           <span className="text-center">Set</span>
-          {gym ? null : <span>Previous</span>}
+          {gym || oneSide ? null : <span>Previous</span>}
           <span className="text-center">{bw ? `+${unit}` : unit}</span>
-          <span className="text-center">{oneSide ? "Reps/side" : "Reps"}</span>
+          {oneSide ? (
+            <>
+              <span className={cn("text-center", behind?.side === "left" && "text-warning")}>Left</span>
+              <span className={cn("text-center", behind?.side === "right" && "text-warning")}>Right</span>
+            </>
+          ) : (
+            <span className="text-center">Reps</span>
+          )}
           <span className="text-center">Done</span>
         </div>
         {exercise.sets.map((s, i) => (
@@ -693,7 +706,7 @@ function SetRow({
   prev: DoneSet | null;
   unit: WeightUnit;
   bodyweight: boolean;
-  /** Reps are per side; left and right can be entered when they differed. */
+  /** Reps are per side: a Left and a Right box on every set. */
   oneSide: boolean;
   pr: boolean;
   trackRir: boolean;
@@ -738,27 +751,68 @@ function SetRow({
     if (Number.isInteger(n) && n >= 0 && n <= MAX_REPS) onChange({ ...set, reps: n, done: set.done && n > 0 });
   };
 
-  // Left and right, when the sides didn't match.
-  const split = set.left !== undefined && set.right !== undefined;
-  const [splitOpen, setSplitOpen] = React.useState(split);
-  const changeSide = (side: "left" | "right", text: string) => {
-    const t = text.trim();
-    const n = t === "" ? null : Number(t);
-    if (n !== null && !(Number.isInteger(n) && n >= 0 && n <= MAX_REPS)) return;
-    const left = side === "left" ? n : (set.left ?? set.reps);
-    const right = side === "right" ? n : (set.right ?? set.reps);
-    if (left === null || right === null) return onChange({ ...set, left: left ?? undefined, right: right ?? undefined, reps: left ?? right, done: false });
+  // One-side exercises: a Left and a Right box on every set. Saved as before:
+  // reps (the weaker side) plus left/right only when the sides differed.
+  const storedSide = (v: number | undefined) => v ?? set.reps;
+  const asText = (v: number | null) => (v === null ? "" : String(v));
+  const [leftText, setLeftText] = React.useState(asText(storedSide(set.left)));
+  const [rightText, setRightText] = React.useState(asText(storedSide(set.right)));
+  // Right follows Left until it's typed in itself (most sets match).
+  const [rightTouched, setRightTouched] = React.useState(set.left !== undefined && set.left !== set.right);
+  const rightRef = React.useRef<HTMLInputElement>(null);
+  const sentSides = React.useRef<string | null>(null);
+  const sidesKey = (s: WorkoutSet) => `${s.reps}|${s.left}|${s.right}`;
+  // Follow sides filled in from outside (copied from the set above), not our own changes.
+  React.useEffect(() => {
+    if (!oneSide || sentSides.current === sidesKey(set)) return;
+    setLeftText(asText(storedSide(set.left)));
+    setRightText(asText(storedSide(set.right)));
+    setRightTouched(set.left !== undefined && set.left !== set.right);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the stored values change
+  }, [set.reps, set.left, set.right]);
+  const parseReps = (t: string): number | null | false => {
+    const s = t.trim();
+    if (s === "") return null;
+    const n = Number(s);
+    return Number.isInteger(n) && n >= 0 && n <= MAX_REPS ? n : false;
+  };
+  const commitSides = (lText: string, rText: string) => {
+    const left = parseReps(lText);
+    const right = parseReps(rText);
+    if (left === false || right === false) return;
     setMissing(false);
+    let next: WorkoutSet;
+    if (left === null && right === null) next = { ...set, reps: null, left: undefined, right: undefined, done: false };
+    // One side still to type: not done yet.
+    else if (left === null || right === null) next = { ...set, reps: (left ?? right)!, left: undefined, right: undefined, done: false };
+    else if (left === right) next = { ...set, reps: left, left: undefined, right: undefined, done: set.done && left > 0 };
     // Records and advice follow the weaker side.
-    const weaker = Math.min(left, right);
-    onChange(left === right ? { ...set, left: undefined, right: undefined, reps: left } : { ...set, left, right, reps: weaker });
+    else next = { ...set, left, right, reps: Math.min(left, right), done: set.done && Math.max(left, right) > 0 };
+    sentSides.current = sidesKey(next);
+    onChange(next);
   };
-  const closeSplit = () => {
-    setSplitOpen(false);
-    onChange({ ...set, left: undefined, right: undefined });
+  const changeLeft = (text: string) => {
+    setLeftText(text);
+    if (!rightTouched) setRightText(text);
+    commitSides(text, rightTouched ? rightText : text);
   };
+  const changeRight = (text: string) => {
+    setRightText(text);
+    setRightTouched(true);
+    commitSides(leftText, text);
+  };
+  const leftN = parseReps(leftText);
+  const rightN = parseReps(rightText);
+  // While the sides differ, the weaker one is outlined.
+  const weakerBox =
+    typeof leftN === "number" && typeof rightN === "number" && leftN !== rightN ? (leftN < rightN ? "left" : "right") : null;
 
   const toggle = () => {
+    if (oneSide && !set.done && (leftText.trim() === "" || rightText.trim() === "")) {
+      setMissing(true);
+      (leftText.trim() === "" ? repsRef : rightRef).current?.focus();
+      return;
+    }
     if (!set.done && (set.reps === null || set.reps < 1)) {
       setMissing(true);
       repsRef.current?.focus();
@@ -771,7 +825,7 @@ function SetRow({
 
   return (
     <div className={cn("rounded-2xl transition-colors", set.done && "bg-success/[0.08]")}>
-    <div className={cn(gym ? ROW_GRID_GYM : ROW_GRID, "px-1 py-1")}>
+    <div className={cn(oneSide ? (gym ? ROW_GRID_SIDES_GYM : ROW_GRID_SIDES) : gym ? ROW_GRID_GYM : ROW_GRID, "px-1 py-1")}>
       <span className={cn("flex justify-center font-extrabold tabular", gym ? "text-base" : "text-sm")}>
         {pr ? (
           <span title="Personal record" className="text-primary">
@@ -782,7 +836,7 @@ function SetRow({
           n
         )}
       </span>
-      {gym ? null : <span className="tabular truncate text-xs text-muted-foreground">{prev ? formatSet(prev, unit, bodyweight) : "—"}</span>}
+      {gym || oneSide ? null : <span className="tabular truncate text-xs text-muted-foreground">{prev ? formatSet(prev, unit, bodyweight) : "—"}</span>}
       <Input
         value={weight}
         onChange={(e) => changeWeight(e.target.value)}
@@ -792,17 +846,55 @@ function SetRow({
         aria-label={`Set ${n} ${bodyweight ? "added weight" : "weight"} (${unit})`}
         className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX)}
       />
-      <Input
-        ref={repsRef}
-        value={reps}
-        onChange={(e) => changeReps(e.target.value)}
-        inputMode="numeric"
-        enterKeyHint="done"
-        placeholder="reps"
-        aria-label={`Set ${n} reps`}
-        aria-invalid={missing || undefined}
-        className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX, missing && "border-destructive ring-1 ring-destructive")}
-      />
+      {oneSide ? (
+        <>
+          <Input
+            ref={repsRef}
+            value={leftText}
+            onChange={(e) => changeLeft(e.target.value)}
+            inputMode="numeric"
+            enterKeyHint="next"
+            placeholder="L"
+            aria-label={`Set ${n} left side reps`}
+            aria-invalid={(missing && leftText.trim() === "") || undefined}
+            className={cn(
+              "px-1.5 text-center",
+              gym ? "h-14 text-xl font-semibold" : SET_BOX,
+              weakerBox === "left" && "border-warning ring-1 ring-warning",
+              missing && leftText.trim() === "" && "border-destructive ring-1 ring-destructive",
+            )}
+          />
+          <Input
+            ref={rightRef}
+            value={rightText}
+            onChange={(e) => changeRight(e.target.value)}
+            inputMode="numeric"
+            enterKeyHint="done"
+            placeholder="R"
+            aria-label={`Set ${n} right side reps`}
+            aria-invalid={(missing && rightText.trim() === "") || undefined}
+            className={cn(
+              "px-1.5 text-center",
+              gym ? "h-14 text-xl font-semibold" : SET_BOX,
+              !rightTouched && "text-foreground/70",
+              weakerBox === "right" && "border-warning ring-1 ring-warning",
+              missing && rightText.trim() === "" && "border-destructive ring-1 ring-destructive",
+            )}
+          />
+        </>
+      ) : (
+        <Input
+          ref={repsRef}
+          value={reps}
+          onChange={(e) => changeReps(e.target.value)}
+          inputMode="numeric"
+          enterKeyHint="done"
+          placeholder="reps"
+          aria-label={`Set ${n} reps`}
+          aria-invalid={missing || undefined}
+          className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX, missing && "border-destructive ring-1 ring-destructive")}
+        />
+      )}
       <button
         type="button"
         role="checkbox"
@@ -822,40 +914,11 @@ function SetRow({
       </button>
     </div>
     {oneSide ? (
-      splitOpen ? (
-        <div className="flex flex-wrap items-center gap-2 px-1 pb-1.5 pl-9 text-[12px]">
-          <span className="text-muted-foreground">Reps each side:</span>
-          <label className="flex items-center gap-1">
-            <span className="font-semibold">L</span>
-            <Input
-              value={set.left ?? (set.reps === null ? "" : String(set.reps))}
-              onChange={(e) => changeSide("left", e.target.value)}
-              inputMode="numeric"
-              aria-label={`Set ${n} left side reps`}
-              className="h-8 w-14 px-1.5 text-center"
-            />
-          </label>
-          <label className="flex items-center gap-1">
-            <span className="font-semibold">R</span>
-            <Input
-              value={set.right ?? (set.reps === null ? "" : String(set.reps))}
-              onChange={(e) => changeSide("right", e.target.value)}
-              inputMode="numeric"
-              aria-label={`Set ${n} right side reps`}
-              className="h-8 w-14 px-1.5 text-center"
-            />
-          </label>
-          <button type="button" onClick={closeSplit} className="text-muted-foreground underline underline-offset-2">
-            Same both sides
-          </button>
-        </div>
-      ) : (
-        <div className="px-1 pb-1 pl-9">
-          <button type="button" onClick={() => setSplitOpen(true)} className="text-[12px] text-muted-foreground underline-offset-2 hover:underline">
-            Left/right differ?
-          </button>
-        </div>
-      )
+      // Last time's set for this row, sides included, under the boxes so they have room on a phone.
+      <p className={cn("tabular px-1 pb-1.5 text-[11px] text-muted-foreground", gym ? "pl-10" : "pl-9")}>
+        {prev ? `Last: ${formatSet(prev, unit, bodyweight)}` : "Last: —"}
+        {weakerBox ? <span className="ml-2 font-semibold text-warning">{weakerBox === "left" ? "Left" : "Right"} behind by {Math.abs((leftN as number) - (rightN as number))}</span> : null}
+      </p>
     ) : null}
     {set.done && trackRir ? <RirPicker n={n} value={typeof set.rir === "number" ? set.rir : null} onChange={(rir) => onChange({ ...set, rir })} /> : null}
     </div>

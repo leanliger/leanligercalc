@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Dumbbell,
   ListChecks,
+  MessageCircle,
   MessageSquare,
   PenLine,
   Reply,
@@ -37,6 +38,8 @@ const KIND_STYLE: Record<TimelineKind, { icon: React.ReactNode; tone: string }> 
   macros: { icon: <Utensils />, tone: "text-violet-400 bg-violet-400/[0.12]" },
   note: { icon: <StickyNote />, tone: "text-violet-400 bg-violet-400/[0.12]" },
   nudge: { icon: <BellRing />, tone: "text-violet-400 bg-violet-400/[0.12]" },
+  "message-in": { icon: <MessageCircle />, tone: "text-sky-400 bg-sky-400/[0.12]" },
+  "message-out": { icon: <MessageCircle />, tone: "text-violet-400 bg-violet-400/[0.12]" },
 };
 
 const FILTERS: { id: "all" | TimelineGroup; label: string }[] = [
@@ -44,6 +47,7 @@ const FILTERS: { id: "all" | TimelineGroup; label: string }[] = [
   { id: "checkins", label: "Check-ins" },
   { id: "body", label: "Body" },
   { id: "training", label: "Training" },
+  { id: "messages", label: "Messages" },
   { id: "coach", label: "Your actions" },
 ];
 

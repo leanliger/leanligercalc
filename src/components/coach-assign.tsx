@@ -54,10 +54,21 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-type Audience = "all" | "group" | "tag" | "member";
+type Audience = "all" | "group" | "tag" | "member" | "picked";
 
 /** Coach dashboard → Assign: send a program or habit set to everyone, a group or one member. */
-export function CoachAssignPanel({ companyId, members, tags }: { companyId: string; members: CoachMemberData[]; tags: TagsData | null }) {
+export function CoachAssignPanel({
+  companyId,
+  members,
+  tags,
+  picked,
+}: {
+  companyId: string;
+  members: CoachMemberData[];
+  tags: TagsData | null;
+  /** Members ticked in Members (bulk actions): they become the audience. */
+  picked?: string[];
+}) {
   const [data, setData] = React.useState<{ assignments: CoachAssignment[]; groups: CoachGroup[] } | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState<SavedProgram[]>([]);
@@ -90,6 +101,7 @@ export function CoachAssignPanel({ companyId, members, tags }: { companyId: stri
       <NewAssignment
         companyId={companyId}
         members={members}
+        picked={picked}
         groups={data?.groups ?? []}
         tags={tags}
         saved={saved}
@@ -121,9 +133,11 @@ function NewAssignment({
   onProgramsChanged,
   onSent,
   onGroupsChanged,
+  picked = [],
 }: {
   companyId: string;
   members: CoachMemberData[];
+  picked?: string[];
   groups: CoachGroup[];
   tags: TagsData | null;
   /** The coach's saved programs, newest first. */
@@ -136,7 +150,7 @@ function NewAssignment({
   const [program, setProgram] = React.useState<Program | null>(null);
   const [habits, setHabits] = React.useState<HabitDef[]>(() => DEFAULT_HABITS.map((h) => ({ ...h })));
   const [habitTitle, setHabitTitle] = React.useState("Daily non-negotiables");
-  const [audience, setAudience] = React.useState<Audience>("all");
+  const [audience, setAudience] = React.useState<Audience>(picked.length > 0 ? "picked" : "all");
   const [groupId, setGroupId] = React.useState<string>("");
   const [tagId, setTagId] = React.useState<string>("");
   const [memberId, setMemberId] = React.useState<string>("");
@@ -217,9 +231,13 @@ function NewAssignment({
           ? tagId
             ? { type: "tag", tagId }
             : null
-        : memberId
-          ? { type: "members", memberIds: [memberId] }
-          : null;
+        : audience === "picked"
+          ? picked.length > 0
+            ? { type: "members", memberIds: picked }
+            : null
+          : memberId
+            ? { type: "members", memberIds: [memberId] }
+            : null;
   const scheduleReady = !scheduleOn || (weekdays.length > 0 && weeks >= 1 && weeks <= MAX_SCHEDULE_WEEKS && /^\d{4}-\d\d-\d\d$/.test(startDate));
   const ready = (kind === "program" ? programReady && scheduleReady : habits.length > 0) && target !== null;
   const scheduled: Program | null =
@@ -477,6 +495,7 @@ function NewAssignment({
               { value: "group" as const, label: "A group" },
               { value: "tag" as const, label: "A tag" },
               { value: "member" as const, label: "One member" },
+              ...(picked.length > 0 ? [{ value: "picked" as const, label: `Selected (${picked.length})` }] : []),
             ]}
           />
           {audience === "group" ? (

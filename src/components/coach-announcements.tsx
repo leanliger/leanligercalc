@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { BellRing, Megaphone, Trash2 } from "lucide-react";
+import { BellRing, Clock, Megaphone, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatShort } from "@/lib/dates";
-import { ANNOUNCEMENT_BODY_MAX, ANNOUNCEMENT_TITLE_MAX, DIGEST_HOUR, NOTIFICATIONS_DAYS, type Announcement } from "@/lib/messages";
+import { ANNOUNCEMENT_BODY_MAX, ANNOUNCEMENT_TITLE_MAX, DIGEST_HOUR, NOTIFICATIONS_DAYS, formatSendAt, type Announcement } from "@/lib/messages";
 import type { MemberTag } from "@/lib/member-tags";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -31,6 +31,8 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
   const [tagId, setTagId] = React.useState("");
+  // Send later: the picker's value (local time), or null to post now.
+  const [later, setLater] = React.useState<string | null>(null);
   const [state, setState] = React.useState<"idle" | "posting">("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<string | null>(null);
@@ -51,12 +53,17 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
     try {
       const r = await call<{ announcement: Announcement; notified: number }>("/api/coach/announcements", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, title, body, tagId: tagId || null }),
+        body: JSON.stringify({ company: companyId, title, body, tagId: tagId || null, sendAt: later ? new Date(later).toISOString() : null }),
       });
       setList((prev) => [r.announcement, ...(prev ?? [])]);
       setTitle("");
       setBody("");
-      setStatus(`Posted. ${r.notified} member${r.notified === 1 ? "" : "s"} notified on Whop; everyone it's for sees it in their bell.`);
+      setLater(null);
+      setStatus(
+        r.announcement.scheduledFor
+          ? `Scheduled for ${formatSendAt(r.announcement.scheduledFor)}. It shows in their bell and goes out on Whop then.`
+          : `Posted. ${r.notified} member${r.notified === 1 ? "" : "s"} notified on Whop; everyone it's for sees it in their bell.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't post it.");
     } finally {
@@ -135,9 +142,39 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
                 ))}
               </select>
             </div>
-            <Button type="submit" disabled={!title.trim() || !body.trim() || state === "posting"} className="ml-auto">
-              <Megaphone />
-              {state === "posting" ? "Posting…" : "Post announcement"}
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-muted-foreground">When</span>
+              <span className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="When to post it"
+                  value={later === null ? "now" : "later"}
+                  onChange={(e) => {
+                    if (e.target.value === "now") setLater(null);
+                    else {
+                      const d = new Date(Date.now() + 60 * 60_000);
+                      d.setMinutes(0, 0, 0);
+                      setLater(new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
+                    }
+                  }}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="now">Now</option>
+                  <option value="later">Later…</option>
+                </select>
+                {later !== null ? (
+                  <input
+                    type="datetime-local"
+                    aria-label="Post it on"
+                    value={later}
+                    onChange={(e) => setLater(e.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                ) : null}
+              </span>
+            </div>
+            <Button type="submit" disabled={!title.trim() || !body.trim() || state === "posting" || (later !== null && !later)} className="ml-auto">
+              {later !== null ? <Clock /> : <Megaphone />}
+              {state === "posting" ? "Posting…" : later !== null ? "Schedule announcement" : "Post announcement"}
             </Button>
           </div>
           <p role="status" className="text-[12px]">
@@ -159,7 +196,15 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
                     <p className="font-semibold">{a.title}</p>
                     <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{a.body}</p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      {formatShort(a.at.slice(0, 10))} · {tagName(a.tagId)}
+                      {a.scheduledFor ? (
+                        <span className="inline-flex items-center gap-1 font-semibold text-primary">
+                          <Clock className="h-3 w-3" aria-hidden />
+                          Scheduled for {formatSendAt(a.scheduledFor)}
+                        </span>
+                      ) : (
+                        formatShort(a.at.slice(0, 10))
+                      )}{" "}
+                      · {tagName(a.tagId)}
                     </p>
                   </div>
                   {confirmId === a.id ? (
@@ -180,7 +225,9 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
               ))}
             </ul>
           )}
-          <p className="text-[11px] text-muted-foreground">Deleting removes it from members&apos; bells. A Whop notification already sent stays sent.</p>
+          <p className="text-[11px] text-muted-foreground">
+            Deleting removes it from members&apos; bells (and cancels it if it hasn&apos;t gone out yet). A Whop notification already sent stays sent.
+          </p>
         </div>
       </CardContent>
     </Card>

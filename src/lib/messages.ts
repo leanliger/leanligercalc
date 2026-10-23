@@ -16,6 +16,18 @@ export const CHAT_POLL_MS = 10_000;
 export const BELL_POLL_MS = 120_000;
 /** A message doesn't notify again while the other side has an unread one from this long ago. */
 export const NOTIFY_QUIET_MIN = 10;
+/** Chat photos: the longest side on the device, and the largest file the Worker takes. */
+export const CHAT_PHOTO_MAX_DIMENSION = 1600;
+export const CHAT_PHOTO_MAX_BYTES = 2 * 1024 * 1024;
+/** Chat voice notes. */
+export const CHAT_VOICE_MAX_SECONDS = 60;
+export const CHAT_VOICE_MAX_BYTES = 3 * 1024 * 1024;
+/** Photos and voice notes one person can send a day, across their chats. */
+export const CHAT_ATTACHMENTS_PER_DAY = 30;
+/** How far ahead a message or announcement can be scheduled. */
+export const SCHEDULE_MAX_DAYS = 60;
+/** Members one bulk message can go to. */
+export const BULK_MAX = 200;
 
 export interface ChatMessage {
   id: string;
@@ -25,6 +37,10 @@ export interface ChatMessage {
   at: string;
   /** The other side has opened the chat since. */
   read: boolean;
+  /** A photo or voice note with it; fetched separately (never a public URL). */
+  attachment?: { kind: "photo" | "voice"; seconds: number | null } | null;
+  /** Coach only: written now, delivered at this ISO time. */
+  scheduledFor?: string | null;
 }
 
 /** One member's thread in the coach's list. */
@@ -35,12 +51,62 @@ export interface ChatThread {
   unread: number;
 }
 
-export function validateMessage(raw: unknown): { ok: true; body: string } | { ok: false; error: string } {
+export function validateMessage(raw: unknown, allowEmpty = false): { ok: true; body: string } | { ok: false; error: string } {
   const body = typeof raw === "string" ? raw.replace(/\r\n/g, "\n").trim() : "";
-  if (!body) return { ok: false, error: "Write a message first." };
+  if (!body && !allowEmpty) return { ok: false, error: "Write a message first." };
   if (body.length > MESSAGE_MAX) return { ok: false, error: `Keep it under ${MESSAGE_MAX} characters.` };
   return { ok: true, body };
 }
+
+/**
+ * A time to send something later: an ISO time at least a minute ahead and at
+ * most SCHEDULE_MAX_DAYS out. Missing or null = send now.
+ */
+export function validateSendAt(raw: unknown, now = new Date()): { ok: true; sendAt: string | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, sendAt: null };
+  const t = typeof raw === "string" ? Date.parse(raw) : Number.NaN;
+  if (!Number.isFinite(t)) return { ok: false, error: "Pick a date and time to send it." };
+  if (t < now.getTime() + 60_000) return { ok: false, error: "Pick a time in the future." };
+  if (t > now.getTime() + SCHEDULE_MAX_DAYS * 86_400_000) return { ok: false, error: `Schedule it within ${SCHEDULE_MAX_DAYS} days.` };
+  return { ok: true, sendAt: new Date(t).toISOString() };
+}
+
+/** "Tue, Oct 28, 9:00 AM" in the viewer's time. */
+export const formatSendAt = (iso: string) =>
+  new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+/* ------------------------------ saved replies ------------------------------ */
+
+export const SAVED_REPLY_TITLE_MAX = 60;
+export const SAVED_REPLIES_MAX = 100;
+
+export interface SavedReply {
+  id: string;
+  title: string;
+  body: string;
+}
+
+export function validateSavedReply(raw: unknown): { ok: true; title: string; body: string } | { ok: false; error: string } {
+  const b = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const body = typeof b.body === "string" ? b.body.replace(/\r\n/g, "\n").trim() : "";
+  let title = typeof b.title === "string" ? b.title.trim() : "";
+  if (!body) return { ok: false, error: "Write the reply first." };
+  if (body.length > MESSAGE_MAX) return { ok: false, error: `Keep it under ${MESSAGE_MAX} characters.` };
+  // No name given: the start of the reply.
+  if (!title) {
+    const first = body.split("\n")[0]!;
+    title = first.length > SAVED_REPLY_TITLE_MAX ? `${first.slice(0, SAVED_REPLY_TITLE_MAX - 1)}…` : first;
+  }
+  if (title.length > SAVED_REPLY_TITLE_MAX) return { ok: false, error: `Keep the name under ${SAVED_REPLY_TITLE_MAX} characters.` };
+  return { ok: true, title, body };
+}
+
+/** {first} in a saved reply becomes the member's first name. */
+export const fillReply = (body: string, firstName: string) => body.replace(/\{first\}/gi, firstName);
+
+/** The message a one-tap kudos sends. */
+export const kudosMessage = (firstName: string, win: string) =>
+  `Huge win, ${firstName}: ${win.charAt(0).toLowerCase()}${win.slice(1)}! That comes from showing up day after day. Proud of you, keep it going.`;
 
 /* ------------------------------ announcements ------------------------------ */
 
@@ -51,9 +117,14 @@ export interface Announcement {
   /** Members with this tag only; null = everyone. */
   tagId: string | null;
   at: string;
+  /** When it goes out, while it's scheduled for later. */
+  scheduledFor?: string | null;
 }
 
-export function validateAnnouncement(raw: unknown): { ok: true; title: string; body: string; tagId: string | null } | { ok: false; error: string } {
+export function validateAnnouncement(
+  raw: unknown,
+  now = new Date(),
+): { ok: true; title: string; body: string; tagId: string | null; sendAt: string | null } | { ok: false; error: string } {
   const b = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const title = typeof b.title === "string" ? b.title.trim() : "";
   const body = typeof b.body === "string" ? b.body.replace(/\r\n/g, "\n").trim() : "";
@@ -62,7 +133,9 @@ export function validateAnnouncement(raw: unknown): { ok: true; title: string; b
   if (title.length > ANNOUNCEMENT_TITLE_MAX) return { ok: false, error: `Keep the title under ${ANNOUNCEMENT_TITLE_MAX} characters.` };
   if (!body) return { ok: false, error: "Write the announcement." };
   if (body.length > ANNOUNCEMENT_BODY_MAX) return { ok: false, error: `Keep it under ${ANNOUNCEMENT_BODY_MAX} characters.` };
-  return { ok: true, title, body, tagId };
+  const when = validateSendAt(b.sendAt, now);
+  if (!when.ok) return when;
+  return { ok: true, title, body, tagId, sendAt: when.sendAt };
 }
 
 /* ------------------------------ notification bell ------------------------------ */
@@ -96,6 +169,20 @@ export interface NotificationsResponse {
  * would notice ships; it shows to everyone once.
  */
 export const APP_UPDATES: readonly { id: string; date: string; title: string; body: string; target: NotificationTarget }[] = [
+  {
+    id: "2026-10-23-sides",
+    date: "2026-10-23",
+    title: "Left and right reps",
+    body: "Single-arm and single-leg exercises now have a Left and a Right box on every set. Right copies Left as you type, and the weaker side is outlined.",
+    target: "training",
+  },
+  {
+    id: "2026-10-23-chat-media",
+    date: "2026-10-23",
+    title: "Photos and voice notes in chat",
+    body: "Send your coach a photo or a voice note from the chat. They stay private between you and your coach.",
+    target: "chat",
+  },
   {
     id: "2026-10-23-chat",
     date: "2026-10-23",

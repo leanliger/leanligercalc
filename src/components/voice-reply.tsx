@@ -85,8 +85,26 @@ function durationOf(blob: Blob): Promise<number> {
   });
 }
 
-/** Record or upload a voice reply, preview it, and send it. */
-export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent: (notified: boolean) => void }) {
+/**
+ * Record or upload a voice reply, preview it, and send it: to `uploadUrl`
+ * (check-in replies), or through `upload` (chat voice notes).
+ */
+export function VoiceRecorder({
+  uploadUrl,
+  onSent,
+  upload,
+  maxSeconds = VOICE_MAX_SECONDS,
+  title,
+  onCancel,
+}: {
+  uploadUrl?: string;
+  onSent: (notified: boolean) => void;
+  upload?: (blob: Blob, seconds: number) => Promise<void>;
+  maxSeconds?: number;
+  title?: string;
+  /** Shows a Close button (chat). */
+  onCancel?: () => void;
+}) {
   const [state, setState] = React.useState<"idle" | "recording" | "ready" | "sending">("idle");
   const [clip, setClip] = React.useState<{ blob: Blob; seconds: number; url: string } | null>(null);
   const [elapsed, setElapsed] = React.useState(0);
@@ -108,8 +126,8 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
 
   const use = async (blob: Blob) => {
     const seconds = await durationOf(blob);
-    if (seconds > VOICE_MAX_SECONDS + 1) {
-      setError(`That's ${Math.round(seconds)} seconds. Keep it to ${VOICE_MAX_SECONDS}.`);
+    if (seconds > maxSeconds + 1) {
+      setError(`That's ${Math.round(seconds)} seconds. Keep it to ${maxSeconds}.`);
       setState("idle");
       return;
     }
@@ -147,7 +165,7 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
     timer.current = window.setInterval(() => {
       const s = (Date.now() - began) / 1000;
       setElapsed(s);
-      if (s >= VOICE_MAX_SECONDS && rec.state === "recording") rec.stop();
+      if (s >= maxSeconds && rec.state === "recording") rec.stop();
     }, 200);
   };
 
@@ -161,6 +179,13 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
     setError(null);
     try {
       const type = clip.blob.type.split(";")[0] || "audio/webm";
+      if (upload) {
+        await upload(new Blob([clip.blob], { type }), Math.max(1, Math.round(clip.seconds * 10) / 10));
+        setClip(null);
+        setState("idle");
+        onSent(true);
+        return;
+      }
       const res = await fetch(`${uploadUrl}&seconds=${Math.max(1, Math.round(clip.seconds * 10) / 10)}`, {
         method: "POST",
         credentials: "same-origin",
@@ -180,7 +205,14 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
 
   return (
     <div className="space-y-2 rounded-md border border-dashed border-border p-2.5">
-      <p className="text-xs font-medium">Or reply with your voice (up to {VOICE_MAX_SECONDS} s)</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium">{title ?? `Or reply with your voice (up to ${maxSeconds} s)`}</p>
+        {onCancel ? (
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onCancel} disabled={state === "sending" || state === "recording"}>
+            Close
+          </Button>
+        ) : null}
+      </div>
       <input
         ref={file}
         type="file"
@@ -197,7 +229,7 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-sm font-medium text-destructive" role="status">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive" aria-hidden />
-            Recording {Math.floor(elapsed)} / {VOICE_MAX_SECONDS} s
+            Recording {Math.floor(elapsed)} / {maxSeconds} s
           </span>
           <Button size="sm" variant="outline" onClick={stop}>
             <Square />
@@ -210,7 +242,7 @@ export function VoiceRecorder({ uploadUrl, onSent }: { uploadUrl: string; onSent
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => void send()} disabled={state === "sending"}>
               <Send />
-              {state === "sending" ? "Sending…" : `Send voice reply (${Math.round(clip.seconds)} s)`}
+              {state === "sending" ? "Sending…" : `Send ${upload ? "voice note" : "voice reply"} (${Math.round(clip.seconds)} s)`}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setClip(null)} disabled={state === "sending"}>
               Discard
