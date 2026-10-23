@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Minus, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronDown, Minus, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { formatShort } from "@/lib/dates";
@@ -67,6 +67,30 @@ export function StrengthTrendsCard({
 }) {
   const trends = React.useMemo(() => strengthTrends(workouts, today), [workouts, today]);
   const [range, setRange] = React.useState<Range>("recent");
+  const baseId = React.useId();
+  // Which muscle groups are open: a group with a slipping lift opens by itself
+  // until it's closed. Remembered on this device (the coach's choice is shared
+  // across members).
+  const storageKey = `prep-calculator:trends-open:${who ? "coach" : "me"}`;
+  const [opened, setOpened] = React.useState<Partial<Record<string, boolean>>>({});
+  React.useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null") as unknown;
+      if (saved && typeof saved === "object") setOpened(saved as Record<string, boolean>);
+    } catch {
+      /* no storage: groups use their defaults */
+    }
+  }, [storageKey]);
+  const toggle = (muscle: string, open: boolean) =>
+    setOpened((prev) => {
+      const next = { ...prev, [muscle]: open };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        /* not saved; still works for this visit */
+      }
+      return next;
+    });
   const counts = { up: 0, hold: 0, down: 0, new: 0 } as Record<TrendStatus, number>;
   for (const t of trends) counts[t.status]++;
 
@@ -101,16 +125,30 @@ export function StrengthTrendsCard({
         </CardDescription>
       </CardHeader>
       {trends.length > 0 ? (
-        <CardContent className="space-y-4 pt-0">
-          {groups.map((g) => (
-            <section key={g.muscle} aria-label={g.label}>
-              <h3 className="mb-0.5 flex items-baseline justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {g.label}
-                <span className="tabular font-normal normal-case tracking-normal">
-                  {g.items.length} {g.items.length === 1 ? "lift" : "lifts"}
-                </span>
+        <CardContent className="pt-0">
+          {groups.map((g) => {
+            const slipping = g.items.filter((t) => t.status === "down").length;
+            const up = g.items.filter((t) => t.status === "up").length;
+            const isOpen = opened[g.muscle] ?? slipping > 0;
+            const listId = `${baseId}-${g.muscle}`;
+            return (
+            <section key={g.muscle} aria-label={g.label} className="border-t border-primary/[0.08] first:border-t-0">
+              <h3>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  aria-controls={listId}
+                  onClick={() => toggle(g.muscle, !isOpen)}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-xl px-1 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !isOpen && "-rotate-90")} aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold">{g.label}</span>
+                  {slipping > 0 ? <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS.down.chip)}>{slipping} slipping</span> : null}
+                  {up > 0 ? <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS.up.chip)}>{up} up</span> : null}
+                  <span className="tabular w-5 shrink-0 text-right text-xs text-muted-foreground">{g.items.length}</span>
+                </button>
               </h3>
-              <ul className="divide-y divide-primary/[0.08]">
+              <ul id={listId} hidden={!isOpen} className="divide-y divide-primary/[0.08] pb-2 pl-6">
                 {g.items.map((t) => {
                   const s = STATUS[t.status];
                   const pct = range === "recent" ? t.changePct : t.allTimePct;
@@ -150,7 +188,8 @@ export function StrengthTrendsCard({
                 })}
               </ul>
             </section>
-          ))}
+            );
+          })}
         </CardContent>
       ) : null}
     </Card>

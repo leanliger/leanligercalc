@@ -1229,7 +1229,7 @@ function MemberDetail({
                     </div>
                     {p?.detail ? <p className="text-xs leading-relaxed text-muted-foreground">{p.detail}</p> : null}
                     {m.timeline && m.data.weighIns.length > 0 ? (
-                      <ProgressChart timeline={m.timeline} weighIns={m.data.weighIns} unit={unit} today={today} range="recent" />
+                      <ProgressChart timeline={m.timeline} weighIns={m.data.weighIns} unit={unit} today={today} range="recent" height="h-80 sm:h-[26rem]" />
                     ) : (
                       <p className="text-sm text-muted-foreground">No weigh-ins in the last {OVERVIEW_DAYS.weighIns} days.</p>
                     )}

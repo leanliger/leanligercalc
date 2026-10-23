@@ -65,6 +65,7 @@ export function WeeklyIntakeChart({
   onNeedFrom,
   weekTarget,
   planWeightFor,
+  height = "h-72",
 }: {
   /** Daily food totals (dayTotals() of the food logs, or the coach's copy). */
   days: readonly DayTotals[];
@@ -77,6 +78,8 @@ export function WeeklyIntakeChart({
   weekTarget?: (weekStart: string) => number | null;
   /** The plan's weight on a date, lb. */
   planWeightFor?: (date: string) => number | null;
+  /** The chart's height classes (taller on the coach dashboard). */
+  height?: string;
 }) {
   const [weeks, setWeeks] = React.useState<Range>(12);
   const [layers, setLayers] = React.useState<Record<Layer, boolean>>({ trend: true, plan: false, calories: true });
@@ -171,7 +174,7 @@ export function WeeklyIntakeChart({
           Log food and weigh in for a couple of weeks and this fills in.
         </p>
       ) : (
-        <div className="h-72 w-full cursor-pointer" role="img" aria-label={describe(data, unit)}>
+        <div className={cn(height, "w-full cursor-pointer")} role="img" aria-label={describe(data, unit)}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={data}

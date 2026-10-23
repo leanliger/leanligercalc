@@ -169,7 +169,8 @@ function MeasurementChart({
   };
 
   return (
-    <div className="h-56 w-full">
+    // Taller on the coach dashboard (read-only), where it has the room.
+    <div className={cn(readOnly ? "h-72 sm:h-80" : "h-56", "w-full")}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 8, right: 0, bottom: 4, left: -8 }}>
           <XAxis

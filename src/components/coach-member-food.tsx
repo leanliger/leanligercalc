@@ -53,9 +53,9 @@ export function CoachIntakeChart({
         {error ? (
           <p className="text-sm text-muted-foreground">{error}</p>
         ) : days === null ? (
-          <div aria-busy="true" aria-label="Loading the weekly chart" className="h-72 animate-pulse rounded-md bg-muted/30" />
+          <div aria-busy="true" aria-label="Loading the weekly chart" className="h-80 animate-pulse sm:h-[26rem] rounded-md bg-muted/30" />
         ) : (
-          <WeeklyIntakeChart days={days} weighIns={weighIns} unit={unit} today={today} />
+          <WeeklyIntakeChart days={days} weighIns={weighIns} unit={unit} today={today} height="h-80 sm:h-[26rem]" />
         )}
       </CardContent>
     </Card>
