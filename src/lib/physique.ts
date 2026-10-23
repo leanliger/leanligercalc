@@ -110,6 +110,8 @@ export function usablePhysique(analysis: PhysiqueAnalysis): boolean {
 export const COMPARE_MIN_DAYS = 14;
 /** What "about a month" means when picking the earlier set by default. */
 export const COMPARE_TARGET_DAYS = 28;
+/** A coach's comment under a member's comparison. */
+export const COMPARISON_COMMENT_MAX = 600;
 
 export const COMPARE_PROMPT = `You are an elite fitness and accountability coach specializing in natural bodybuilding and physique transformation. You are comparing the same person's progress photos from two dates: the BEFORE set and the AFTER set, each labelled by pose.
 

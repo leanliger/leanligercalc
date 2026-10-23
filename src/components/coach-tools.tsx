@@ -17,6 +17,7 @@ import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { VoicePlayer, VoiceRecorder } from "@/components/voice-reply";
 import { SavedRepliesButton } from "@/components/saved-replies";
+import { CheckinReportPanel } from "@/components/checkin-report";
 
 /** Coach dashboard pieces: private notes, check-ins, set macros, and the "look at today" list. */
 
@@ -269,11 +270,14 @@ export function MemberCheckinsCard({
   unit,
   onReplied,
   sendLabel,
+  summary,
 }: {
   companyId: string;
   memberId: string;
   memberName: string;
   unit: WeightUnit;
+  /** Their dashboard summary: turns on the one-click report. */
+  summary?: MemberSummary;
   /** A reply (written or voice) went out: the inbox moves on to the next check-in. */
   onReplied?: () => void;
   /** The send button's words ("Send & next" in the inbox). */
@@ -283,6 +287,8 @@ export function MemberCheckinsCard({
   const [error, setError] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState<string | null>(null);
   const [reply, setReply] = React.useState("");
+  // Focus items from the one-click report, when its reply was moved into the box to edit.
+  const [focus, setFocus] = React.useState<string[]>([]);
   const [sending, setSending] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [drafting, setDrafting] = React.useState(false);
@@ -330,10 +336,11 @@ export function MemberCheckinsCard({
     try {
       const r = await call<{ checkins: Checkin[]; notified: boolean }>("/api/coach/checkins/reply", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, member: memberId, weekStart, reply }),
+        body: JSON.stringify({ company: companyId, member: memberId, weekStart, reply, focus }),
       });
       setCheckins(r.checkins);
       setReply("");
+      setFocus([]);
       setMessage(r.notified ? `Sent. ${first(memberName)} got a notification.` : `Sent. ${first(memberName)} sees it next time they open the app.`);
       onReplied?.();
     } catch (e) {
@@ -370,6 +377,7 @@ export function MemberCheckinsCard({
                   onClick={() => {
                     setOpen(isOpen ? null : c.weekStart);
                     setReply("");
+                    setFocus([]);
                     setDrafted(false);
                     setMessage(null);
                   }}
@@ -400,6 +408,30 @@ export function MemberCheckinsCard({
                       </div>
                     ) : (
                       <div className="space-y-2">
+                        {summary && !c.replyAudio ? (
+                          <CheckinReportPanel
+                            companyId={companyId}
+                            memberId={memberId}
+                            summary={summary}
+                            checkin={c}
+                            previous={checkins[checkins.indexOf(c) + 1] ?? null}
+                            unit={unit}
+                            onSent={(r) => {
+                              setCheckins(r.checkins);
+                              setReply("");
+                              setFocus([]);
+                              setMessage(
+                                r.notified ? `Sent. ${first(memberName)} got a notification.` : `Sent. ${first(memberName)} sees it next time they open the app.`,
+                              );
+                              onReplied?.();
+                            }}
+                            onEdit={(text, items) => {
+                              setReply(text);
+                              setFocus(items);
+                              requestAnimationFrame(() => document.getElementById(`reply-${c.weekStart}`)?.focus());
+                            }}
+                          />
+                        ) : null}
                         <Label htmlFor={`reply-${c.weekStart}`} className="text-xs">
                           Your reply
                         </Label>

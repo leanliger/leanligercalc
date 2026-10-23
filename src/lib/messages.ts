@@ -140,7 +140,17 @@ export function validateAnnouncement(
 
 /* ------------------------------ notification bell ------------------------------ */
 
-export type NotificationKind = "announcement" | "update" | "checkin-reply" | "program" | "habits" | "program-edit" | "macros" | "milestone" | "nudge";
+export type NotificationKind =
+  | "announcement"
+  | "update"
+  | "checkin-reply"
+  | "program"
+  | "habits"
+  | "program-edit"
+  | "macros"
+  | "milestone"
+  | "nudge"
+  | "comparison-comment";
 
 /** Where tapping one takes the member. */
 export type NotificationTarget = "today" | "checkin" | "training" | "macros" | "chat" | null;

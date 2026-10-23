@@ -73,6 +73,8 @@ export interface Checkin {
   repliedAt: string | null;
   /** The coach's voice reply, if any (played from /api/checkins/voice/:weekStart). */
   replyAudio: { seconds: number } | null;
+  /** Things to do this week the coach sent with the reply (src/lib/checkin-report.ts). */
+  coachFocus?: string[] | null;
 }
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, CHECKIN_TEXT_MAX) : "");

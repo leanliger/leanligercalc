@@ -32,7 +32,7 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
   const since = `${addDays(now.toISOString().slice(0, 10), -NOTIFICATIONS_DAYS)}T00:00:00.000Z`;
 
   const q = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(...binds);
-  const [seen, checkins, assigned, edits, macros, milestones, nudges, tags, announcements, chat] = await env.DB.batch([
+  const [seen, checkins, assigned, edits, macros, milestones, nudges, tags, announcements, chat, comments] = await env.DB.batch([
     q("SELECT seen_at FROM notification_seen WHERE user_id = ?", userId),
     q("SELECT week_start, reply, replied_at FROM checkins WHERE user_id = ? AND replied_at >= ?", userId, since),
     q(
@@ -60,6 +60,7 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
       now.toISOString(),
     ),
     q("SELECT COUNT(*) AS n FROM coach_messages WHERE member_id = ? AND company_id = ? AND from_coach = 1 AND pending = 0 AND read_at IS NULL", userId, companyId ?? ""),
+    q("SELECT id, coach_comment, coach_comment_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' AND coach_comment_at >= ?", userId, since),
   ]);
   const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
 
@@ -115,6 +116,16 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
   }
   for (const n of rows<{ kind: string; anchor: string; sent_at: string; message: string }>(nudges)) {
     items.push({ id: `nudge-${n.kind}-${n.anchor}`, kind: "nudge", title: "From your coach", body: clip(n.message), at: n.sent_at, target: null });
+  }
+  for (const c of rows<{ id: string; coach_comment: string; coach_comment_at: string }>(comments)) {
+    items.push({
+      id: `compare-comment-${c.id}-${c.coach_comment_at}`,
+      kind: "comparison-comment",
+      title: "Your coach commented on your monthly comparison",
+      body: clip(c.coach_comment),
+      at: c.coach_comment_at,
+      target: "checkin",
+    });
   }
   for (const u of APP_UPDATES) {
     const at = `${u.date}T00:00:00.000Z`;

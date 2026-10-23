@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CalendarRange, Download, ImageIcon, Loader2, Lock, Quote, Share2, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CalendarRange, Download, ImageIcon, Loader2, Lock, MessageSquare, Quote, Share2, Sparkles, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -10,7 +10,8 @@ import { PhotoImage } from "@/components/photos-card";
 import { Sections } from "@/components/physique-card";
 import { addDays, daysBetween, formatShort } from "@/lib/dates";
 import { POSES, POSE_LABELS, type PhotoMeta, type Pose } from "@/lib/photos";
-import { COMPARE_MIN_DAYS, COMPARE_TARGET_DAYS, shareableSummary, type CompareIds, type PhysiqueSection } from "@/lib/physique";
+import { COMPARE_MIN_DAYS, COMPARE_TARGET_DAYS, COMPARISON_COMMENT_MAX, shareableSummary, type CompareIds, type PhysiqueSection } from "@/lib/physique";
+import { comparePairs, photoCheckIssues, photoMetrics, type PhotoCheckIssue, type PhotoMetrics } from "@/lib/photo-check";
 import { bodyFatSeries, compareStatChips, type BodyFatPoint, type CompareStats } from "@/lib/physique-stats";
 import { drawComparisonImage } from "@/lib/share-image";
 import type { WeightUnit } from "@/lib/types";
@@ -23,8 +24,53 @@ export interface Comparison {
   createdAt: string;
   photoIds: CompareIds;
   stats?: CompareStats | null;
+  /** The coach's comment under it. */
+  coachComment?: { text: string; at: string } | null;
   sections: PhysiqueSection[];
   raw: string;
+}
+
+/**
+ * Small copies of the photos, measured on the device for the photo check
+ * (src/lib/photo-check.ts). A photo that can't be read is left out.
+ */
+async function measurePhotos(ids: readonly string[], srcFor: (id: string) => string): Promise<Map<string, PhotoMetrics>> {
+  const out = new Map<string, PhotoMetrics>();
+  await Promise.all(
+    [...new Set(ids)].map(async (id) => {
+      try {
+        const res = await fetch(srcFor(id), { credentials: "same-origin" });
+        if (!res.ok) return;
+        const bmp = await createImageBitmap(await res.blob());
+        const w = 48;
+        const h = Math.max(8, Math.round((w * bmp.height) / bmp.width));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(bmp, 0, 0, w, h);
+        bmp.close();
+        out.set(id, photoMetrics(ctx.getImageData(0, 0, w, h).data, w, h));
+      } catch {
+        /* not measured */
+      }
+    }),
+  );
+  return out;
+}
+
+/** The coach's comment, as the member sees it. */
+function CoachCommentNote({ comment }: { comment: { text: string; at: string } }) {
+  return (
+    <div className="space-y-1 rounded-2xl border border-primary/25 bg-primary/[0.05] p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+        <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+        From your coach · {formatShort(comment.at.slice(0, 10))}
+      </p>
+      <p className="whitespace-pre-wrap text-sm">{comment.text}</p>
+    </div>
+  );
 }
 
 /* ------------------------------ share image ------------------------------ */
@@ -301,6 +347,9 @@ export function PhysiqueCompareCard({ enabled, unit }: { enabled: boolean; unit:
   const [consent, setConsent] = React.useState<boolean | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // The photo check's warnings, shown before an analysis is spent.
+  const [issues, setIssues] = React.useState<PhotoCheckIssue[] | null>(null);
+  const [checking, setChecking] = React.useState(false);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -343,7 +392,30 @@ export function PhysiqueCompareCard({ enabled, unit }: { enabled: boolean; unit:
   const due = !!newest && !!chosen && (!last?.afterDate || (newest > last.afterDate && daysBetween(last.afterDate, newest) >= COMPARE_MIN_DAYS));
   const shown = comparisons.find((c) => c.id === shownId) ?? last;
 
+  // Check the photos line up first; the comparison only runs straight away when nothing looks off.
+  const check = async () => {
+    setChecking(true);
+    setError(null);
+    setIssues(null);
+    let found: PhotoCheckIssue[] = [];
+    try {
+      const { pairs } = comparePairs(photos, chosen);
+      const metrics = await measurePhotos(
+        pairs.flatMap((p) => [p.before.id, p.after.id]),
+        (id) => `/api/photos/${id}`,
+      );
+      found = photoCheckIssues(photos, pairs, metrics);
+    } catch {
+      found = []; // the check only helps; it never stops a comparison
+    } finally {
+      setChecking(false);
+    }
+    if (found.length > 0) setIssues(found);
+    else await run();
+  };
+
   const run = async () => {
+    setIssues(null);
     setBusy(true);
     setError(null);
     try {
@@ -425,11 +497,36 @@ export function PhysiqueCompareCard({ enabled, unit }: { enabled: boolean; unit:
                   ))}
                 </select>
               </label>
-              <Button onClick={() => void run()} disabled={busy || left === 0}>
-                {busy ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                {busy ? "Comparing…" : "Compare"}
+              <Button onClick={() => void check()} disabled={busy || checking || left === 0}>
+                {busy || checking ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                {checking ? "Checking photos…" : busy ? "Comparing…" : "Compare"}
               </Button>
             </div>
+            {issues ? (
+              <div role="alert" className="space-y-2 rounded-2xl border border-warning/40 bg-warning/[0.07] p-3">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-warning">
+                  <AlertTriangle className="h-4 w-4" aria-hidden />
+                  These photos may not line up
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm">
+                  {issues.map((i) => (
+                    <li key={i.text}>{i.text}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  Retaking them gives a fairer comparison. Comparing anyway uses one of today&apos;s analyses
+                  {left !== null ? ` (${left} left)` : ""}.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => void run()} disabled={busy}>
+                    Compare anyway
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setIssues(null)}>
+                    I&apos;ll retake them
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <p className="flex gap-1.5 text-xs text-muted-foreground">
               <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               Uses your saved photos of each pose from both dates. They go to Google for this comparison only.
@@ -477,6 +574,7 @@ export function PhysiqueCompareCard({ enabled, unit }: { enabled: boolean; unit:
                 </select>
               </label>
             ) : null}
+            {shown.coachComment ? <CoachCommentNote comment={shown.coachComment} /> : null}
             <ComparisonView key={shown.id} c={shown} srcFor={(id) => `/api/photos/${id}`} unit={unit} />
           </div>
         ) : null}
@@ -530,9 +628,124 @@ export function CoachComparisonCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <BodyFatChart points={data.bodyFat} />
-        {data.comparison ? <ComparisonView c={data.comparison} srcFor={coachPhoto(companyId, memberId)} unit={unit} /> : null}
+        {data.comparison ? (
+          <>
+            <CommentEditor
+              key={data.comparison.id}
+              companyId={companyId}
+              memberId={memberId}
+              memberName={memberName}
+              comparisonId={data.comparison.id}
+              initial={data.comparison.coachComment ?? null}
+            />
+            <ComparisonView c={data.comparison} srcFor={coachPhoto(companyId, memberId)} unit={unit} />
+          </>
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** The coach's comment on a comparison: the member sees it under it and gets a notification. */
+function CommentEditor({
+  companyId,
+  memberId,
+  memberName,
+  comparisonId,
+  initial,
+}: {
+  companyId: string;
+  memberId: string;
+  memberName: string;
+  comparisonId: string;
+  initial: { text: string; at: string } | null;
+}) {
+  const [saved, setSaved] = React.useState(initial);
+  const [text, setText] = React.useState(initial?.text ?? "");
+  const [editing, setEditing] = React.useState(!initial);
+  const [state, setState] = React.useState<"idle" | "saving">("idle");
+  const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const first = memberName.split(" ")[0] || memberName;
+
+  const save = async (comment: string) => {
+    setState("saving");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/coach/comparison-comment", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ company: companyId, member: memberId, id: comparisonId, comment }),
+      });
+      const b = (await res.json().catch(() => null)) as { comment?: { text: string; at: string } | null; notified?: boolean; error?: string } | null;
+      if (!res.ok || !b) throw new Error(b?.error ?? "Couldn't save it. Try again.");
+      setSaved(b.comment ?? null);
+      setText(b.comment?.text ?? "");
+      setEditing(!b.comment);
+      setMessage({
+        ok: true,
+        text: b.comment ? (b.notified ? `Saved. ${first} got a notification.` : `Saved. ${first} sees it under their comparison.`) : "Comment removed.",
+      });
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : "Couldn't save it. Try again." });
+    } finally {
+      setState("idle");
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-border p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold">
+        <MessageSquare className="h-3.5 w-3.5 text-primary" aria-hidden />
+        Your comment for {first}
+      </p>
+      {saved && !editing ? (
+        <>
+          <p className="whitespace-pre-wrap text-sm">{saved.text}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+            <Button size="sm" variant="ghost" disabled={state === "saving"} onClick={() => void save("")}>
+              Remove
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label htmlFor={`compare-comment-${comparisonId}`} className="sr-only">
+            Comment on {first}&apos;s comparison
+          </label>
+          <textarea
+            id={`compare-comment-${comparisonId}`}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={COMPARISON_COMMENT_MAX}
+            rows={3}
+            placeholder={`e.g. Shoulders and upper back are filling out, ${first}. Waist is tighter too. Keep protein where it is.`}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={!text.trim() || state === "saving"} onClick={() => void save(text)}>
+              {state === "saving" ? "Saving…" : saved ? "Save changes" : "Send comment"}
+            </Button>
+            {saved ? (
+              <Button size="sm" variant="ghost" onClick={() => {
+                setText(saved.text);
+                setEditing(false);
+              }}>
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+      {message ? (
+        <p role="status" className={cn("text-[12px]", message.ok ? "text-muted-foreground" : "text-destructive")}>
+          {message.text}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

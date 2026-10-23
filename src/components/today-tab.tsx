@@ -53,6 +53,7 @@ import { planToday } from "@/lib/program-schedule";
 import type { MySharing } from "@/lib/sharing";
 import { CoachRequestCard } from "@/components/coach-access";
 import { AssignmentCards } from "@/components/assignment-cards";
+import { CoachFocusCard } from "@/components/coach-focus-card";
 import type { MemberAssignment } from "@/lib/assignments";
 import { addDays, formatShort } from "@/lib/dates";
 import { trendSeries } from "@/lib/adaptive";
@@ -579,6 +580,9 @@ export function TodayTab(props: TodayTabProps) {
       </header>
 
       <AssignmentCards assignments={props.assignments} onUse={props.onUseAssignment} onDecline={props.onDeclineAssignment} />
+
+      {/* Signed in through Whop: the focus their coach sent with the last check-in reply. */}
+      {props.coachSharing ? <CoachFocusCard /> : null}
 
       {props.coachSharing?.requestedAt && !props.coachSharing.shared ? (
         <CoachRequestCard sharing={props.coachSharing} onChange={props.onCoachSharing} />

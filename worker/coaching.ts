@@ -35,6 +35,7 @@ import {
   type Checkin,
 } from "../src/lib/checkins";
 import { coachMacrosMessage, validateCoachMacros, type CoachMacros } from "../src/lib/coach-macros";
+import { validateFocus } from "../src/lib/checkin-report";
 import { buildProgressReport, type ReportPhoto } from "../src/lib/progress-report";
 import type { Measurement } from "../src/lib/measurements";
 import type { Workout } from "../src/lib/training";
@@ -93,6 +94,7 @@ interface CheckinRow {
   replied_at: string | null;
   reply_audio: string | null;
   reply_audio_seconds: number | null;
+  coach_focus: string | null;
 }
 
 function toCheckin(r: CheckinRow): Checkin | null {
@@ -105,6 +107,7 @@ function toCheckin(r: CheckinRow): Checkin | null {
       reply: r.reply,
       repliedAt: r.replied_at,
       replyAudio: r.reply_audio ? { seconds: r.reply_audio_seconds ?? 0 } : null,
+      coachFocus: r.coach_focus ? validateFocus(JSON.parse(r.coach_focus)) : null,
     };
   } catch {
     return null;
@@ -113,7 +116,7 @@ function toCheckin(r: CheckinRow): Checkin | null {
 
 async function checkinsOf(env: SharingEnv, userId: string): Promise<Checkin[]> {
   const { results } = await env.DB.prepare(
-    "SELECT week_start, answers, stats, submitted_at, reply, replied_at, reply_audio, reply_audio_seconds FROM checkins WHERE user_id = ? ORDER BY week_start DESC LIMIT ?",
+    "SELECT week_start, answers, stats, submitted_at, reply, replied_at, reply_audio, reply_audio_seconds, coach_focus FROM checkins WHERE user_id = ? ORDER BY week_start DESC LIMIT ?",
   )
     .bind(userId, CHECKIN_HISTORY)
     .all<CheckinRow>();
@@ -211,11 +214,13 @@ export async function replyToCheckin(env: SharingEnv, viewerId: string, raw: unk
   const reply = typeof b.reply === "string" ? b.reply.trim().slice(0, CHECKIN_REPLY_MAX) : "";
   if (!weekStart) return { ok: false, status: 422, error: "Bad request." };
   if (!reply) return { ok: false, status: 422, error: "Write a reply first." };
+  // Focus items from the one-click report, for the member's Today page; left as they were when none are sent.
+  const focus = validateFocus(b.focus);
   // (A voice reply sets reply to '' so the check-in counts as answered; text can follow.)
   const res = await env.DB.prepare(
-    `UPDATE checkins SET reply = ?, replied_by = ?, replied_at = ${NOW_SQL} WHERE user_id = ? AND week_start = ?`,
+    `UPDATE checkins SET reply = ?, replied_by = ?, replied_at = ${NOW_SQL}, coach_focus = COALESCE(?, coach_focus) WHERE user_id = ? AND week_start = ?`,
   )
-    .bind(reply, viewerId, c.memberId, weekStart)
+    .bind(reply, viewerId, focus.length > 0 ? JSON.stringify(focus) : null, c.memberId, weekStart)
     .run();
   if (!res.meta.changes) return { ok: false, status: 404, error: "That check-in isn't there any more." };
 

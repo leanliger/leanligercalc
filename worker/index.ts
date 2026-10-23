@@ -65,6 +65,8 @@
  *   GET    /api/coach/member-training?company=…&member=…  coaches: a member's programs; PUT to save an edit
  *   GET    /api/coach/member-workouts?company=…&member=…  coaches: a member's workouts (newest 500)
  *   GET    /api/coach/member-physique?company=…&member=…  coaches: a member's latest physique analysis (photo sharing only)
+ *   PUT    /api/coach/comparison-comment          coaches: a comment on a member's monthly comparison (see physique-focus.ts)
+ *   GET    /api/coach/community-stats?company=…&period=…  coaches: totals across sharing members, for marketing (see community-stats.ts)
  *   …      notes, check-ins and coach-set macros: see coaching.ts
  *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
  *   GET    /api/assignments                   members: assignments waiting for me
@@ -106,7 +108,7 @@
 
 import { authenticate, servePageWithToken, type AuthEnv } from "./auth";
 import { receiveSteps, stepSyncKey } from "./steps-sync";
-import { coachMemberPhysique } from "./physique-focus";
+import { coachMemberPhysique, saveComparisonComment } from "./physique-focus";
 import { coachTestimonials, getConsent, setConsent } from "./testimonials";
 import { sendCompareNudges } from "./compare-nudges";
 import { readLabelPhoto } from "./label-photo";
@@ -116,6 +118,7 @@ import { coachMemberFood } from "./member-food";
 import { coachMemberTimeline } from "./member-timeline";
 import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
 import { coachProgramResults } from "./program-results";
+import { communityStats } from "./community-stats";
 import {
   cancelScheduledMessage,
   coachAttachment,
@@ -709,6 +712,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return error(405, "Method not allowed.");
   }
 
+  if (path === "/api/coach/comparison-comment") {
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    const result = await saveComparisonComment(env, userId, body.value);
+    return result.ok ? json(result.body) : error(result.status, result.error);
+  }
   if (path === "/api/coach/member-physique") {
     if (method !== "GET") return error(405, "Method not allowed.");
     const result = await coachMemberPhysique(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
@@ -826,6 +836,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (path === "/api/coach/member-food") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachMemberFood(env, userId, q("company"), q("member")));
+  }
+  if (path === "/api/coach/community-stats") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await communityStats(env, userId, q("company"), q("period")));
   }
   if (path === "/api/coach/program-results") {
     if (method !== "GET") return error(405, "Method not allowed.");

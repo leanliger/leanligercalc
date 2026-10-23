@@ -43,6 +43,7 @@ import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
 import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
+import { CommunityStatsCard } from "@/components/coach-community-stats";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -445,11 +446,14 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
                 />
               ) : (
-                <CoachTestimonials
-                  companyId={companyId}
-                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
-                  unit={unit}
-                />
+                <div className="space-y-5">
+                  <CommunityStatsCard companyId={companyId} unit={unit} />
+                  <CoachTestimonials
+                    companyId={companyId}
+                    names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
+                    unit={unit}
+                  />
+                </div>
               )}
               {overview.photoStorage ? (
                 <div className="max-w-xs rounded-[1.25rem] border border-primary/15 p-4">
@@ -1421,7 +1425,7 @@ function MemberDetail({
         ) : tab === "timeline" ? (
           <MemberTimelineCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} today={today} />
         ) : tab === "checkins" ? (
-          <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
+          <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} summary={m} />
         ) : tab === "food" ? (
           <>
             <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
@@ -1755,6 +1759,7 @@ function CoachInbox({
               memberId={current.data.userId}
               memberName={current.displayName}
               unit={unit}
+              summary={current}
               sendLabel={items.length > 1 ? "Send & next" : "Send reply"}
               onReplied={() => {
                 const id = current.data.userId;

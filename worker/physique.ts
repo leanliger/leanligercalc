@@ -21,7 +21,6 @@
 import {
   COMPARE_MIN_DAYS,
   COMPARE_PROMPT,
-  COMPARE_TARGET_DAYS,
   PHYSIQUE_DAILY_LIMIT,
   PHYSIQUE_PROMPT,
   PHYSIQUE_USER_PROMPT,
@@ -30,6 +29,7 @@ import {
   usablePhysique,
   type CompareIds,
 } from "../src/lib/physique";
+import { comparePairs } from "../src/lib/photo-check";
 import { addDays, daysBetween, isValidISODate } from "../src/lib/dates";
 import { compareStatsText, liftChanges, measurementChanges, type CompareStats, type MeasurementRow } from "../src/lib/physique-stats";
 import type { Workout } from "../src/lib/training";
@@ -327,6 +327,8 @@ interface ComparisonRow {
   stats: string | null;
   analysis: string;
   created_at: string;
+  coach_comment?: string | null;
+  coach_comment_at?: string | null;
 }
 
 function toComparison(r: ComparisonRow) {
@@ -349,13 +351,14 @@ function toComparison(r: ComparisonRow) {
     createdAt: r.created_at,
     photoIds,
     stats,
+    coachComment: r.coach_comment ? { text: r.coach_comment, at: r.coach_comment_at ?? r.created_at } : null,
     ...parsePhysique(r.analysis),
   };
 }
 
 export async function listComparisons(env: { DB: D1Database }, userId: string, limit = 12) {
   const { results } = await env.DB.prepare(
-    "SELECT id, photo_date, before_date, photo_ids, stats, analysis, created_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, photo_date, before_date, photo_ids, stats, analysis, created_at, coach_comment, coach_comment_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' ORDER BY created_at DESC LIMIT ?",
   )
     .bind(userId, limit)
     .all<ComparisonRow>();
@@ -418,21 +421,9 @@ export async function comparePhysique(env: PhysiqueEnv, userId: string, raw: unk
 
   const all = await photoList(env, userId); // newest first
   if (all.length === 0) return { ok: false, status: 409, error: "Add progress photos first." };
-  const afterDate = all[0]!.date;
-  const latest = addDays(afterDate, -COMPARE_MIN_DAYS);
   const requested = (raw as { before?: unknown } | null)?.before;
-  const target = typeof requested === "string" && isValidISODate(requested) && requested <= latest ? requested : addDays(afterDate, -COMPARE_TARGET_DAYS);
-
-  const pairs: { pose: Pose; before: (typeof all)[number]; after: (typeof all)[number] }[] = [];
-  for (const pose of POSES) {
-    const after = all.find((p) => p.pose === pose && p.date >= addDays(afterDate, -6));
-    const older = all.filter((p) => p.pose === pose && p.date <= latest);
-    if (!after || older.length === 0) continue;
-    const before = [...older].sort(
-      (a, b) => Math.abs(daysBetween(a.date, target)) - Math.abs(daysBetween(b.date, target)) || (a.date < b.date ? 1 : -1),
-    )[0]!;
-    pairs.push({ pose, before, after });
-  }
+  // The same pairs the app's photo check looked at (src/lib/photo-check.ts).
+  const { pairs } = comparePairs(all, typeof requested === "string" && isValidISODate(requested) ? requested : null);
   if (pairs.length === 0) {
     return {
       ok: false,
