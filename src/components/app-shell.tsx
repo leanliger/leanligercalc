@@ -116,6 +116,8 @@ import {
 } from "@/lib/day-backup";
 import { createWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import { blockToActivate, planToday } from "@/lib/program-schedule";
+import { MemberChatButton } from "@/components/chat";
+import { NotificationBell, useNotifications } from "@/components/notification-bell";
 import type { TrainingToday } from "@/lib/training-carbs";
 import type {
   BiometricProfile,
@@ -661,6 +663,13 @@ export function AppShell() {
   const setTab = React.useCallback((tab: AppTab) => {
     setState((prev) => ({ ...prev, activeTab: tab }));
   }, []);
+
+  // The bell and the chat icon in the header (signed in through Whop only).
+  const experienceId = ready ? experienceIdFromPath(window.location.pathname) : null;
+  const notifications = useNotifications(experienceId, ready && session.mode === "cloud");
+  const setNotifications = notifications.setData;
+  // Bumped to open the chat from the bell.
+  const [chatRequest, setChatRequest] = React.useState(0);
 
   // Coming back to Plan opens the section you were last on.
   const lastPlanSection = React.useRef<PlanSection>("plan");
@@ -1521,6 +1530,26 @@ export function AppShell() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              {notifications.data ? (
+                <>
+                  {notifications.data.chat && experienceId ? (
+                    <MemberChatButton
+                      experienceId={experienceId}
+                      unread={notifications.data.chatUnread}
+                      openRequest={chatRequest}
+                      onRead={() => setNotifications((d) => (d ? { ...d, chatUnread: 0 } : d))}
+                    />
+                  ) : null}
+                  <NotificationBell
+                    data={notifications.data}
+                    onOpened={() => {
+                      void fetch("/api/notifications/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
+                      setNotifications((d) => (d ? { ...d, unread: 0 } : d));
+                    }}
+                    onGo={(t) => (t === "chat" ? setChatRequest((n) => n + 1) : setTab(t))}
+                  />
+                </>
+              ) : null}
               <CopyButton
                 getText={() => buildShareUrl(state)}
                 label="Share"

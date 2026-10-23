@@ -11,6 +11,7 @@ import {
   EyeOff,
   Flame,
   Inbox,
+  MessageCircle,
   MessageSquare,
   RefreshCw,
   Send,
@@ -36,6 +37,9 @@ import { CoachNudges } from "@/components/coach-nudges";
 import { MemberProgramCard } from "@/components/coach-member-program";
 import { PhysiqueFocusCard } from "@/components/physique-focus-card";
 import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-compare-card";
+import { CoachProgramResults } from "@/components/coach-program-results";
+import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
+import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
@@ -135,7 +139,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [view, setView] = React.useState<"today" | "inbox" | "members" | "library">(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("member") ? "members" : "today",
   );
-  const [libraryTab, setLibraryTab] = React.useState<"programs" | "nudges" | "testimonials">("programs");
+  const [libraryTab, setLibraryTab] = React.useState<"programs" | "results" | "announcements" | "nudges" | "testimonials">("programs");
+  // Inbox: check-ins to answer, or chats with members.
+  const [inboxTab, setInboxTab] = React.useState<"checkins" | "messages">("checkins");
+  // Every chat, for the unread counts on Inbox and on each member's Message button.
+  const chats = useCoachThreads(companyId);
   // The check-in open in the inbox.
   const [inboxId, setInboxId] = React.useState<string | null>(null);
   const [today] = React.useState(() => todayISO());
@@ -256,12 +264,14 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   /** Open a member's waiting check-in in the inbox. */
   const openInbox = (id: string | null = null) => {
     setView("inbox");
+    // Straight to the chats when only messages are waiting.
+    setInboxTab(id === null && counts.toReview === 0 && chats.unread > 0 ? "messages" : "checkins");
     setSelected(null);
     setInboxId(id);
     window.scrollTo({ top: 0 });
   };
   /** From Today's lists: check-ins go to the inbox, everything else to the member's page. */
-  const openFromToday = (id: string, t: "checkins" | "overview") => (t === "checkins" ? openInbox(id) : openMember(id, t));
+  const openFromToday = (id: string, t: "checkins" | "overview" | "training") => (t === "checkins" ? openInbox(id) : openMember(id, t));
   const showMembers = (f: Filter) => {
     if (f === "reply") return openInbox();
     setView("members");
@@ -293,7 +303,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const navItems: CoachNavItem[] = [
     { id: "today", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
-    { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview, active: view === "inbox", onSelect: () => openInbox() },
+    { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview + chats.unread, active: view === "inbox", onSelect: () => openInbox() },
     { id: "members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
     { id: "library", label: "Library", icon: <ClipboardList />, active: view === "library", onSelect: () => setView("library") },
   ];
@@ -394,6 +404,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   onValueChange={setLibraryTab}
                   options={[
                     { value: "programs" as const, label: "Programs & habits" },
+                    { value: "results" as const, label: "Program results" },
+                    { value: "announcements" as const, label: "Announcements" },
                     { value: "nudges" as const, label: "Automatic nudges" },
                     { value: "testimonials" as const, label: "Wins & testimonials" },
                   ]}
@@ -402,6 +414,14 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               </div>
               {libraryTab === "programs" ? (
                 <CoachAssignPanel companyId={companyId} members={overview.members} tags={tagsData} />
+              ) : libraryTab === "announcements" ? (
+                <CoachAnnouncements companyId={companyId} tags={tagsData?.tags ?? []} />
+              ) : libraryTab === "results" ? (
+                <CoachProgramResults
+                  companyId={companyId}
+                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
+                  unit={unit}
+                />
               ) : libraryTab === "nudges" ? (
                 <CoachNudges
                   companyId={companyId}
@@ -420,8 +440,18 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 </div>
               ) : null}
             </div>
+          ) : view === "inbox" && inboxTab === "messages" ? (
+            <CoachMessagesInbox
+              companyId={companyId}
+              threads={chats.threads}
+              names={new Map(overview.members.map((m) => [m.userId, { name: m.name?.trim() || (m.username ? `@${m.username}` : "Member"), avatarUrl: m.avatarUrl }]))}
+              onRead={() => void chats.refresh()}
+              onOpenProfile={(id) => openMember(id)}
+              switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
+            />
           ) : view === "inbox" ? (
             <CoachInbox
+              switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
               items={inbox}
               openId={inboxId}
               onOpenId={setInboxId}
@@ -493,6 +523,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     : "Nobody is sharing their progress with you yet. Ask them from Members, or they can turn on sharing in their app's Settings."}
                 </EmptyNote>
               ) : null}
+              <CoachDigestToggle companyId={companyId} />
             </div>
           ) : current ? (
             <MemberDetail
@@ -503,6 +534,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               companyId={companyId}
               tab={tab}
               onTab={setTab}
+              unreadMessages={chats.threads.find((t) => t.memberId === current.data.userId)?.unread ?? 0}
+              onMessagesRead={() => void chats.refresh()}
               onBack={() => setSelected(null)}
               onStopped={(sharing) => {
                 setSharing(current.data.userId, sharing, true);
@@ -1024,9 +1057,14 @@ function MemberDetail({
   onBack,
   onStopped,
   tags,
+  unreadMessages,
+  onMessagesRead,
 }: {
   /** Their tags card. */
   tags?: React.ReactNode;
+  /** Messages from them you haven't opened. */
+  unreadMessages: number;
+  onMessagesRead: () => void;
   m: MemberSummary;
   unit: WeightUnit;
   today: string;
@@ -1037,6 +1075,19 @@ function MemberDetail({
   onStopped: (sharing: MemberSharing) => void;
 }) {
   const [stopError, setStopError] = React.useState<string | null>(null);
+  // The chat beside the notes: open by itself when they've written and you haven't read it.
+  const [chatOpen, setChatOpen] = React.useState(unreadMessages > 0);
+  React.useEffect(() => {
+    if (unreadMessages > 0) setChatOpen(true);
+  }, [unreadMessages]);
+  const openChat = () => {
+    setChatOpen(true);
+    requestAnimationFrame(() => {
+      const chat = document.getElementById("member-chat");
+      chat?.scrollIntoView({ behavior: "smooth", block: "start" });
+      chat?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+    });
+  };
   // Bumped when the physique focus card sends an edit, so the program card shows it.
   const [programVersion, setProgramVersion] = React.useState(0);
   // Training: lift progress first, then the log, sets per muscle, and the program with its calendar.
@@ -1103,6 +1154,15 @@ function MemberDetail({
               Reply to check-in
             </Button>
           ) : null}
+          <Button size="sm" variant={unreadMessages > 0 && !toReview ? "default" : "outline"} onClick={openChat} aria-expanded={chatOpen} aria-controls="member-chat">
+            <MessageCircle />
+            Message
+            {unreadMessages > 0 ? (
+              <span className="tabular ml-0.5 rounded-full bg-destructive px-1.5 text-[11px] font-bold leading-[1.125rem] text-destructive-foreground" aria-label={`${unreadMessages} unread`}>
+                {unreadMessages}
+              </span>
+            ) : null}
+          </Button>
           <Button size="sm" variant="outline" onClick={() => onTab("food")}>
             <Utensils />
             Set macros
@@ -1392,7 +1452,18 @@ function MemberDetail({
       </div>
       </div>
       {/* Notes and tags stay beside the member's page on a computer, under it on a phone. */}
-      <aside id="member-notes" aria-label="Notes and tags" className="min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20">
+      <aside id="member-notes" aria-label="Chat, notes and tags" className="min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20">
+        {chatOpen ? (
+          <CoachChatPanel
+            key={m.data.userId}
+            className="scroll-mt-20"
+            companyId={companyId}
+            memberId={m.data.userId}
+            memberName={m.displayName}
+            onRead={onMessagesRead}
+            onClose={() => setChatOpen(false)}
+          />
+        ) : null}
         <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
         {tags}
       </aside>
@@ -1411,6 +1482,31 @@ function Mini({ label, value }: { label: string; value: string }) {
 }
 
 /* ================================== inbox ================================== */
+
+function InboxSwitcher({
+  value,
+  onChange,
+  checkins,
+  messages,
+}: {
+  value: "checkins" | "messages";
+  onChange: (v: "checkins" | "messages") => void;
+  checkins: number;
+  messages: number;
+}) {
+  return (
+    <SegmentedControl
+      ariaLabel="Inbox"
+      value={value}
+      onValueChange={onChange}
+      options={[
+        { value: "checkins" as const, label: checkins > 0 ? `Check-ins (${checkins})` : "Check-ins" },
+        { value: "messages" as const, label: messages > 0 ? `Messages (${messages})` : "Messages" },
+      ]}
+      className="w-auto"
+    />
+  );
+}
 
 function sentAgo(iso: string | undefined, now: number): string {
   if (!iso) return "Check-in waiting";
@@ -1435,7 +1531,10 @@ function CoachInbox({
   unit,
   onReplied,
   onOpenProfile,
+  switcher,
 }: {
+  /** Check-ins | Messages. */
+  switcher: React.ReactNode;
   items: MemberSummary[];
   openId: string | null;
   onOpenId: (id: string | null) => void;
@@ -1463,7 +1562,10 @@ function CoachInbox({
   if (items.length === 0) {
     return (
       <div className="space-y-5">
-        <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
+          {switcher}
+        </div>
         <EmptyNote>All caught up. No check-ins are waiting for a reply.</EmptyNote>
       </div>
     );
@@ -1473,7 +1575,8 @@ function CoachInbox({
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
-        <p className="text-sm text-muted-foreground">
+        {switcher}
+        <p className="w-full text-sm text-muted-foreground">
           {items.length} check-in{items.length === 1 ? "" : "s"} waiting · oldest first
         </p>
       </div>

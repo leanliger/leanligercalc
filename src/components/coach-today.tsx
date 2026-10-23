@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AlertTriangle, MessageSquare, PartyPopper, Search } from "lucide-react";
-import { FLAG_LABELS, healthZone, type MemberSummary } from "@/lib/coach";
+import { FLAG_LABELS, healthZone, type Flag, type MemberSummary } from "@/lib/coach";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,16 @@ import { cn } from "@/lib/utils";
 
 /** Drifting: any flag other than a check-in waiting on the coach. */
 export const isAtRisk = (m: MemberSummary) => m.flags.some((f) => f !== "reply");
+
+/** A flag as a reason line; Strength slipping names its lifts. */
+const flagReason = (m: MemberSummary, f: Flag) =>
+  f === "slipping" && m.data.slipping?.length
+    ? `${FLAG_LABELS[f]}: ${m.data.slipping.slice(0, 2).join(", ")}${m.data.slipping.length > 2 ? ` +${m.data.slipping.length - 2}` : ""}`
+    : FLAG_LABELS[f];
+
+/** Where a member opens from Today: their lift progress when slipping strength is the only reason, else their overview. */
+const openTab = (m: MemberSummary): "training" | "overview" =>
+  m.flags.filter((f) => f !== "reply").every((f) => f === "slipping") && m.flags.includes("slipping") ? "training" : "overview";
 
 export function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | null; size?: string }) {
   const [broken, setBroken] = React.useState(false);
@@ -120,7 +130,7 @@ export function TodayLanes({
   members: MemberSummary[];
   unit: WeightUnit;
   /** Open a member, on the check-ins tab or their overview. */
-  onOpen: (userId: string, tab: "checkins" | "overview") => void;
+  onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
   /** Show the whole list, filtered to this lane. */
   onShowAll: (filter: "reply" | "risk" | "all") => void;
 }) {
@@ -153,11 +163,14 @@ export function TodayLanes({
         reason={(m) =>
           m.flags
             .filter((f) => f !== "reply")
-            .map((f) => FLAG_LABELS[f])
+            .map((f) => flagReason(m, f))
             .join(" · ")
         }
         action="Open"
-        onOpen={(id) => onOpen(id, "overview")}
+        onOpen={(id) => {
+          const m = risk.find((x) => x.data.userId === id);
+          onOpen(id, m ? openTab(m) : "overview");
+        }}
         onMore={() => onShowAll("risk")}
       />
       <Lane
@@ -302,7 +315,7 @@ export function PhoneToday({
 }: {
   members: MemberSummary[];
   today: string;
-  onOpen: (userId: string, tab: "checkins" | "overview") => void;
+  onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
   onSearch: () => void;
 }) {
   const [show, setShow] = React.useState<"needs" | "risk" | "wins" | "all">("needs");
@@ -313,7 +326,7 @@ export function PhoneToday({
   const needs = members.filter((m) => m.flags.length > 0);
   const list = show === "needs" ? needs : show === "risk" ? risk : show === "wins" ? wins : members;
   const reason = (m: MemberSummary) => {
-    const flags = m.flags.filter((f) => f !== "reply").map((f) => FLAG_LABELS[f]);
+    const flags = m.flags.filter((f) => f !== "reply").map((f) => flagReason(m, f));
     if (m.flags.includes("reply")) return [sentAgo(m.lastCheckin?.submittedAt, now).replace(/^Sent/, "Check-in waiting · sent"), ...flags.slice(0, 1)].join(" · ");
     if (flags.length > 0) return flags.join(" · ");
     const win = (m.data.milestones ?? [])[0];
@@ -392,7 +405,7 @@ export function PhoneToday({
               <li key={m.data.userId}>
                 <button
                   type="button"
-                  onClick={() => onOpen(m.data.userId, toReply ? "checkins" : "overview")}
+                  onClick={() => onOpen(m.data.userId, toReply ? "checkins" : openTab(m))}
                   className={cn(
                     "flex w-full items-center gap-3 molten-card rounded-[1.25rem] border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     toReply ? "border-primary/45" : "border-border",

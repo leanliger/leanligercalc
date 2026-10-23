@@ -85,6 +85,23 @@ export async function sendWhop(
   userId: string | readonly string[],
   msg: Message,
 ): Promise<{ ok: boolean; status: number; reason?: string }> {
+  return postNotification(env, { experience_id: experienceId, user_ids: typeof userId === "string" ? [userId] : userId, title: msg.title, content: msg.content });
+}
+
+/**
+ * A notification to a whop's team (its owner and admins), e.g. a coach. With
+ * `userIds`, only those of them.
+ */
+export async function sendWhopTeam(
+  env: ReminderEnv,
+  companyId: string,
+  userIds: readonly string[] | null,
+  msg: Message,
+): Promise<{ ok: boolean; status: number; reason?: string }> {
+  return postNotification(env, { account_id: companyId, ...(userIds ? { user_ids: userIds } : {}), title: msg.title, content: msg.content });
+}
+
+async function postNotification(env: ReminderEnv, payload: Record<string, unknown>): Promise<{ ok: boolean; status: number; reason?: string }> {
   try {
     const res = await fetch(`${env.WHOP_API_BASE ?? WHOP_API}/api/v1/notifications`, {
       method: "POST",
@@ -95,7 +112,7 @@ export async function sendWhop(
         // Workers send no User-Agent by default, and some APIs refuse that.
         "user-agent": "LeanLigerCalc/1.0 (+https://leanligercalc.lean-liger-fitness.workers.dev)",
       },
-      body: JSON.stringify({ experience_id: experienceId, user_ids: typeof userId === "string" ? [userId] : userId, title: msg.title, content: msg.content }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
     if (res.ok) return { ok: true, status: res.status };

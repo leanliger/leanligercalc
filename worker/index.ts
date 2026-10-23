@@ -37,6 +37,12 @@
  *   GET    /api/coach/member-food?company=…&member=…  coaches: a member's daily food totals, 26 weeks (see member-food.ts)
  *   GET    /api/coach/member-timeline?company=…&member=…&unit=…&days=…  coaches: one feed of what a member did and what you sent (see member-timeline.ts)
  *   GET    /api/coach/nudges?company=…               coaches: automatic nudge rules and what was sent; PUT to save them (see nudges.ts)
+ *   GET    /api/coach/program-results?company=…      coaches: how members are doing on each program sent (see program-results.ts)
+ *   GET/POST /api/messages?experience=…               members: my chat with my coach (see messages.ts)
+ *   GET/POST /api/coach/messages?company&member       coaches: a member's chat; GET /api/coach/threads?company=… every chat
+ *   GET/POST /api/coach/announcements?company=…       coaches: announcements; DELETE /api/coach/announcements/:id?company=…
+ *   GET    /api/notifications?experience=…           members: my notification bell; POST /api/notifications/seen (see notifications.ts)
+ *   GET/PUT /api/coach/digest?company=…              coaches: my daily digest switch (see digest.ts)
  *   GET/PUT/DELETE /api/water-reminders  my hydration reminders (see water-reminders.ts)
  *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
@@ -105,6 +111,10 @@ import { measurementSettings, sendMeasureDayReminders } from "./measure-day";
 import { coachMemberFood } from "./member-food";
 import { coachMemberTimeline } from "./member-timeline";
 import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
+import { coachProgramResults } from "./program-results";
+import { coachThreads, deleteAnnouncement, getAnnouncements, getMemberThread, getMyMessages, postAnnouncement, sendCoachMessage, sendMyMessage } from "./messages";
+import { getNotifications, markNotificationsSeen } from "./notifications";
+import { getDigest, saveDigest, sendCoachDigests } from "./digest";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
@@ -782,6 +792,58 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachMemberFood(env, userId, q("company"), q("member")));
   }
+  if (path === "/api/coach/program-results") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachProgramResults(env, userId, q("company")));
+  }
+  /* ------------------- chat, announcements, notifications ------------------- */
+
+  if (path === "/api/messages") {
+    if (method === "GET") return send(await getMyMessages(env, userId, url.searchParams.get("experience"), q("open") === "1"));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await sendMyMessage(env, userId, body.value));
+  }
+  if (path === "/api/coach/messages") {
+    if (method === "GET") return send(await getMemberThread(env, userId, q("company"), q("member")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await sendCoachMessage(env, userId, body.value));
+  }
+  if (path === "/api/coach/threads") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachThreads(env, userId, q("company")));
+  }
+  if (path === "/api/coach/announcements") {
+    if (method === "GET") return send(await getAnnouncements(env, userId, q("company")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await postAnnouncement(env, userId, body.value));
+  }
+  const announcementMatch = /^\/api\/coach\/announcements\/([0-9a-f]{32})$/.exec(path);
+  if (announcementMatch) {
+    if (method !== "DELETE") return error(405, "Method not allowed.");
+    return send(await deleteAnnouncement(env, userId, q("company"), announcementMatch[1]!));
+  }
+  if (path === "/api/notifications") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return json(await getNotifications(env, userId, url.searchParams.get("experience")));
+  }
+  if (path === "/api/notifications/seen") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    await markNotificationsSeen(env, userId);
+    return noContent();
+  }
+  if (path === "/api/coach/digest") {
+    if (method === "GET") return send(await getDigest(env, userId, q("company")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveDigest(env, userId, body.value));
+  }
   if (path === "/api/coach/nudges") {
     if (method === "GET") return send(await getNudges(env, userId, q("company")));
     if (method !== "PUT") return error(405, "Method not allowed.");
@@ -1274,6 +1336,9 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_nudges_sent WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_messages WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),
@@ -1367,6 +1432,14 @@ export default {
             if (r.reached > 0) console.log("milestones", r);
           })
           .catch((e) => console.error("milestones crashed", e)),
+      );
+      // Coaches' daily digest: 8am their time.
+      ctx.waitUntil(
+        sendCoachDigests(env, when)
+          .then((r) => {
+            if (r.due > 0) console.log("coach digests", r);
+          })
+          .catch((e) => console.error("coach digests crashed", e)),
       );
       // Coaches' automatic nudges: once a day per whop, checked 17:00–19:45 UTC.
       const hour = when.getUTCHours();
