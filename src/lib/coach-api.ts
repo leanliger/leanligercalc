@@ -53,6 +53,8 @@ export interface CoachMemberData {
   photos: PhotoMeta[] | null;
   /** Days with a finished workout in the last 30 days. */
   workoutDates: string[];
+  /** Lifts whose estimated max dropped over the last six weeks (src/lib/strength-trends.ts). */
+  slipping?: string[];
   /** Their latest weekly check-ins (newest first, up to 4). */
   checkins: { weekStart: string; submittedAt: string; replied: boolean }[];
   /** Milestones reached in the last CELEBRATE_DAYS (5 lb lost, 1 in off the waist…), for the Celebrate list. */

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ExerciseProgress } from "@/components/exercise-progress";
 import { LiftProgressCard } from "@/components/lift-progress";
+import { StrengthTrendsCard } from "@/components/strength-trends-card";
 import { MuscleVolumeCard } from "@/components/muscle-volume-card";
 import { formatLong, todayISO } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
@@ -24,10 +25,11 @@ import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
- * Coach dashboard → a member → their training log: the same Lift progress
- * chart the member sees, every workout with each exercise's sets (weight ×
- * reps, and reps left when they record it), and any lift's own page with its
- * charts and history. Read-only; only while the member shares their progress
+ * Coach dashboard → a member → Training, one section at a time (`view`):
+ * lift progress (strength trends and the Lift progress chart), the workout
+ * log (each exercise's sets: weight × reps, and reps left when they record
+ * it) or sets per muscle; any lift opens its own page with its charts and
+ * history. Read-only; only while the member shares their progress
  * (worker/program-edits.ts coachMemberWorkouts).
  */
 
@@ -38,16 +40,20 @@ export function MemberWorkoutsCard({
   memberId,
   memberName,
   unit,
+  view = "progress",
 }: {
   companyId: string;
   memberId: string;
   memberName: string;
   unit: WeightUnit;
+  view?: "progress" | "log" | "muscles";
 }) {
   const [data, setData] = React.useState<{ workouts: Workout[]; customExercises: Exercise[] } | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [exerciseId, setExerciseId] = React.useState<string | null>(null);
   const first = memberName.split(" ")[0] || memberName;
+  // A new section closes any lift page that was open.
+  React.useEffect(() => setExerciseId(null), [view]);
 
   React.useEffect(() => {
     let live = true;
@@ -101,9 +107,16 @@ export function MemberWorkoutsCard({
 
   return (
     <div className="space-y-5">
-      <LiftProgressCard workouts={data.workouts} custom={data.customExercises} unit={unit} onOpen={setExerciseId} />
-      <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />
-      <WorkoutLog workouts={data.workouts} custom={data.customExercises} unit={unit} name={first} onOpenExercise={setExerciseId} />
+      {view === "progress" ? (
+        <>
+          <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} onOpen={setExerciseId} who={first} />
+          <LiftProgressCard workouts={data.workouts} custom={data.customExercises} unit={unit} onOpen={setExerciseId} />
+        </>
+      ) : view === "muscles" ? (
+        <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />
+      ) : (
+        <WorkoutLog workouts={data.workouts} custom={data.customExercises} unit={unit} name={first} onOpenExercise={setExerciseId} />
+      )}
     </div>
   );
 }

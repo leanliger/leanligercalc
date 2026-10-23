@@ -996,6 +996,15 @@ function pausedLabel(p: PausePeriod): string {
 
 type DetailTab = "overview" | "timeline" | "checkins" | "food" | "training" | "body";
 
+type TrainingView = "progress" | "log" | "muscles" | "program";
+
+const TRAINING_VIEWS: { value: TrainingView; label: string }[] = [
+  { value: "progress", label: "Lift progress" },
+  { value: "log", label: "Workout log" },
+  { value: "muscles", label: "Sets per muscle" },
+  { value: "program", label: "Program & calendar" },
+];
+
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "timeline", label: "Timeline" },
@@ -1030,6 +1039,8 @@ function MemberDetail({
   const [stopError, setStopError] = React.useState<string | null>(null);
   // Bumped when the physique focus card sends an edit, so the program card shows it.
   const [programVersion, setProgramVersion] = React.useState(0);
+  // Training: lift progress first, then the log, sets per muscle, and the program with its calendar.
+  const [trainingView, setTrainingView] = React.useState<TrainingView>("progress");
   const p = m.progress;
   const status = STATUS_LABEL[p?.status ?? (m.hasPlan ? "no-data" : "no-plan")] ?? STATUS_LABEL["no-data"]!;
   const weighIns = [...m.data.weighIns].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -1079,6 +1090,8 @@ function MemberDetail({
             {m.flags.map((f) => (
               <Badge key={f} variant={FLAG_VARIANT[f]}>
                 {FLAG_LABELS[f]}
+                {/* Which lifts, on the member's own page. */}
+                {f === "slipping" && m.data.slipping?.length ? `: ${m.data.slipping.slice(0, 2).join(", ")}${m.data.slipping.length > 2 ? ` +${m.data.slipping.length - 2}` : ""}` : ""}
               </Badge>
             ))}
           </div>
@@ -1094,7 +1107,14 @@ function MemberDetail({
             <Utensils />
             Set macros
           </Button>
-          <Button size="sm" variant="outline" onClick={() => onTab("training")}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setTrainingView("program");
+              onTab("training");
+            }}
+          >
             <ClipboardList />
             Assign program
           </Button>
@@ -1313,14 +1333,28 @@ function MemberDetail({
           </>
         ) : tab === "training" ? (
           <>
-            <MemberProgramCard key={programVersion} companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
-            <PhysiqueFocusCard
-              companyId={companyId}
-              memberId={m.data.userId}
-              memberName={m.displayName}
-              onSent={() => setProgramVersion((n) => n + 1)}
-            />
-            <MemberWorkoutsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
+            <SegmentedControl ariaLabel="Training section" value={trainingView} onValueChange={setTrainingView} options={TRAINING_VIEWS} />
+            {trainingView === "program" ? (
+              <>
+                <MemberProgramCard key={programVersion} companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+                <PhysiqueFocusCard
+                  companyId={companyId}
+                  memberId={m.data.userId}
+                  memberName={m.displayName}
+                  onSent={() => setProgramVersion((n) => n + 1)}
+                />
+              </>
+            ) : null}
+            {/* Kept mounted while on the program, so its workouts load once. */}
+            <div className={cn(trainingView === "program" && "hidden")}>
+              <MemberWorkoutsCard
+                companyId={companyId}
+                memberId={m.data.userId}
+                memberName={m.displayName}
+                unit={unit}
+                view={trainingView === "program" ? "progress" : trainingView}
+              />
+            </div>
           </>
         ) : tab === "body" ? (
           <>

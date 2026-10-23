@@ -36,6 +36,7 @@ import { ProgramCalendar } from "@/components/program-calendar";
 import { NUDGE_IDLE_MIN, NUDGE_REPEAT_MIN } from "@/lib/workout-nudge";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { LiftProgressCard } from "@/components/lift-progress";
+import { StrengthTrendsCard } from "@/components/strength-trends-card";
 import { planToday, scheduleEnd, sessionStates } from "@/lib/program-schedule";
 import { WEEKDAY_LETTER, WEEKDAY_SHORT } from "@/lib/weekday-pattern";
 import type { NotificationStatus } from "@/components/fasting-card";
@@ -393,6 +394,7 @@ export function TrainingTab({
           {panel === "muscles" ? <MuscleVolumeCard workouts={workouts} customExercises={custom} today={today} /> : null}
         </div>
         <div className="space-y-5">
+          <StrengthTrendsCard workouts={workouts} unit={unit} today={today} onOpen={(id) => setView({ kind: "exercise", id })} />
           <LiftProgressCard workouts={workouts} custom={custom} unit={unit} onOpen={(id) => setView({ kind: "exercise", id })} />
           <ExerciseLibraryCard
             custom={custom}

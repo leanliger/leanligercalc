@@ -20,6 +20,8 @@
 
 import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay } from "../src/lib/coach-api";
 import { CELEBRATE_DAYS } from "../src/lib/milestones";
+import { TREND_WEEKS, slippingLifts } from "../src/lib/strength-trends";
+import type { Workout } from "../src/lib/training";
 import { celebrateSince, recentMilestones } from "./milestones";
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
@@ -149,14 +151,35 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       env.DB.prepare(
         `SELECT user_id, id, date, pose FROM progress_photos WHERE user_id IN (${marks}) ORDER BY date DESC, created_at DESC`,
       ).bind(...chunk),
+      // Ten weeks of finished workouts: their days for the last month, and strength trends over six weeks.
       env.DB.prepare(
-        `SELECT DISTINCT user_id, date FROM workouts WHERE user_id IN (${marks}) AND date >= ? AND json_extract(data, '$.finishedAt') IS NOT NULL`,
-      ).bind(...chunk, addDays(today, -30)),
+        `SELECT user_id, date, data FROM workouts WHERE user_id IN (${marks}) AND date >= ? AND json_extract(data, '$.finishedAt') IS NOT NULL`,
+      ).bind(...chunk, addDays(today, -(TREND_WEEKS * 7 + 28))),
       env.DB.prepare(
         `SELECT user_id, week_start, submitted_at, reply IS NOT NULL AS replied FROM checkins WHERE user_id IN (${marks}) AND week_start >= ? ORDER BY week_start DESC`,
       ).bind(...chunk, addDays(today, -35)),
     ]);
-    for (const r of (workouts?.results ?? []) as { user_id: string; date: string }[]) members.get(r.user_id)?.workoutDates.push(r.date);
+    const byMember = new Map<string, Workout[]>();
+    const monthAgo = addDays(today, -30);
+    for (const r of (workouts?.results ?? []) as { user_id: string; date: string; data: string }[]) {
+      const m = members.get(r.user_id);
+      if (!m) continue;
+      if (r.date >= monthAgo && !m.workoutDates.includes(r.date)) m.workoutDates.push(r.date);
+      try {
+        byMember.set(r.user_id, [...(byMember.get(r.user_id) ?? []), { ...(JSON.parse(r.data) as Workout), date: r.date }]);
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    for (const [id, list] of byMember) {
+      const m = members.get(id);
+      try {
+        if (m) m.slipping = slippingLifts(list, today);
+      } catch (e) {
+        // One member's odd workout must never break the whole dashboard.
+        console.error("strength trends failed", { member: id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     for (const r of (checkins?.results ?? []) as { user_id: string; week_start: string; submitted_at: string; replied: number }[]) {
       const m = members.get(r.user_id);
       if (m && m.checkins.length < 4) m.checkins.push({ weekStart: r.week_start, submittedAt: r.submitted_at, replied: r.replied === 1 });

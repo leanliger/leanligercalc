@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ArrowLeft, ExternalLink, Pencil, Trash2, Trophy, Video } from "lucide-react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -23,19 +23,24 @@ import {
   type Workout,
 } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
+import { repRecords } from "@/lib/strength-trends";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
-type Metric = "e1rm" | "weight" | "volume" | "reps" | "totalReps";
+type Metric = "e1rm" | "weight" | "volume" | "reps" | "totalReps" | "sets" | "all";
 
 const WEIGHTED: { value: Metric; label: string }[] = [
   { value: "e1rm", label: "Est. 1RM" },
   { value: "weight", label: "Best weight" },
   { value: "volume", label: "Volume" },
+  { value: "sets", label: "Sets" },
+  { value: "all", label: "Every set" },
 ];
 const BODYWEIGHT: { value: Metric; label: string }[] = [
   { value: "reps", label: "Best set" },
   { value: "totalReps", label: "Total reps" },
+  { value: "sets", label: "Sets" },
+  { value: "all", label: "Every set" },
 ];
 
 const METRIC_HELP: Record<Metric, string> = {
@@ -44,6 +49,8 @@ const METRIC_HELP: Record<Metric, string> = {
   volume: "Total weight moved each session: weight × reps, added up over every set.",
   reps: "Most reps in one set each session.",
   totalReps: "All reps across every set each session.",
+  sets: "Working sets done each session, so you can see whether a change came with more or less work.",
+  all: "Every set as a dot: higher is heavier, bigger is more reps. Shows the whole session, not just the best set.",
 };
 
 function metricValue(s: ExerciseSession, m: Metric, unit: WeightUnit): number {
@@ -58,11 +65,15 @@ function metricValue(s: ExerciseSession, m: Metric, unit: WeightUnit): number {
       return s.bestReps;
     case "totalReps":
       return s.totalReps;
+    case "sets":
+      return s.sets.length;
+    case "all":
+      return 0;
   }
 }
 
 function metricUnit(m: Metric, unit: WeightUnit): string {
-  return m === "reps" || m === "totalReps" ? "reps" : unit;
+  return m === "sets" ? "sets" : m === "reps" || m === "totalReps" ? "reps" : unit;
 }
 
 interface Point {
@@ -217,9 +228,17 @@ export function ExerciseProgress({
               <CardDescription className="text-xs">{METRIC_HELP[shown]}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ProgressChart history={history} metric={shown} unit={unit} />
+              {shown === "all" ? (
+                <AllSetsChart history={history} unit={unit} bodyweight={exercise.bodyweight} />
+              ) : shown === "sets" ? (
+                <SetsChart history={history} />
+              ) : (
+                <ProgressChart history={history} metric={shown} unit={unit} />
+              )}
             </CardContent>
           </Card>
+
+          {!exercise.bodyweight ? <RepRecords history={history} unit={unit} /> : null}
 
           <Card>
             <CardHeader className="pb-3">
@@ -256,6 +275,128 @@ export function ExerciseProgress({
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The heaviest weight in each rep range: progress even when the rep range changes between blocks. */
+function RepRecords({ history, unit }: { history: ExerciseSession[]; unit: WeightUnit }) {
+  const recs = repRecords(history);
+  if (recs.length === 0) return null;
+  const oneSide = history.some((s) => s.sets.some((x) => (x.sides ?? 1) === 2));
+  return (
+    <Card>
+      <CardHeader className="space-y-1 pb-2">
+        <CardTitle className="text-sm">Rep records</CardTitle>
+        <CardDescription className="text-xs">The heaviest weight in each rep range{oneSide ? ", reps per side" : ""}.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {recs.map((r) => (
+            <li key={r.range[0]} className="space-y-0.5 rounded-lg border border-border p-2.5">
+              <p className="text-[12px] text-muted-foreground">{r.range[1] === Infinity ? `${r.range[0]}+ reps` : `${r.range[0]}–${r.range[1]} reps`}</p>
+              <p className="tabular font-semibold">
+                {formatLoad(r.weight, unit)} {unit} × {r.reps}
+              </p>
+              <p className="tabular text-[12px] text-muted-foreground">{formatShort(r.date)}</p>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+const tickDate = (t: number) => formatShort(new Date(t).toISOString().slice(0, 10));
+const sessionTime = (s: ExerciseSession, i: number) => Date.parse(`${s.date}T00:00:00Z`) + i;
+
+/** Working sets per session. */
+function SetsChart({ history }: { history: ExerciseSession[] }) {
+  const data = history.map((s, i) => ({ t: sessionTime(s, i), date: s.date, value: s.sets.length }));
+  if (data.length === 0) {
+    return <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No sets logged yet.</p>;
+  }
+  return (
+    <div className="h-60 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -16 }}>
+          <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="date" tickLine={false} axisLine={{ stroke: "hsl(var(--border))" }} tick={{ fontSize: 11 }} tickFormatter={(d: string) => formatShort(d)} minTickGap={24} />
+          <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={40} />
+          <Tooltip
+            cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
+            content={({ active, payload }) => {
+              const p = active ? (payload?.[0]?.payload as { date: string; value: number } | undefined) : undefined;
+              return p ? (
+                <div className="rounded-lg border border-border bg-popover p-2.5 text-xs shadow-lg">
+                  <p className="font-semibold">{formatShort(p.date)}</p>
+                  <p className="tabular">{p.value} {p.value === 1 ? "set" : "sets"}</p>
+                </div>
+              ) : null;
+            }}
+          />
+          <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Every set of every session: weight up the side (reps for bodyweight lifts), more reps = a bigger dot. */
+function AllSetsChart({ history, unit, bodyweight }: { history: ExerciseSession[]; unit: WeightUnit; bodyweight: boolean }) {
+  const data = history.flatMap((s, i) =>
+    s.sets.map((x, j) => ({
+      t: sessionTime(s, i),
+      date: s.date,
+      value: bodyweight ? x.reps : Math.round(fromLb(x.weight, unit) * 10) / 10,
+      reps: x.reps,
+      set: j + 1,
+      label: formatSet(x, unit, bodyweight),
+    })),
+  );
+  if (data.length === 0) {
+    return <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No sets logged yet.</p>;
+  }
+  const ticks = niceTicks(Math.min(...data.map((p) => p.value)), Math.max(...data.map((p) => p.value)));
+  return (
+    <div className="space-y-2">
+      <div className="h-60 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{ top: 12, right: 12, bottom: 4, left: -4 }}>
+            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="t"
+              type="number"
+              domain={["dataMin - 86400000", "dataMax + 86400000"]}
+              tickLine={false}
+              axisLine={{ stroke: "hsl(var(--border))" }}
+              tick={{ fontSize: 11 }}
+              tickFormatter={tickDate}
+              minTickGap={24}
+            />
+            <YAxis dataKey="value" type="number" domain={[ticks[0]!, ticks[ticks.length - 1]!]} ticks={ticks} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={44} />
+            <ZAxis dataKey="reps" range={bodyweight ? [60, 60] : [30, 220]} />
+            <Tooltip
+              cursor={{ stroke: "hsl(var(--border))" }}
+              content={({ active, payload }) => {
+                const p = active ? (payload?.[0]?.payload as (typeof data)[number] | undefined) : undefined;
+                return p ? (
+                  <div className="rounded-lg border border-border bg-popover p-2.5 text-xs shadow-lg">
+                    <p className="font-semibold">
+                      {formatShort(p.date)} · set {p.set}
+                    </p>
+                    <p className="tabular">{p.label}</p>
+                  </div>
+                ) : null;
+              }}
+            />
+            <Scatter data={data} fill="hsl(var(--primary))" fillOpacity={0.55} stroke="hsl(var(--primary))" isAnimationActive={false} />
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-[12px] text-muted-foreground">
+        {bodyweight ? "Reps in each set." : `Weight in ${unit}; a bigger dot is more reps.`}
+      </p>
     </div>
   );
 }

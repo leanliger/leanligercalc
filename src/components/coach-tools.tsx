@@ -44,6 +44,7 @@ export const FLAG_VARIANT: Record<Flag, "danger" | "warning" | "secondary" | "de
   red: "danger",
   "no-weigh-in": "warning",
   "no-workouts": "warning",
+  slipping: "warning",
   checkin: "secondary",
   inactive: "secondary",
   "no-plan": "secondary",

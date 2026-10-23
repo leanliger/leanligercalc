@@ -39,6 +39,7 @@ export type Flag =
   | "red"
   | "no-weigh-in"
   | "no-workouts"
+  | "slipping"
   | "checkin"
   | "inactive"
   | "no-plan";
@@ -132,6 +133,7 @@ export const FLAG_LABELS: Record<Flag, string> = {
   red: "Habits slipping",
   "no-weigh-in": `No weigh-in ${WEIGH_IN_GAP_DAYS}+ days`,
   "no-workouts": "No workouts this week",
+  slipping: "Strength slipping",
   checkin: "No check-in this week",
   inactive: `No logs ${INACTIVE_DAYS}+ days`,
   "no-plan": "No plan yet",
@@ -222,6 +224,8 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     if (hasPlan && (daysSinceWeighIn === null || daysSinceWeighIn >= WEIGH_IN_GAP_DAYS)) flags.push("no-weigh-in");
     // Only for members who train with the app: some workouts this month, none this week.
     if (data.workoutDates.length > 0 && workouts7 === 0) flags.push("no-workouts");
+    // A lift whose estimated max fell more than 2% over six weeks.
+    if ((data.slipping?.length ?? 0) > 0) flags.push("slipping");
     if (!checkedIn) flags.push("checkin");
   }
   // A paused member isn't expected to log.
@@ -262,6 +266,7 @@ export function sortForAttention(list: MemberSummary[]): MemberSummary[] {
     red: 4,
     "no-weigh-in": 3,
     "no-workouts": 3,
+    slipping: 3,
     inactive: 2,
     checkin: 1,
     "no-plan": 1,
