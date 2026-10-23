@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ExerciseProgress } from "@/components/exercise-progress";
-import { LiftProgressCard } from "@/components/lift-progress";
 import { StrengthTrendsCard } from "@/components/strength-trends-card";
 import { MuscleVolumeCard } from "@/components/muscle-volume-card";
 import { formatLong, todayISO } from "@/lib/dates";
@@ -26,7 +25,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Coach dashboard → a member → Training, one section at a time (`view`):
- * lift progress (strength trends and the Lift progress chart), the workout
+ * lift progress (strength trends by muscle group), the workout
  * log (each exercise's sets: weight × reps, and reps left when they record
  * it) or sets per muscle; any lift opens its own page with its charts and
  * history. Read-only; only while the member shares their progress
@@ -109,8 +108,7 @@ export function MemberWorkoutsCard({
     <div className="space-y-5">
       {view === "progress" ? (
         <>
-          <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} onOpen={setExerciseId} who={first} />
-          <LiftProgressCard workouts={data.workouts} custom={data.customExercises} unit={unit} onOpen={setExerciseId} />
+          <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} custom={data.customExercises} onOpen={setExerciseId} who={first} />
         </>
       ) : view === "muscles" ? (
         <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />

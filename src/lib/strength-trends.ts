@@ -37,6 +37,9 @@ export interface LiftTrend {
   current: number;
   /** Percent change over the window; null while there aren't enough sessions. */
   changePct: number | null;
+  /** Percent change since the first session, and its date; null with a single session. */
+  allTimePct: number | null;
+  firstDate: string;
   status: TrendStatus;
   lastDate: string;
 }
@@ -83,6 +86,8 @@ export function strengthTrends(workouts: readonly Workout[], today: string): Lif
       series,
       current: values[values.length - 1]!,
       changePct,
+      allTimePct: values.length > 1 && values[0]! > 0 ? (values[values.length - 1]! / values[0]! - 1) * 100 : null,
+      firstDate: series[0]!.date,
       status: changePct === null ? "new" : changePct > TREND_PCT ? "up" : changePct < -TREND_PCT ? "down" : "hold",
       lastDate: m.last,
     });

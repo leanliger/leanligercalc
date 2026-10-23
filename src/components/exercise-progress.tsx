@@ -29,12 +29,13 @@ import { cn } from "@/lib/utils";
 
 type Metric = "e1rm" | "weight" | "volume" | "reps" | "totalReps" | "sets" | "all";
 
+// Best weight first (what members read off the bar); the estimate last.
 const WEIGHTED: { value: Metric; label: string }[] = [
-  { value: "e1rm", label: "Est. 1RM" },
   { value: "weight", label: "Best weight" },
   { value: "volume", label: "Volume" },
   { value: "sets", label: "Sets" },
   { value: "all", label: "Every set" },
+  { value: "e1rm", label: "Est. 1RM" },
 ];
 const BODYWEIGHT: { value: Metric; label: string }[] = [
   { value: "reps", label: "Best set" },

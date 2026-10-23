@@ -42,7 +42,7 @@ export interface ProgressReport {
 
 const MAX_LIFTS = 6;
 
-/** The big lifts lead, in this order; then the most trained. Shared with lift-progress.tsx. */
+/** The big lifts lead, in this order; then the most trained. */
 export const MAIN_LIFTS = [
   "back-squat", "bench-press", "deadlift", "overhead-press", "barbell-row",
   "romanian-deadlift", "incline-bench-press", "front-squat", "hip-thrust",
