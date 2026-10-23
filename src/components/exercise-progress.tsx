@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CustomExerciseForm } from "@/components/exercise-library";
-import { ExerciseDrawings } from "@/components/exercise-art";
+import { ART_CREDIT } from "@/lib/exercise-art";
 import { formatShort } from "@/lib/dates";
 import { EQUIPMENT_LABELS, MUSCLE_LABELS, demoUrl, type Exercise } from "@/lib/exercises";
 import {
@@ -127,155 +127,145 @@ export function ExerciseProgress({
         {backLabel}
       </Button>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
-        <Card>
-          <CardHeader className="space-y-2 pb-3">
-            <CardTitle className="text-lg">{exercise.name}</CardTitle>
-            <CardDescription>
-              {MUSCLE_LABELS[exercise.muscle]} · {EQUIPMENT_LABELS[exercise.equipment]}
-              {exercise.custom ? " · your exercise" : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {editing && onSaveCustom ? (
-              <CustomExerciseForm
-                initial={exercise}
-                onCancel={() => setEditing(false)}
-                onSave={(e) => {
-                  onSaveCustom(e);
-                  setEditing(false);
-                }}
-              />
-            ) : (
-              <>
-                <ExerciseDrawings exerciseId={exercise.id} name={exercise.name} />
-                {exercise.cues.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Form cues</p>
-                    <ul className="space-y-1 text-sm">
-                      {exercise.cues.map((c) => (
-                        <li key={c} className="flex gap-2">
-                          <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                          {c}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                <a
-                  href={demoUrl(exercise)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  <ExternalLink />
-                  Watch a demo
-                </a>
-                {onFormCheck ? (
-                  <Button variant="outline" size="sm" onClick={onFormCheck}>
-                    <Video />
-                    Get a form check
-                  </Button>
-                ) : null}
-                {exercise.custom && (onSaveCustom || onDeleteCustom) ? (
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                    {onSaveCustom ? (
-                      <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-                        <Pencil />
-                        Edit exercise
-                      </Button>
-                    ) : null}
-                    {onDeleteCustom ? (
-                      <ConfirmButton label="Delete exercise" icon={<Trash2 />} confirmLabel="Delete it (history stays)" onConfirm={onDeleteCustom} />
-                    ) : null}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <Tile
-              label={exercise.bodyweight ? "Best set" : "Best est. 1RM"}
-              value={
-                bestSession
-                  ? exercise.bodyweight
-                    ? `${bestSession.bestReps} reps`
-                    : `${formatLoad(bestSession.e1rm, unit)} ${unit}`
-                  : "—"
-              }
-              sub={bestSet && bestSession ? `${formatSet(bestSet, unit, exercise.bodyweight)} · ${formatShort(bestSession.date)}` : "no sets yet"}
-              emphasis
-            />
-            <Tile
-              label="Heaviest"
-              value={history.length > 0 ? `${formatLoad(Math.max(...history.map((s) => s.bestWeight)), unit)} ${unit}` : "—"}
-              sub={exercise.bodyweight ? "added weight" : "any reps"}
-            />
-            <Tile label="Sessions" value={String(history.length)} sub={history.length > 0 ? `since ${formatShort(history[0]!.date)}` : "—"} />
-            <Tile
-              label="Last time"
-              value={last ? formatShort(last.date) : "—"}
-              sub={last ? last.sets.map((s) => formatSet(s, unit, exercise.bodyweight)).slice(0, 2).join(", ") + (last.sets.length > 2 ? "…" : "") : "—"}
-            />
-          </div>
-
-          <Card>
-            <CardHeader className="space-y-3 pb-2">
-              <CardTitle className="text-sm">Progress</CardTitle>
-              <SegmentedControl ariaLabel="Chart" value={shown} onValueChange={setMetric} options={options} size="sm" className="max-w-sm" />
-              <CardDescription className="text-xs">{METRIC_HELP[shown]}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {shown === "all" ? (
-                <AllSetsChart history={history} unit={unit} bodyweight={exercise.bodyweight} />
-              ) : shown === "sets" ? (
-                <SetsChart history={history} />
-              ) : (
-                <ProgressChart history={history} metric={shown} unit={unit} />
-              )}
-            </CardContent>
-          </Card>
-
-          {!exercise.bodyweight ? <RepRecords history={history} unit={unit} /> : null}
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">History</CardTitle>
-              <CardDescription>
-                {history.length === 0 ? "Nothing logged yet." : `${history.length} session${history.length === 1 ? "" : "s"}, newest first.`}
-              </CardDescription>
-            </CardHeader>
-            {history.length > 0 ? (
-              <CardContent>
-                <ul className="scrollbar-thin max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
-                  {[...history].reverse().map((s) => (
-                    <li key={s.workoutId} className="space-y-0.5 px-3 py-2.5 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{formatShort(s.date)}</span>
-                        {isRecordSession(s, exercise.bodyweight) ? (
-                          <Badge variant="default" className="px-1.5 py-0 text-[11px]">
-                            <Trophy />
-                            PR
-                          </Badge>
-                        ) : null}
-                        <span className="tabular ml-auto text-xs text-muted-foreground">
-                          {exercise.bodyweight ? `${s.totalReps} reps` : `est. 1RM ${formatLoad(s.e1rm, unit)} ${unit}`}
-                        </span>
-                      </div>
-                      <p className="tabular text-xs text-muted-foreground">
-                        {s.sets.map((x) => formatSetEffort(x, unit, exercise.bodyweight)).join(" · ")}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            ) : null}
-          </Card>
+      {/* The name and what can be done with it; the chart gets the full width below. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xl font-extrabold leading-tight tracking-tight">{exercise.name}</h2>
+          <p className="text-sm text-muted-foreground">
+            {MUSCLE_LABELS[exercise.muscle]} · {EQUIPMENT_LABELS[exercise.equipment]}
+            {exercise.custom ? " · your exercise" : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <a href={demoUrl(exercise)} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <ExternalLink />
+            Watch a demo
+          </a>
+          {onFormCheck ? (
+            <Button variant="outline" size="sm" onClick={onFormCheck}>
+              <Video />
+              Get a form check
+            </Button>
+          ) : null}
+          {exercise.custom && onSaveCustom && !editing ? (
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+              <Pencil />
+              Edit exercise
+            </Button>
+          ) : null}
+          {exercise.custom && onDeleteCustom ? (
+            <ConfirmButton label="Delete exercise" icon={<Trash2 />} confirmLabel="Delete it (history stays)" onConfirm={onDeleteCustom} />
+          ) : null}
         </div>
       </div>
+
+      {editing && onSaveCustom ? (
+        <Card>
+          <CardContent className="p-4 sm:p-6">
+            <CustomExerciseForm
+              initial={exercise}
+              onCancel={() => setEditing(false)}
+              onSave={(e) => {
+                onSaveCustom(e);
+                setEditing(false);
+              }}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Tile
+          label={exercise.bodyweight ? "Best set" : "Best est. 1RM"}
+          value={
+            bestSession
+              ? exercise.bodyweight
+                ? `${bestSession.bestReps} reps`
+                : `${formatLoad(bestSession.e1rm, unit)} ${unit}`
+              : "—"
+          }
+          sub={bestSet && bestSession ? `${formatSet(bestSet, unit, exercise.bodyweight)} · ${formatShort(bestSession.date)}` : "no sets yet"}
+          emphasis
+        />
+        <Tile
+          label="Heaviest"
+          value={history.length > 0 ? `${formatLoad(Math.max(...history.map((s) => s.bestWeight)), unit)} ${unit}` : "—"}
+          sub={exercise.bodyweight ? "added weight" : "any reps"}
+        />
+        <Tile label="Sessions" value={String(history.length)} sub={history.length > 0 ? `since ${formatShort(history[0]!.date)}` : "—"} />
+        <Tile
+          label="Last time"
+          value={last ? formatShort(last.date) : "—"}
+          sub={last ? last.sets.map((s) => formatSet(s, unit, exercise.bodyweight)).slice(0, 2).join(", ") + (last.sets.length > 2 ? "…" : "") : "—"}
+        />
+      </div>
+
+      <Card>
+        <CardHeader className="space-y-3 pb-2">
+          <CardTitle className="text-sm">Progress</CardTitle>
+          <SegmentedControl ariaLabel="Chart" value={shown} onValueChange={setMetric} options={options} size="sm" className="max-w-sm" />
+          <CardDescription className="text-xs">{METRIC_HELP[shown]}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {shown === "all" ? (
+            <AllSetsChart history={history} unit={unit} bodyweight={exercise.bodyweight} />
+          ) : shown === "sets" ? (
+            <SetsChart history={history} />
+          ) : (
+            <ProgressChart history={history} metric={shown} unit={unit} />
+          )}
+        </CardContent>
+      </Card>
+
+      {!exercise.bodyweight ? <RepRecords history={history} unit={unit} /> : null}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">History</CardTitle>
+          <CardDescription>
+            {history.length === 0 ? "Nothing logged yet." : `${history.length} session${history.length === 1 ? "" : "s"}, newest first.`}
+          </CardDescription>
+        </CardHeader>
+        {history.length > 0 ? (
+          <CardContent>
+            <ul className="scrollbar-thin max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
+              {[...history].reverse().map((s) => (
+                <li key={s.workoutId} className="space-y-0.5 px-3 py-2.5 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{formatShort(s.date)}</span>
+                    {isRecordSession(s, exercise.bodyweight) ? (
+                      <Badge variant="default" className="px-1.5 py-0 text-[11px]">
+                        <Trophy />
+                        PR
+                      </Badge>
+                    ) : null}
+                    <span className="tabular ml-auto text-xs text-muted-foreground">
+                      {exercise.bodyweight ? `${s.totalReps} reps` : `est. 1RM ${formatLoad(s.e1rm, unit)} ${unit}`}
+                    </span>
+                  </div>
+                  <p className="tabular text-xs text-muted-foreground">
+                    {s.sets.map((x) => formatSetEffort(x, unit, exercise.bodyweight)).join(" · ")}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        ) : null}
+      </Card>
+
+      {/* The drawings' licence asks for credit; they still show beside exercise names. */}
+      {!exercise.custom ? (
+        <p className="text-[11px] text-muted-foreground">
+          Exercise drawings:{" "}
+          <a href={ART_CREDIT.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
+            {ART_CREDIT.title}
+          </a>{" "}
+          by {ART_CREDIT.author}, based on {ART_CREDIT.basedOn} ·{" "}
+          <a href={ART_CREDIT.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
+            {ART_CREDIT.license}
+          </a>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -318,7 +308,7 @@ function SetsChart({ history }: { history: ExerciseSession[] }) {
     return <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No sets logged yet.</p>;
   }
   return (
-    <div className="h-72 w-full sm:h-80">
+    <div className="h-80 w-full sm:h-[28rem]">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -16 }}>
           <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
@@ -361,7 +351,7 @@ function AllSetsChart({ history, unit, bodyweight }: { history: ExerciseSession[
   const ticks = niceTicks(Math.min(...data.map((p) => p.value)), Math.max(...data.map((p) => p.value)));
   return (
     <div className="space-y-2">
-      <div className="h-72 w-full sm:h-80">
+      <div className="h-80 w-full sm:h-[28rem]">
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 12, right: 12, bottom: 4, left: -4 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
@@ -461,7 +451,7 @@ function ProgressChart({ history, metric, unit }: { history: ExerciseSession[]; 
 
   return (
     <div className="space-y-2">
-      <div className="h-72 w-full sm:h-80">
+      <div className="h-80 w-full sm:h-[28rem]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -4 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
