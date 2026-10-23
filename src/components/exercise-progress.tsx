@@ -318,7 +318,7 @@ function SetsChart({ history }: { history: ExerciseSession[] }) {
     return <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No sets logged yet.</p>;
   }
   return (
-    <div className="h-60 w-full">
+    <div className="h-72 w-full sm:h-80">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -16 }}>
           <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
@@ -361,7 +361,7 @@ function AllSetsChart({ history, unit, bodyweight }: { history: ExerciseSession[
   const ticks = niceTicks(Math.min(...data.map((p) => p.value)), Math.max(...data.map((p) => p.value)));
   return (
     <div className="space-y-2">
-      <div className="h-60 w-full">
+      <div className="h-72 w-full sm:h-80">
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 12, right: 12, bottom: 4, left: -4 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
@@ -461,7 +461,7 @@ function ProgressChart({ history, metric, unit }: { history: ExerciseSession[]; 
 
   return (
     <div className="space-y-2">
-      <div className="h-60 w-full">
+      <div className="h-72 w-full sm:h-80">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -4 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />

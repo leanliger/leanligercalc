@@ -27,13 +27,14 @@ const RANGES: { value: Range; label: string }[] = [
 /** A small line of a lift's sessions, coloured by its trend. */
 function Sparkline({ values, status }: { values: readonly number[]; status: TrendStatus }) {
   const pts = values.slice(-12);
-  if (pts.length < 2) return <span className="block h-7 w-20" aria-hidden />;
+  if (pts.length < 2) return <span className="order-last col-span-2 block h-10 w-full sm:order-none sm:col-span-1 sm:w-32" aria-hidden />;
   const lo = Math.min(...pts);
   const hi = Math.max(...pts);
-  const d = pts.map((v, i) => `${((i / (pts.length - 1)) * 76 + 2).toFixed(1)},${(25 - ((v - lo) / (hi - lo || 1)) * 22).toFixed(1)}`).join(" ");
+  const d = pts.map((v, i) => `${((i / (pts.length - 1)) * 116 + 2).toFixed(1)},${(37 - ((v - lo) / (hi - lo || 1)) * 34).toFixed(1)}`).join(" ");
   return (
-    <svg viewBox="0 0 80 28" className="h-7 w-20 shrink-0" aria-hidden>
-      <polyline points={d} fill="none" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" className={STATUS[status].line} />
+    // On a phone it gets its own row, the full width of the card.
+    <svg viewBox="0 0 120 40" preserveAspectRatio="none" className="order-last col-span-2 h-10 w-full shrink-0 sm:order-none sm:col-span-1 sm:w-32" aria-hidden>
+      <polyline points={d} fill="none" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" className={STATUS[status].line} />
     </svg>
   );
 }
@@ -119,7 +120,7 @@ export function StrengthTrendsCard({
                         type="button"
                         onClick={() => onOpen(t.exerciseId)}
                         aria-label={`${t.name}: ${s.label.toLowerCase()}${pct === null ? "" : `, ${pct > 0 ? "up" : "down"} ${Math.abs(Math.round(pct * 10) / 10)}% ${range === "recent" ? `over ${TREND_WEEKS} weeks` : `since ${formatShort(t.firstDate)}`}`}. Open its chart`}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-0.5 rounded-xl px-1 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_5rem_5.5rem_5.5rem_6rem]"
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-xl px-1 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_8rem_5.5rem_5.5rem_6rem]"
                       >
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-bold">{t.name}</span>
