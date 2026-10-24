@@ -8,11 +8,11 @@
  *
  *   GET    /api/coach/lift-goals?company&member      a member's goals (they must share their progress)
  *   POST   /api/coach/lift-goals                     add one for them { company, member, goal, today }
- *   PUT    /api/coach/lift-goals/:id                 change one a coach set { company, member, goal, today }
- *   DELETE /api/coach/lift-goals/:id?company&member  remove one a coach set
+ *   PUT    /api/coach/lift-goals/:id                 change any of their goals { company, member, goal, today }
+ *   DELETE /api/coach/lift-goals/:id?company&member  remove any of their goals
  *
- * Members change the goals they set; goals a coach set are changed by the
- * whop's coaches only. Up to MAX_ACTIVE_GOALS not yet hit. After every
+ * Members change the goals they set; coaches change any of a member's goals
+ * (goals a coach set are changed by coaches only). Up to MAX_ACTIVE_GOALS not yet hit. After every
  * finished workout (checkGoalHits) a Build goal it reached is marked hit and
  * the member gets a Whop notification; the coach sees it under Wins.
  */
@@ -87,9 +87,7 @@ async function upsert(env: Env, memberId: string, setBy: string, byCoach: boolea
       .bind(id, memberId)
       .first<{ set_by_coach: number; achieved_on: string | null }>();
     if (!row) return { ok: false, status: 404, error: "That goal isn't there any more." };
-    if ((row.set_by_coach === 1) !== byCoach) {
-      return { ok: false, status: 403, error: byCoach ? "They set this goal themselves, so only they can change it." : "Your coach set this goal, so only they can change it." };
-    }
+    if (!byCoach && row.set_by_coach === 1) return { ok: false, status: 403, error: "Your coach set this goal, so only they can change it." };
     // A changed target is a new goal to reach: a hit is cleared when it's raised past what was reached.
     await env.DB.prepare(
       `UPDATE lift_goals SET exercise_id = ?, name = ?, bodyweight = ?, kind = ?, target = ?, deadline = ?,
@@ -115,9 +113,7 @@ async function upsert(env: Env, memberId: string, setBy: string, byCoach: boolea
 async function remove(env: Env, memberId: string, byCoach: boolean, id: string): Promise<Result> {
   const row = await env.DB.prepare("SELECT set_by_coach FROM lift_goals WHERE id = ? AND user_id = ?").bind(id, memberId).first<{ set_by_coach: number }>();
   if (!row) return { ok: true, body: { goals: await goalsOf(env, memberId) } };
-  if ((row.set_by_coach === 1) !== byCoach) {
-    return { ok: false, status: 403, error: byCoach ? "They set this goal themselves, so only they can remove it." : "Your coach set this goal, so only they can remove it." };
-  }
+  if (!byCoach && row.set_by_coach === 1) return { ok: false, status: 403, error: "Your coach set this goal, so only they can remove it." };
   await env.DB.prepare("DELETE FROM lift_goals WHERE id = ? AND user_id = ?").bind(id, memberId).run();
   return { ok: true, body: { goals: await goalsOf(env, memberId) } };
 }

@@ -37,65 +37,47 @@ const STATUS_TEXT: Record<SessionState["status"], string> = {
 const weekdaysText = (days: readonly number[]) => days.map((d) => WEEKDAY_SHORT[d]).join(" · ");
 const isCoachProgram = (p: Program) => p.id.startsWith("coach_");
 
-/** Training → Programs: the coach's plan on a calendar (the member's programs are listed under it). */
-export function ProgramCalendar({
+const noop = () => {};
+
+/**
+ * Training → Programs (member-programs.tsx): the calendar and the chosen
+ * day's workout, without the plan card (the page's own header has it).
+ */
+export function ProgramCalendarPanel({
+  program,
   settings,
   workouts,
   today,
   live,
   onStart,
-  onMakeActive,
   onResume,
 }: {
+  program: Program;
   settings: TrainingSettings;
   workouts: readonly Workout[];
   today: string;
-  /** A workout already in progress (starting another isn't offered). */
   live: Workout | null;
   onStart: (program: Program, day: ProgramDay) => void;
-  onMakeActive: (id: string) => void;
   onResume: () => void;
 }) {
-  const scheduled = settings.programs.filter((p) => p.schedule);
-  const [chosenId, setChosenId] = React.useState<string | null>(null);
-  const program =
-    scheduled.find((p) => p.id === chosenId) ?? scheduled.find((p) => p.id === settings.activeProgramId) ?? scheduled[scheduled.length - 1] ?? null;
-
-  if (!program || !program.schedule) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-start gap-3 p-6">
-          <CalendarDays className="h-6 w-6 text-primary" />
-          <div className="space-y-1">
-            <p className="font-semibold">No program on your calendar yet</p>
-            <p className="text-sm text-muted-foreground">
-              When your coach assigns you a program with a schedule, every workout shows up here by date, so you know exactly
-              what to do each day. Your own programs are listed below.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (!program.schedule) return null;
   return (
     <ScheduledProgram
-      key={program.id}
       program={program}
-      programs={scheduled}
-      isActive={program.id === settings.activeProgramId}
+      programs={[program]}
+      isActive
       settings={settings}
       workouts={workouts}
       today={today}
       live={live}
-      onChoose={setChosenId}
+      onChoose={noop}
       onStart={onStart}
-      onMakeActive={onMakeActive}
+      onMakeActive={noop}
       onResume={onResume}
+      headless
     />
   );
 }
-
-const noop = () => {};
 
 /**
  * Coach dashboard → a member → Training: the same calendar, read-only. Every
@@ -149,6 +131,7 @@ function ScheduledProgram({
   onMakeActive,
   onResume,
   coachView,
+  headless,
 }: {
   program: Program;
   programs: Program[];
@@ -163,6 +146,8 @@ function ScheduledProgram({
   onResume: () => void;
   /** Shown to the member's coach: read-only, nothing to start. */
   coachView?: { first: string };
+  /** Just the calendar and the day (Training → Programs has its own header). */
+  headless?: boolean;
 }) {
   const schedule = program.schedule!;
   const end = scheduleEnd(program)!;
@@ -193,6 +178,7 @@ function ScheduledProgram({
     <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5", !coachView && "lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start")}>
       <div className="space-y-5">
         {/* ------------------------------ the plan ------------------------------ */}
+        {headless ? null : (
         <Card>
           <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -259,6 +245,7 @@ function ScheduledProgram({
             <TodayStrip plan={plan} live={live} program={program} onStart={onStart} onResume={onResume} coachView={coachView} />
           </CardContent>
         </Card>
+        )}
 
         {/* ------------------------------ calendar ------------------------------ */}
         <Card>
@@ -463,6 +450,23 @@ function SessionDetail({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
+        {s.status === "done" && s.workout ? (
+          <ul className="space-y-1 text-sm" aria-label="What you logged">
+            {s.workout.exercises.map((e, i) => {
+              const sets = e.sets.filter((x) => x.done);
+              return (
+                <li key={`${e.exerciseId}-${i}`} className="flex items-center gap-2.5">
+                  <ExerciseThumb exerciseId={e.exerciseId} className="h-7 w-7" />
+                  <span className="min-w-0 flex-1 truncate">{findExercise(e.exerciseId, settings.customExercises)?.name ?? e.name ?? "Exercise"}</span>
+                  <span className="tabular shrink-0 text-muted-foreground">
+                    {sets.length} {sets.length === 1 ? "set" : "sets"}
+                    {sets.length ? ` · ${sets.map((x) => x.reps).join(", ")} reps` : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
         <ul className="space-y-1 text-sm">
           {s.day.exercises.map((pe, i) => (
             <li key={`${pe.exerciseId}-${i}`} className="flex items-center gap-2.5">
@@ -472,6 +476,7 @@ function SessionDetail({
             </li>
           ))}
         </ul>
+        )}
         {!readOnly && s.status !== "done" && s.date <= today ? (
           live ? (
             <Button variant="outline" className="w-full" onClick={onResume}>
@@ -481,7 +486,7 @@ function SessionDetail({
           ) : (
             <Button className="w-full" onClick={() => onStart(program, s.day)}>
               <Play />
-              Start {s.day.name}
+              {s.status === "missed" ? `Do ${s.day.name} today` : `Start ${s.day.name}`}
             </Button>
           )
         ) : null}

@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Lift goals (src/lib/lift-goals.ts): the member's card on Training →
- * Workouts (MemberLiftGoals) and the coach's on a member's Training tab
+ * Tools (MemberLiftGoals) and the coach's on a member's Training tab
  * (CoachLiftGoals), both drawn by LiftGoalsPanel.
  */
 
@@ -136,7 +136,8 @@ export function LiftGoalsPanel({
   const list = goals ?? [];
   const active = list.filter((g) => !g.achievedOn);
   const hits = list.filter((g) => g.achievedOn).sort((a, b) => b.achievedOn!.localeCompare(a.achievedOn!));
-  const canChange = (g: LiftGoal) => (mode === "coach" ? g.setByCoach : !g.setByCoach);
+  // Coaches change any goal; members the ones they set.
+  const canChange = (g: LiftGoal) => mode === "coach" || !g.setByCoach;
   const full = active.length >= MAX_ACTIVE_GOALS;
   const who = firstName ?? "them";
 
@@ -160,7 +161,7 @@ export function LiftGoalsPanel({
             ? cutting
               ? `You're cutting, so new goals start as Hold: keeping your strength is the win. ${active.length} of ${MAX_ACTIVE_GOALS} used.`
               : `Hold a number, or build to a new one. ${active.length} of ${MAX_ACTIVE_GOALS} used.`
-            : `${active.length} of ${MAX_ACTIVE_GOALS} used. ${who} changes the goals they set; you change the ones you set.`}
+            : `${active.length} of ${MAX_ACTIVE_GOALS} used. You can change or remove any of them; ${who} can change the ones they set.`}
           {note ? ` ${note}` : ""}
         </CardDescription>
       </CardHeader>
@@ -521,7 +522,7 @@ function writeLocal(goals: LiftGoal[]) {
 }
 
 /**
- * Training → Workouts → Lift goals. Saved to their account inside Whop (so
+ * Training → Tools → Lift goals. Saved to their account inside Whop (so
  * their coach sees them); outside Whop, on this device only.
  */
 export function MemberLiftGoals({ workouts, unit, today, cutting, cloud }: { workouts: readonly Workout[]; unit: WeightUnit; today: string; cutting: boolean; cloud: boolean }) {

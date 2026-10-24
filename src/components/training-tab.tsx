@@ -4,16 +4,13 @@ import * as React from "react";
 import {
   Check,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   CloudOff,
   Dumbbell,
   History,
-  ListOrdered,
   Pencil,
   Play,
   Plus,
-  Star,
   Trash2,
   Trophy,
   X,
@@ -32,18 +29,17 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { ExerciseLibraryCard } from "@/components/exercise-library";
 import { FormChecksCard } from "@/components/form-checks";
 import { PlateCalculatorCard } from "@/components/plate-calculator";
-import { ProgramCalendar } from "@/components/program-calendar";
+import { MemberPrograms } from "@/components/member-programs";
 import { NUDGE_IDLE_MIN, NUDGE_REPEAT_MIN } from "@/lib/workout-nudge";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { StrengthTrendsCard } from "@/components/strength-trends-card";
-import { planToday, scheduleEnd, sessionStates } from "@/lib/program-schedule";
-import { WEEKDAY_LETTER, WEEKDAY_SHORT } from "@/lib/weekday-pattern";
+import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
 import { ProgramEditor } from "@/components/program-editor";
 import { RestTimerBar, useRestTimer } from "@/components/rest-timer";
 import { WorkoutLogger } from "@/components/workout-logger";
-import { addDays, daysBetween, formatShort } from "@/lib/dates";
+import { addDays, formatShort } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
 import { REST_KEY, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import {
@@ -216,6 +212,15 @@ export function TrainingTab({
     if (!template) setView({ kind: "program", id: program.id });
   };
 
+  /** A coach's program, copied into one of their own (days only, no calendar) and opened to edit. */
+  const copyProgram = (id: string) => {
+    const from = settings.programs.find((p) => p.id === id);
+    if (!from || settings.programs.length >= MAX_PROGRAMS) return;
+    const copy: Program = { id: shortId(), name: `${from.name} (my copy)`.slice(0, 60), days: structuredClone(from.days) };
+    onSettingsChange((s) => ({ ...s, programs: [...s.programs, copy] }));
+    setView({ kind: "program", id: copy.id });
+  };
+
   const deleteProgram = (id: string) => {
     onSettingsChange((s) => {
       const programs = s.programs.filter((p) => p.id !== id);
@@ -342,36 +347,22 @@ export function TrainingTab({
   }
 
   if (!body && section === "program") {
-    const activeProgram = settings.programs.find((p) => p.id === settings.activeProgramId) ?? null;
     body = (
-      <div className="space-y-5">
-        {activeProgram ? (
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2 lg:items-start">
-            <ActiveProgramCard program={activeProgram} workouts={workouts} today={today} />
-            <ProgramDayCards program={activeProgram} custom={custom} onEdit={() => setView({ kind: "program", id: activeProgram.id })} />
-          </div>
-        ) : null}
-        <ProgramCalendar
-          settings={settings}
-          workouts={workouts}
-          today={today}
-          live={active}
-          onStart={(p, d) => {
-            setSection("workouts");
-            start(p, d);
-          }}
-          onMakeActive={setActiveProgram}
-          onResume={() => setSection("workouts")}
-        />
-        <div className="lg:max-w-xl">
-          <ProgramsCard
-            settings={settings}
-            onEdit={(id) => setView({ kind: "program", id })}
-            onMakeActive={setActiveProgram}
-            onAdd={addProgram}
-          />
-        </div>
-      </div>
+      <MemberPrograms
+        settings={settings}
+        workouts={workouts}
+        today={today}
+        live={active}
+        onStart={(p, d) => {
+          setSection("workouts");
+          start(p, d);
+        }}
+        onResume={() => setSection("workouts")}
+        onMakeActive={setActiveProgram}
+        onEdit={(id) => setView({ kind: "program", id })}
+        onCopy={copyProgram}
+        onAdd={addProgram}
+      />
     );
   }
 
@@ -400,6 +391,7 @@ export function TrainingTab({
           {panel === "muscles" ? <MuscleVolumeCard workouts={workouts} customExercises={custom} today={today} /> : null}
         </div>
         <div className="space-y-5">
+          <MemberLiftGoals workouts={workouts} unit={unit} today={today} cutting={cutting} cloud={cloud} />
           <StrengthTrendsCard workouts={workouts} unit={unit} today={today} custom={custom} onOpen={(id) => setView({ kind: "exercise", id })} />
           <ExerciseLibraryCard
             custom={custom}
@@ -477,7 +469,6 @@ export function TrainingTab({
           </div>
         </div>
         <div className="space-y-5">
-          <MemberLiftGoals workouts={workouts} unit={unit} today={today} cutting={cutting} cloud={cloud} />
           <WeekTiles workouts={workouts} records={records} unit={unit} today={today} />
           <RecentWorkoutsCard
             workouts={workouts}
@@ -821,121 +812,6 @@ function WeekTiles({ workouts, records, unit, today }: { workouts: readonly Work
   );
 }
 
-function ProgramsCard({
-  settings,
-  onEdit,
-  onMakeActive,
-  onAdd,
-}: {
-  settings: TrainingSettings;
-  onEdit: (id: string) => void;
-  onMakeActive: (id: string) => void;
-  onAdd: (template: ProgramTemplate | null) => void;
-}) {
-  const [adding, setAdding] = React.useState(false);
-  const full = settings.programs.length >= MAX_PROGRAMS;
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ListOrdered className="h-4 w-4 text-primary" />
-          Your programs
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {settings.programs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No programs yet. Build your own, or start from a template.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {settings.programs.map((p) => {
-              const isActive = p.id === settings.activeProgramId;
-              return (
-                <li key={p.id} className="flex items-center gap-2 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 truncate text-sm font-medium">
-                      {p.name}
-                      {isActive ? (
-                        <Badge variant="success" className="px-1.5 py-0 text-[11px]">
-                          Active
-                        </Badge>
-                      ) : null}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {p.days.length} day{p.days.length === 1 ? "" : "s"} · {p.days.map((d) => d.name).join(", ")}
-                    </p>
-                  </div>
-                  {!isActive ? (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onMakeActive(p.id)} aria-label={`Make ${p.name} active`} title="Make active">
-                      <Star />
-                    </Button>
-                  ) : null}
-                  <Button variant="outline" size="sm" className="h-8" onClick={() => onEdit(p.id)}>
-                    <Pencil />
-                    Edit
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {adding ? (
-          <div className="space-y-2 rounded-2xl border border-dashed border-primary/45 p-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">New program</p>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setAdding(false)} aria-label="Close">
-                <X />
-              </Button>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => {
-                onAdd(null);
-                setAdding(false);
-              }}
-            >
-              <Pencil />
-              Build my own
-            </Button>
-            <p className="pt-1 text-xs text-muted-foreground">Or start from a template</p>
-            {TEMPLATES.map((t) => (
-              <Button
-                key={t.id}
-                variant="outline"
-                size="sm"
-                className="h-auto w-full justify-start py-2 text-left"
-                onClick={() => {
-                  onAdd(t);
-                  setAdding(false);
-                }}
-              >
-                <span className="min-w-0">
-                  <span className="block font-semibold">{t.name}</span>
-                  <span className="block whitespace-normal font-normal text-muted-foreground">{t.days.length} days · {t.days.map((d) => d.name).join(", ")}</span>
-                </span>
-              </Button>
-            ))}
-          </div>
-        ) : full ? (
-          <p className="text-xs text-muted-foreground">Up to {MAX_PROGRAMS} programs. Delete one to add another.</p>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="flex h-[2.875rem] w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-primary/45 text-sm font-bold text-[hsl(var(--gold-hi))] transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Plus className="h-4 w-4" />
-            New program
-          </button>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 /** Training → Tools: Form check and Sets per muscle, each opening its card. */
 function ToolTiles({
   open,
@@ -975,110 +851,6 @@ function ToolTiles({
         </span>
       </button>
     </div>
-  );
-}
-
-/** "Upper A" → "UA", "Push" → "PU": a day's badge on the program pages. */
-function dayCode(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return words
-    .slice(0, 3)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-}
-
-/** The active program: where it's from, how far in, and this week day by day. */
-function ActiveProgramCard({ program, workouts, today }: { program: Program; workouts: readonly Workout[]; today: string }) {
-  const schedule = program.schedule;
-  const fromCoach = program.id.startsWith("coach_");
-  const week = weekStartOf(today);
-  const states = React.useMemo(() => (schedule ? sessionStates(program, workouts, today) : []), [program, schedule, workouts, today]);
-  const byDate = new Map(states.map((s) => [s.date, s]));
-  const end = scheduleEnd(program);
-  const weekNo = schedule ? Math.floor(daysBetween(schedule.startDate, today) / 7) + 1 : 0;
-  const next = schedule ? null : nextProgramDay(program, workouts);
-  const subtitle = schedule
-    ? today < schedule.startDate
-      ? `${schedule.weekdays.length} days a week · starts ${formatShort(schedule.startDate)}`
-      : end && today > end
-        ? `${schedule.weekdays.length} days a week · finished ${formatShort(end)}`
-        : `${schedule.weekdays.length} days a week · week ${weekNo} of ${schedule.weeks}`
-    : `${program.days.length} ${program.days.length === 1 ? "day" : "days"} in turn${next ? ` · next: ${next.name}` : ""}`;
-  return (
-    <Card className="border-primary/35 shadow-[0_18px_40px_rgba(0,0,0,0.4)]">
-      <CardContent className="space-y-2 p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-primary">Active</span>
-          {fromCoach ? (
-            <span className="rounded-full bg-success/15 px-2.5 py-0.5 text-xs font-bold text-success">From your coach</span>
-          ) : null}
-        </div>
-        <p className="text-[1.375rem] font-extrabold leading-tight tracking-tight">{program.name}</p>
-        <p className="tabular text-xs text-muted-foreground">{subtitle}</p>
-        {schedule ? (
-          <div className="grid grid-cols-7 gap-1 pt-1 text-center text-[11px]" role="list" aria-label="This week">
-            {Array.from({ length: 7 }, (_, i) => {
-              const date = addDays(week, i);
-              const s = byDate.get(date);
-              const isToday = date === today;
-              return (
-                <span
-                  key={date}
-                  role="listitem"
-                  aria-label={`${WEEKDAY_SHORT[i]}: ${s ? `${s.day.name}${s.status === "done" ? ", done" : ""}` : "rest"}`}
-                  className={cn(
-                    "flex flex-col gap-0.5 rounded-xl py-1.5 font-bold",
-                    isToday
-                      ? "bg-gradient-to-br from-[hsl(var(--gold-hi)/0.3)] to-primary/20"
-                      : s
-                        ? "bg-[hsl(var(--gold-hi)/0.07)]"
-                        : "bg-[hsl(var(--gold-hi)/0.03)] text-muted-foreground",
-                    s?.status === "done" && "text-success",
-                  )}
-                >
-                  {WEEKDAY_LETTER[i]}
-                  <span className="text-[10px] font-semibold">{s ? dayCode(s.day.name) : "Rest"}</span>
-                </span>
-              );
-            })}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** One card per day of the active program; any of them opens the editor. */
-function ProgramDayCards({ program, custom, onEdit }: { program: Program; custom: readonly Exercise[]; onEdit: () => void }) {
-  return (
-    <ul className="space-y-2" aria-label={`${program.name} days`}>
-      {program.days.map((d) => {
-        const names = d.exercises.map((pe) => findExercise(pe.exerciseId, custom)?.name ?? "Exercise");
-        return (
-          <li key={d.id}>
-            <button
-              type="button"
-              onClick={onEdit}
-              aria-label={`${d.name}: edit the program`}
-              className="molten-card flex w-full items-center gap-3 rounded-[1.375rem] border border-primary/15 bg-card p-3.5 text-left transition-colors hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[hsl(var(--gold-hi)/0.22)] to-primary/10 text-sm font-extrabold text-[hsl(var(--gold-hi))]">
-                {dayCode(d.name)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-extrabold">{d.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {names.length === 0 ? "No exercises yet" : `${names.slice(0, 3).join(" · ")}${names.length > 3 ? ` +${names.length - 3}` : ""}`}
-                </span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

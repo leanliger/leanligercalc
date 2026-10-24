@@ -49,7 +49,7 @@ export interface LiftGoal {
   /** Build only: reach it by this day. */
   deadline: string | null;
   createdOn: string;
-  /** Set by their coach: only a coach can change or remove it. */
+  /** Set by their coach: only a coach can change or remove it (coaches can change any goal). */
   setByCoach: boolean;
   /** Build only: the day a finished workout first reached the target. */
   achievedOn: string | null;
