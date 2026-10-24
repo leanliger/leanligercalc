@@ -23,6 +23,8 @@ import { CELEBRATE_DAYS } from "../src/lib/milestones";
 import { TREND_WEEKS, strengthTrends } from "../src/lib/strength-trends";
 import type { Workout } from "../src/lib/training";
 import { celebrateSince, recentMilestones } from "./milestones";
+import { rowToGoal } from "./lift-goals";
+import { slippingGoals, type LiftGoal } from "../src/lib/lift-goals";
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
 import { accessLevel, hasWhopKey, whopGet, whopReason, type WhopEnv } from "./whop";
@@ -133,7 +135,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -158,7 +160,16 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       env.DB.prepare(
         `SELECT user_id, week_start, submitted_at, reply IS NOT NULL AS replied FROM checkins WHERE user_id IN (${marks}) AND week_start >= ? ORDER BY week_start DESC`,
       ).bind(...chunk, addDays(today, -35)),
+      env.DB.prepare(
+        `SELECT user_id, id, exercise_id, name, bodyweight, kind, target, start_value, deadline, created_on, set_by_coach, achieved_on FROM lift_goals WHERE user_id IN (${marks})`,
+      ).bind(...chunk),
     ]);
+    // Lift goals: Hold goals now under their number (a flag), and goals hit lately (Wins).
+    const goalsBy = new Map<string, LiftGoal[]>();
+    for (const r of (goals?.results ?? []) as (Parameters<typeof rowToGoal>[0] & { user_id: string })[]) {
+      goalsBy.set(r.user_id, [...(goalsBy.get(r.user_id) ?? []), rowToGoal(r)]);
+    }
+    const hitSince = celebrateSince(today, CELEBRATE_DAYS);
     const byMember = new Map<string, Workout[]>();
     const monthAgo = addDays(today, -30);
     for (const r of (workouts?.results ?? []) as { user_id: string; date: string; data: string }[]) {
@@ -178,11 +189,18 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
           const trends = strengthTrends(list, today);
           m.slipping = trends.filter((t) => t.status === "down").map((t) => t.name);
           m.liftsTracked = trends.filter((t) => t.status !== "new").length;
+          const mine = goalsBy.get(id);
+          if (mine) m.goalsSlipping = slippingGoals(mine, list, today);
         }
       } catch (e) {
         // One member's odd workout must never break the whole dashboard.
         console.error("strength trends failed", { member: id, error: e instanceof Error ? e.message : String(e) });
       }
+    }
+    for (const [id, list] of goalsBy) {
+      const m = members.get(id);
+      const hits = list.filter((g) => g.achievedOn !== null && g.achievedOn >= hitSince);
+      if (m && hits.length) m.goalHits = hits.map((g) => ({ name: g.name, target: g.target, bodyweight: g.bodyweight, reachedOn: g.achievedOn! }));
     }
     for (const r of (checkins?.results ?? []) as { user_id: string; week_start: string; submitted_at: string; replied: number }[]) {
       const m = members.get(r.user_id);

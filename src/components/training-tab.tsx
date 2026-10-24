@@ -77,6 +77,7 @@ import { fromLb } from "@/lib/units";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 import { cn } from "@/lib/utils";
+import { MemberLiftGoals } from "@/components/lift-goals-card";
 
 type View =
   | { kind: "home" }
@@ -109,6 +110,10 @@ interface TrainingTabProps {
   formCheckAvailability: NotificationStatus["availability"];
   /** Workout changes saved on this phone, waiting for signal to upload. */
   unsyncedWorkouts: number;
+  /** In the cut: new lift goals start as Hold. */
+  cutting: boolean;
+  /** Signed in through Whop: lift goals are saved to their account (else on this device). */
+  cloud: boolean;
 }
 
 /** Which sessions in which workouts set a personal record. */
@@ -141,6 +146,8 @@ export function TrainingTab({
   onSaveHabits,
   formCheckAvailability,
   unsyncedWorkouts,
+  cutting,
+  cloud,
 }: TrainingTabProps) {
   const [view, setView] = React.useState<View>({ kind: "home" });
   // An exercise to ask for a form check on, from its page.
@@ -470,6 +477,7 @@ export function TrainingTab({
           </div>
         </div>
         <div className="space-y-5">
+          <MemberLiftGoals workouts={workouts} unit={unit} today={today} cutting={cutting} cloud={cloud} />
           <WeekTiles workouts={workouts} records={records} unit={unit} today={today} />
           <RecentWorkoutsCard
             workouts={workouts}

@@ -85,6 +85,8 @@
  *   DELETE /api/form-checks/:id               withdraw / delete one of mine
  *   PUT    /api/form-checks/:id/feedback      admins: reply
  *   GET    /api/workouts           all of my workouts, oldest first
+ *   GET/POST /api/lift-goals, PUT/DELETE /api/lift-goals/:id         my lift goals (worker/lift-goals.ts)
+ *   GET/POST /api/coach/lift-goals, PUT/DELETE /api/coach/lift-goals/:id   a member's lift goals, as their coach
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
  *   DELETE /api/me                 delete everything stored about me
@@ -144,6 +146,7 @@ import { deleteSavedReply, getSavedReplies, saveSavedReply } from "./saved-repli
 import { getNotifications, markNotificationsSeen } from "./notifications";
 import { getDigest, listDigests, previewDigest, saveDigest, sendCoachDigests, sendDigestNow } from "./digest";
 import { focusCheck, sendFocusNudges } from "./focus-nudges";
+import { checkGoalHits, coachGoals, coachRemoveGoal, coachSaveGoal, myGoals, removeMyGoal, saveMyGoal } from "./lift-goals";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
@@ -1061,6 +1064,38 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return send(await getMyMacros(env, userId));
   }
 
+  if (path === "/api/coach/lift-goals") {
+    if (method === "GET") return send(await coachGoals(env, userId, q("company"), q("member")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await coachSaveGoal(env, userId, null, body.value));
+  }
+  const coachGoalMatch = /^\/api\/coach\/lift-goals\/([^/]+)$/.exec(path);
+  if (coachGoalMatch) {
+    if (method === "DELETE") return send(await coachRemoveGoal(env, userId, coachGoalMatch[1]!, q("company"), q("member")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await coachSaveGoal(env, userId, coachGoalMatch[1]!, body.value));
+  }
+
+  if (path === "/api/lift-goals") {
+    if (method === "GET") return send(await myGoals(env, userId));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveMyGoal(env, userId, null, body.value));
+  }
+  const goalMatch = /^\/api\/lift-goals\/([^/]+)$/.exec(path);
+  if (goalMatch) {
+    if (method === "DELETE") return send(await removeMyGoal(env, userId, goalMatch[1]!));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveMyGoal(env, userId, goalMatch[1]!, body.value));
+  }
+
   if (path === "/api/coach/member-workouts") {
     if (method !== "GET") return error(405, "Method not allowed.");
     const result = await coachMemberWorkouts(env, userId, url.searchParams.get("company") ?? "", url.searchParams.get("member") ?? "");
@@ -1319,6 +1354,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     )
       .bind(userId, w.id, w.date, JSON.stringify(w))
       .run();
+    await checkGoalHits(env, userId, w);
     return json({ workout: w });
   }
 
@@ -1486,6 +1522,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_macro_history WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM lift_goals WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digest_log WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),

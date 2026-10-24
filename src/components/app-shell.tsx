@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
+import { calculateFatLossTimeline } from "@/lib/fat-loss";
+import { isCutting } from "@/lib/lift-goals";
 import { SettingsMenu } from "@/components/settings-menu";
 import { CopyButton } from "@/components/copy-button";
 import { ProfileCard, ProfileSummary } from "@/components/profile-card";
@@ -775,6 +777,11 @@ export function AppShell() {
     return plan?.kind === "today" ? { kind: "planned", name: plan.session.day.name } : null;
   }, [workouts, today, state.tracking.training]);
   const macrosProfile = React.useMemo(() => planProfile(state.profile, planWeek), [state.profile, planWeek]);
+  // In the cut: new lift goals start as Hold (src/lib/lift-goals.ts).
+  const cutting = React.useMemo(
+    () => (today ? isCutting(calculateFatLossTimeline(state.profile, state.fatLoss), today) : false),
+    [state.profile, state.fatLoss, today],
+  );
 
   // What the Food log aims at today, shown on Carb cycle so its different number makes sense.
   const foodLogToday = React.useMemo(
@@ -1866,6 +1873,8 @@ export function AppShell() {
                   onSaveHabits={saveHabitDay}
                   formCheckAvailability={notifyAvailability}
                   unsyncedWorkouts={uploadStalled ? unsyncedWorkouts : 0}
+                  cutting={cutting}
+                  cloud={session.mode === "cloud"}
                 />
               </TabsContent>
 

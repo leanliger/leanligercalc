@@ -42,6 +42,7 @@ export type Flag =
   | "no-weigh-in"
   | "no-workouts"
   | "slipping"
+  | "goal-slipping"
   | "muscle-loss"
   | "drop-off"
   | "checkin"
@@ -140,6 +141,7 @@ export const FLAG_LABELS: Record<Flag, string> = {
   "no-weigh-in": `No weigh-in ${WEIGH_IN_GAP_DAYS}+ days`,
   "no-workouts": "No workouts this week",
   slipping: "Strength slipping",
+  "goal-slipping": "Lift goal slipping",
   "muscle-loss": "Losing muscle",
   "drop-off": "At risk of quitting",
   checkin: "No check-in this week",
@@ -235,6 +237,8 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     if (data.workoutDates.length > 0 && workouts7 === 0) flags.push("no-workouts");
     // A lift whose estimated max fell more than 2% over six weeks.
     if ((data.slipping?.length ?? 0) > 0) flags.push("slipping");
+    // A Hold lift goal now under its number (src/lib/lift-goals.ts).
+    if ((data.goalsSlipping?.length ?? 0) > 0) flags.push("goal-slipping");
     // Cutting while several lifts slip (src/lib/muscle-check.ts).
     if (losingMuscle(weightChangeOver(weighIns, today), data.slipping?.length ?? 0, data.liftsTracked ?? 0)) flags.push("muscle-loss");
     if (!checkedIn) flags.push("checkin");
@@ -282,6 +286,7 @@ export function sortForAttention(list: MemberSummary[]): MemberSummary[] {
     "no-weigh-in": 3,
     "no-workouts": 3,
     slipping: 3,
+    "goal-slipping": 3,
     "muscle-loss": 4,
     "drop-off": 6,
     inactive: 2,

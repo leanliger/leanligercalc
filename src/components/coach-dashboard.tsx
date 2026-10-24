@@ -52,6 +52,8 @@ import { BulkBar } from "@/components/coach-bulk";
 import { ClientFileLauncher, KeyInsights, MemberInsights, useInsightsData } from "@/components/coach-member-insights";
 import { NeedleCard } from "@/components/coach-coaching-cards";
 import { muscleCheck } from "@/lib/member-insights";
+import { CoachLiftGoals } from "@/components/lift-goals-card";
+import { isCutting } from "@/lib/lift-goals";
 import { RoutineReplies, type RoutineItem } from "@/components/coach-routine-replies";
 import { reportFor, triageCheckin } from "@/lib/checkin-report-input";
 import type { Checkin } from "@/lib/checkins";
@@ -1918,6 +1920,16 @@ function MemberDetail({
           </>
         ) : tab === "training" ? (
           <>
+            <CoachLiftGoals
+              companyId={companyId}
+              memberId={m.data.userId}
+              memberName={m.displayName}
+              workouts={loaded.input?.workouts ?? (loaded.error ? [] : null)}
+              unit={unit}
+              today={today}
+              cutting={isCutting(m.timeline, today)}
+              onMessage={openChat}
+            />
             <SegmentedControl ariaLabel="Training section" value={trainingView} onValueChange={setTrainingView} options={TRAINING_VIEWS} />
             {trainingView === "program" ? (
               <>

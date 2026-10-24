@@ -233,7 +233,7 @@ export const DIGEST_HOUR = 8;
 export function digestMessage(members: readonly MemberSummary[], unreadChats: number): { title: string; content: string } | null {
   const reply = members.filter((m) => m.flags.includes("reply"));
   const risk = members.filter((m) => m.flags.some((f) => f !== "reply"));
-  const wins = members.filter((m) => (m.data.milestones ?? []).length > 0);
+  const wins = members.filter((m) => (m.data.milestones ?? []).length + (m.data.goalHits ?? []).length > 0);
   const slipping = members.filter((m) => m.flags.includes("slipping"));
   if (reply.length + risk.length + wins.length + unreadChats === 0) return null;
 

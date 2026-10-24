@@ -61,6 +61,10 @@ export interface CoachMemberData {
   checkins: { weekStart: string; submittedAt: string; replied: boolean }[];
   /** Milestones reached in the last CELEBRATE_DAYS (5 lb lost, 1 in off the waist…), for the Celebrate list. */
   milestones?: Milestone[];
+  /** Hold lift goals now under their number (src/lib/lift-goals.ts), for the "Lift goal slipping" flag. */
+  goalsSlipping?: string[];
+  /** Build lift goals hit in the last CELEBRATE_DAYS, for Wins. */
+  goalHits?: { name: string; target: number; bodyweight: boolean; reachedOn: string }[];
 }
 
 export interface CoachOverview {

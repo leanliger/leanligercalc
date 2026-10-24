@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check, Loader2, MessageCircle, MessageSquare, MoreHorizontal, PartyPopper, Zap } from "lucide-react";
 import { FLAG_LABELS, type Flag, type MemberSummary } from "@/lib/coach";
 import { kudosMessage, messagePreview, type ChatThread } from "@/lib/messages";
+import { goalLabel } from "@/lib/lift-goals";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -16,15 +17,22 @@ import { cn } from "@/lib/utils";
 /** Drifting: any flag other than a check-in waiting on the coach. */
 export const isAtRisk = (m: MemberSummary) => m.flags.some((f) => f !== "reply");
 
-/** A flag as a reason line; Strength slipping names its lifts. */
+const named = (label: string, names: readonly string[]) => `${label}: ${names.slice(0, 2).join(", ")}${names.length > 2 ? ` +${names.length - 2}` : ""}`;
+
+/** A flag as a reason line; Strength slipping and Lift goal slipping name their lifts. */
 const flagReason = (m: MemberSummary, f: Flag) =>
   f === "slipping" && m.data.slipping?.length
-    ? `${FLAG_LABELS[f]}: ${m.data.slipping.slice(0, 2).join(", ")}${m.data.slipping.length > 2 ? ` +${m.data.slipping.length - 2}` : ""}`
-    : FLAG_LABELS[f];
+    ? named(FLAG_LABELS[f], m.data.slipping)
+    : f === "goal-slipping" && m.data.goalsSlipping?.length
+      ? named(FLAG_LABELS[f], m.data.goalsSlipping)
+      : FLAG_LABELS[f];
 
 /** Where a member opens from Today: their lift progress when slipping strength is the only reason, else their overview. */
 export const openTab = (m: MemberSummary): "training" | "overview" =>
-  m.flags.filter((f) => f !== "reply").every((f) => f === "slipping" || f === "muscle-loss") && m.flags.includes("slipping") ? "training" : "overview";
+  m.flags.filter((f) => f !== "reply").every((f) => f === "slipping" || f === "muscle-loss" || f === "goal-slipping") &&
+  (m.flags.includes("slipping") || m.flags.includes("goal-slipping"))
+    ? "training"
+    : "overview";
 
 export function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | null; size?: string }) {
   const [broken, setBroken] = React.useState(false);
@@ -116,11 +124,15 @@ export function sentAgo(iso: string | undefined, now: number): string {
   return d === 1 ? "Sent yesterday" : `Sent ${d} days ago`;
 }
 
-/** A member's newest milestone, in words ("Down 10 lb since starting"). */
-const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => {
-  const w = [...(m.data.milestones ?? [])].sort((a, b) => b.reachedOn.localeCompare(a.reachedOn))[0];
-  return w ? milestoneLabel(w, unit) : null;
-};
+/** A member's wins this week, newest first: milestones and lift goals hit. */
+const winsOf = (m: MemberSummary, unit: WeightUnit) =>
+  [
+    ...(m.data.milestones ?? []).map((x) => ({ label: milestoneLabel(x, unit), date: x.reachedOn })),
+    ...(m.data.goalHits ?? []).map((g) => ({ label: `Hit the ${goalLabel(g, unit)} goal`, date: g.reachedOn })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
+/** A member's newest win, in words ("Down 10 lb since starting", "Hit the Deadlift 365 lb goal"). */
+const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => winsOf(m, unit)[0]?.label ?? null;
 
 /**
  * Kudos on the Celebrate list: one tap sends a congratulation as a chat
@@ -188,7 +200,7 @@ export function KudosButton({
   );
 }
 
-const newestWin = (m: MemberSummary) => (m.data.milestones ?? []).reduce((d, x) => (x.reachedOn > d ? x.reachedOn : d), "");
+const newestWin = (m: MemberSummary) => winsOf(m, "lb")[0]?.date ?? "";
 
 /* ================================ action queue ================================ */
 
@@ -295,7 +307,7 @@ export function ActionQueue({
       ].filter((x): x is string => x !== null);
       rows.push({ ...base, ...row, key: `${row.kind}:${id}`, also, order: row.order ?? base.order });
     }
-    if ((m.data.milestones ?? []).length > 0) {
+    if (winsOf(m, unit).length > 0) {
       rows.push({ ...base, key: `win:${id}`, kind: "win", reason: newestWinLabel(m, unit) ?? "A milestone this week", also: [], order: newestWin(m) });
     }
   });
