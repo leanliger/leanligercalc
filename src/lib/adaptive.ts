@@ -462,3 +462,54 @@ export function analyzeProgress(
           },
   };
 }
+
+/**
+ * When the weekly review last changed and when it next will, for the
+ * Progress tab's Weekly review and the Plan tab's summary of it.
+ *
+ * The review is worked out again with every weigh-in, so its last update is
+ * the latest weigh-in it used (weigh-ins carry a date, not a time). Its next
+ * review is the start of the next plan week, where any calorie change begins;
+ * after a change, the day the two weeks of settling end; before the plan, the
+ * day it starts. While it's still collecting data there's no date, just what's
+ * still needed.
+ */
+export interface ReviewSchedule {
+  /** The latest weigh-in the review used. */
+  lastUpdate: string | null;
+  /** Over a week since that weigh-in. */
+  stale: boolean;
+  next: { date: string; why: "week" | "settle" | "start"; planWeek: number | null } | null;
+  /** Where today falls in the plan: week (1-based) and day of that week (1–7). */
+  week: { index: number; day: number } | null;
+  needed: ProgressAnalysis["needed"];
+}
+
+export function reviewSchedule(
+  analysis: ProgressAnalysis,
+  timeline: FatLossResult,
+  adjustments: readonly CalorieAdjustment[],
+  today: string,
+): ReviewSchedule {
+  const start = timeline.requiredStartDate;
+  const offset = daysBetween(start, today);
+  const weekIndex = Math.floor(offset / 7);
+  const inPlan = offset >= 0 && weekIndex < timeline.weeksRequired;
+  const base = {
+    lastUpdate: analysis.latest?.date ?? null,
+    stale: analysis.stale,
+    week: inPlan ? { index: weekIndex + 1, day: (offset % 7) + 1 } : null,
+    needed: analysis.needed,
+  };
+  if (offset < 0) return { ...base, next: { date: start, why: "start", planWeek: 1 } };
+  if (analysis.status === "collecting" || analysis.status === "no-data" || analysis.status === "no-plan") return { ...base, next: null };
+  if (analysis.status === "waiting" && analysis.latest) {
+    const latest = analysis.latest.date;
+    const change =
+      adjustments.find((a) => a.effectiveFrom > latest) ??
+      [...adjustments].filter((a) => a.effectiveFrom <= latest).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1))[0];
+    if (change) return { ...base, next: { date: addDays(change.effectiveFrom, SETTLE_DAYS), why: "settle", planWeek: null } };
+  }
+  if (weekIndex + 1 >= timeline.weeksRequired) return { ...base, next: null };
+  return { ...base, next: { date: addDays(start, (weekIndex + 1) * 7), why: "week", planWeek: weekIndex + 2 } };
+}

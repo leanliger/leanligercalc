@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { ProgressChart } from "@/components/progress-chart";
-import { analyzeProgress, predictedWeightOn, trendSeries, type ProgressAnalysis } from "@/lib/adaptive";
+import { analyzeProgress, predictedWeightOn, reviewSchedule, trendSeries, type ProgressAnalysis } from "@/lib/adaptive";
+import { reviewLine, useKeptRecommendation } from "@/components/review-timing";
 import type { CoachMacros } from "@/lib/coach-macros";
 import { addDays, daysBetween, formatShort } from "@/lib/dates";
 import { dayTargetFinder } from "@/lib/day-targets";
@@ -75,6 +76,11 @@ export function PlanOverview({
   const [shared, setShared] = React.useState(false);
   const timeline = React.useMemo(() => calculateFatLossTimeline(profile, fatLoss), [profile, fatLoss]);
   const analysis = React.useMemo(() => analyzeProgress(profile, timeline, weighIns, adjustments, today), [profile, timeline, weighIns, adjustments, today]);
+  // The Weekly review in short: when it updated and when it next will, or a calorie change waiting for them.
+  const schedule = React.useMemo(() => reviewSchedule(analysis, timeline, adjustments, today), [analysis, timeline, adjustments, today]);
+  const [keptRec] = useKeptRecommendation();
+  const newRec = analysis.recommendation && keptRec !== analysis.recommendation.effectiveFrom ? analysis.recommendation : null;
+  const line = reviewLine(schedule, today);
   const targetFor = React.useMemo(() => dayTargetFinder(profile, fatLoss, carbs, adjustments, coachMacros), [profile, fatLoss, carbs, adjustments, coachMacros]);
   const after = React.useMemo(() => (timeline.feasible ? afterGoalPlan(profile, fatLoss, timeline, adjustments) : null), [profile, fatLoss, timeline, adjustments]);
   const trendNow = React.useMemo(() => trendSeries(weighIns).slice(-1)[0]?.trend ?? null, [weighIns]);
@@ -219,13 +225,24 @@ export function PlanOverview({
         <Card>
           <CardContent className="space-y-2 p-5">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">How it&apos;s going</p>
+              <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">Weekly review</p>
               <Badge variant={status.variant}>{status.label}</Badge>
             </div>
             <p className="font-semibold">{analysis.headline}</p>
-            <p className="text-sm text-muted-foreground">{analysis.detail}</p>
-            <Button variant="outline" size="sm" onClick={onOpenWeighIn}>
-              Weekly review
+            {newRec ? (
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+                <Target className="h-4 w-4 shrink-0" aria-hidden />
+                New calorie recommendation: {newRec.kcal > 0 ? "+" : "−"}
+                {Math.abs(newRec.kcal)} kcal a day from {formatShort(newRec.effectiveFrom)}
+              </p>
+            ) : (
+              <p className={cn("flex items-center gap-1.5 text-[13px]", line.late ? "text-destructive" : "text-muted-foreground")}>
+                <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {line.text}
+              </p>
+            )}
+            <Button variant={newRec ? "default" : "outline"} size="sm" onClick={onOpenWeighIn}>
+              {newRec ? "Review the change" : "Open weekly review"}
               <ArrowRight />
             </Button>
           </CardContent>

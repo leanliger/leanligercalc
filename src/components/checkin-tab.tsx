@@ -55,6 +55,7 @@ import { addDays } from "@/lib/dates";
 import {
   analyzeProgress,
   predictedWeightOn,
+  reviewSchedule,
   trendSeries,
   MIN_SPAN_DAYS,
   MIN_WEIGH_INS,
@@ -62,6 +63,7 @@ import {
   type Recommendation,
 } from "@/lib/adaptive";
 import type { SessionInfo } from "@/lib/checkin-store";
+import { ReviewTiming, useKeptRecommendation } from "@/components/review-timing";
 import { formatLong, formatShort } from "@/lib/dates";
 import { calculateFatLossTimeline } from "@/lib/fat-loss";
 import { formatWeight } from "@/lib/format";
@@ -112,7 +114,7 @@ type BadgeVariant = "default" | "secondary" | "success" | "warning";
 
 const STATUS_STYLE: Record<ProgressAnalysis["status"], { badge: BadgeVariant; label: string }> = {
   "no-plan": { badge: "secondary", label: "No plan" },
-  "no-data": { badge: "secondary", label: "Start logging" },
+  "no-data": { badge: "secondary", label: "Start weighing in" },
   "not-started": { badge: "secondary", label: "Not started" },
   collecting: { badge: "secondary", label: "Collecting data" },
   waiting: { badge: "default", label: "Settling" },
@@ -176,6 +178,7 @@ export function CheckinTab({
     () => analyzeProgress(profile, timeline, weighIns, adjustments, today),
     [profile, timeline, weighIns, adjustments, today],
   );
+  const schedule = React.useMemo(() => reviewSchedule(analysis, timeline, adjustments, today), [analysis, timeline, adjustments, today]);
   // Roadmap numbers by date, so each habit day can show what to eat.
   const roadmapDays = React.useMemo(() => {
     const r = buildRoadmap(profile, carbs, timeline, adjustments);
@@ -234,8 +237,8 @@ export function CheckinTab({
   // Date, calories and note sit behind a toggle; they show by themselves for a past day.
   const [more, setMore] = React.useState(false);
   const showMore = more || date !== today;
-  // "Keep" on the weekly review hides that recommendation (until the next one).
-  const [keptRec, setKeptRec] = React.useState<string | null>(null);
+  // "Keep" on the weekly review hides that recommendation (until the next one), here and on the Plan tab.
+  const [keptRec, setKeptRec] = useKeptRecommendation();
   const [historyOpen, setHistoryOpen] = React.useState(false);
 
   // Picking a day that already has an entry loads it for editing.
@@ -631,6 +634,7 @@ export function CheckinTab({
                 <CardDescription className="leading-relaxed">{analysis.detail}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+              <ReviewTiming schedule={schedule} today={today} />
               {analysis.latest ? (
                 <div className="grid grid-cols-2 gap-3">
                   <Stat
