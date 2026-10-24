@@ -5,13 +5,10 @@ import { Check, ChevronDown, PenLine, Send, Sparkles, Utensils, Zap } from "luci
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Checkin } from "@/lib/checkins";
-import { FOCUS_DEFAULT, FOCUS_MAX, FOCUS_TEXT_MAX, buildCheckinReport, composeReportReply, type MetricStatus } from "@/lib/checkin-report";
+import { FOCUS_DEFAULT, FOCUS_MAX, FOCUS_TEXT_MAX, composeReportReply, type MetricStatus } from "@/lib/checkin-report";
+import { reportFor, reportText } from "@/lib/checkin-report-input";
 import type { MemberSummary } from "@/lib/coach";
 import type { CoachMacros } from "@/lib/coach-macros";
-import { addDays } from "@/lib/dates";
-import { dayTargetFinder } from "@/lib/day-targets";
-import { milestoneLabel } from "@/lib/milestones";
-import { currentPlanWeek, effectiveCarbInputs } from "@/lib/plan-link";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +46,10 @@ export function CheckinReportPanel({
   unit,
   onSent,
   onEdit,
+  onReport,
 }: {
+  /** The report as text and the coach's choices, for "Draft with AI" and an edited send. */
+  onReport?: (brief: string, choices: { focus: string[]; kinds: string[]; midweek: boolean }) => void;
   companyId: string;
   memberId: string;
   summary: MemberSummary;
@@ -73,53 +73,10 @@ export function CheckinReportPanel({
     };
   }, [qs]);
 
-  // Their targets over the check-in week (carb-cycling days averaged), as their Food log showed them.
-  const plan = summary.state;
-  const targetFor = React.useMemo(() => {
-    if (!summary.hasPlan || coachMacros === undefined) return null;
-    try {
-      const week = currentPlanWeek(plan.profile, plan.fatLoss, plan.tracking.adjustments, checkin.stats.to);
-      return dayTargetFinder(plan.profile, plan.fatLoss, effectiveCarbInputs(plan.carbs, week), plan.tracking.adjustments, coachMacros);
-    } catch {
-      return null;
-    }
-  }, [summary.hasPlan, plan, checkin.stats.to, coachMacros]);
-  const weekTargets = React.useMemo(() => {
-    if (!targetFor) return null;
-    const days = Array.from({ length: 7 }, (_, i) => targetFor(addDays(checkin.stats.from, i))).filter((d) => d !== null);
-    if (days.length === 0) return null;
-    const avg = (k: "calories" | "protein") => Math.round(days.reduce((s, d) => s + d![k], 0) / days.length);
-    return { calories: avg("calories"), protein: avg("protein"), steps: plan.fatLoss.activitySource === "steps" ? plan.fatLoss.dailySteps : null };
-  }, [targetFor, checkin.stats.from, plan.fatLoss]);
-  const today = targetFor ? targetFor(checkin.stats.to) : null;
-
-  // Workouts a week they usually do, from the three weeks before this check-in.
-  const usualWorkouts = React.useMemo(() => {
-    const from = addDays(checkin.stats.from, -21);
-    const before = summary.data.workoutDates.filter((d) => d >= from && d < checkin.stats.from).length;
-    return summary.data.workoutDates.length >= 3 ? before / 3 : null;
-  }, [summary.data.workoutDates, checkin.stats.from]);
-
-  const report = React.useMemo(
-    () =>
-      buildCheckinReport({
-        firstName: first,
-        unit,
-        checkin,
-        previous,
-        targets: weekTargets,
-        plannedRateLb: summary.progress?.plannedRate ?? null,
-        observedRateLb: summary.progress?.observedRate ?? null,
-        bodyWeightLb: summary.latestWeightLb,
-        tooFast: summary.flags.includes("too-fast"),
-        underFloor: summary.flags.includes("under-floor"),
-        plateau: summary.flags.includes("plateau"),
-        slipping: summary.data.slipping ?? [],
-        usualWorkouts,
-        milestones: (summary.data.milestones ?? []).map((m) => milestoneLabel(m, unit)),
-        recommendation: summary.progress?.recommendation ?? null,
-      }),
-    [first, unit, checkin, previous, weekTargets, summary, usualWorkouts],
+  // The report, once their macros are known (coach macros win over the plan's targets).
+  const { report, today } = React.useMemo(
+    () => reportFor(summary, checkin, previous, coachMacros ?? null, unit),
+    [summary, checkin, previous, coachMacros, unit],
   );
 
   // The coach's picks: the top suggestions ticked, each editable.
@@ -129,7 +86,17 @@ export function CheckinReportPanel({
     setPicked(Object.fromEntries(report.focus.map((f, i) => [f.id, i < FOCUS_DEFAULT])));
     setTexts(Object.fromEntries(report.focus.map((f) => [f.id, f.text])));
   }, [report.focus]);
-  const chosen = report.focus.filter((f) => picked[f.id]).map((f) => (texts[f.id] ?? f.text).trim()).filter(Boolean);
+  const chosenItems = report.focus.filter((f) => picked[f.id] && (texts[f.id] ?? f.text).trim());
+  const chosen = chosenItems.map((f) => (texts[f.id] ?? f.text).trim());
+  const chosenKinds = chosenItems.map((f) => f.id);
+  // A mid-week progress check on the focus items (worker/focus-nudges.ts).
+  const [midweek, setMidweek] = React.useState(true);
+  // "Draft with AI" builds on this report.
+  const reportBrief = reportText(report, chosen);
+  React.useEffect(() => {
+    onReport?.(reportBrief, { focus: chosen, kinds: chosenKinds, midweek });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the text and choices are the inputs
+  }, [reportBrief, midweek]);
   const [answer, setAnswer] = React.useState("");
   const question = checkin.answers.question.trim();
 
@@ -177,7 +144,7 @@ export function CheckinReportPanel({
       }
       const r = await call<{ checkins: Checkin[]; notified: boolean }>("/api/coach/checkins/reply", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, member: memberId, weekStart: checkin.weekStart, reply: text, focus: chosen }),
+        body: JSON.stringify({ company: companyId, member: memberId, weekStart: checkin.weekStart, reply: text, focus: chosen, focusKinds: chosenKinds, midweek }),
       });
       onSent(r);
     } catch (e) {
@@ -260,6 +227,18 @@ export function CheckinReportPanel({
           </ul>
         )}
       </div>
+
+      {chosen.length > 0 ? (
+        <label className="flex items-start gap-2 text-[12px]">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]" checked={midweek} onChange={(e) => setMidweek(e.target.checked)} />
+          <span>
+            <span className="font-semibold">Mid-week check on these</span>
+            <span className="block text-muted-foreground">
+              About 3 days in, {first} gets a notification with how they&apos;re doing, e.g. &quot;3 weigh-ins so far, 2 to go&quot;.
+            </span>
+          </span>
+        </label>
+      ) : null}
 
       {report.macro ? (
         canChangeMacros && macroOut !== null ? (

@@ -19,7 +19,7 @@ export const CHECKIN_DRAFT_PROMPT = `You draft weekly check-in replies for a nat
 - 90 to 180 words, plain text in short paragraphs. No headings, no markdown, no emojis unless the coach's previous replies or style use them.
 - Address the client by first name. Open with one or two specific wins from their answers or numbers.
 - Respond to their struggles, and answer their question directly and practically if they asked one.
-- Give one to three specific actions for next week, tied to their numbers (for example average protein against the target, steps, weigh-ins logged, habit score).
+- Give one to three specific actions for next week, tied to their numbers (for example average protein against the target, steps, weigh-ins logged, habit score). When a report from their numbers is given with the coach's focus items, use those items as the actions, in that order, in your own words.
 - Use only the numbers provided. Never invent data. If weight data is thin (few weigh-ins), say the trend needs more weigh-ins rather than drawing conclusions.
 - Encouraging but honest. No medical advice: if they mention pain, injury, illness, or anything suggesting disordered eating, recommend they speak to a medical professional and keep advice conservative.
 - Match the coach's voice from their previous replies and style notes. Don't add a sign-off name unless their style does.
@@ -37,6 +37,8 @@ export interface DraftInput {
   previousReplies: string[];
   coachNote: string;
   style: string;
+  /** The one-click report (src/lib/checkin-report-input.ts → reportText), when the coach has it open. */
+  report?: string;
 }
 
 const kg = (lb: number) => lb * 0.45359237;
@@ -68,6 +70,7 @@ export function draftInputText(d: DraftInput): string {
   }
   if (d.goalWeightLb !== null) lines.push(`Goal weight: ${w(d.goalWeightLb)}.`);
   if (d.coachNote.trim()) lines.push("", `Coach's private notes (background only, never quote): ${d.coachNote.trim().slice(0, 800)}`);
+  if (d.report?.trim()) lines.push("", "Report from their numbers, scored against their plan and last week:", d.report.trim().slice(0, 2500));
   if (d.previousReplies.length) {
     lines.push("", "The coach's previous replies to this client (match this voice; follow up on anything they asked for):");
     d.previousReplies.forEach((r, i) => lines.push(`--- ${i === 0 ? "last week" : "earlier"} ---`, r.slice(0, 900)));

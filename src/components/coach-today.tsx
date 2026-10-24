@@ -24,7 +24,7 @@ const flagReason = (m: MemberSummary, f: Flag) =>
 
 /** Where a member opens from Today: their lift progress when slipping strength is the only reason, else their overview. */
 const openTab = (m: MemberSummary): "training" | "overview" =>
-  m.flags.filter((f) => f !== "reply").every((f) => f === "slipping") && m.flags.includes("slipping") ? "training" : "overview";
+  m.flags.filter((f) => f !== "reply").every((f) => f === "slipping" || f === "muscle-loss") && m.flags.includes("slipping") ? "training" : "overview";
 
 export function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | null; size?: string }) {
   const [broken, setBroken] = React.useState(false);

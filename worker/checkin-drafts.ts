@@ -94,6 +94,7 @@ export async function draftCheckinReply(env: Env, viewerId: string, raw: unknown
           previousReplies: previous.results.map((r) => r.reply),
           coachNote: note?.note ?? "",
           style,
+          report: typeof b.report === "string" ? b.report.slice(0, 2500) : "",
         }),
       },
     ],

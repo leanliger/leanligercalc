@@ -20,7 +20,7 @@
 
 import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay } from "../src/lib/coach-api";
 import { CELEBRATE_DAYS } from "../src/lib/milestones";
-import { TREND_WEEKS, slippingLifts } from "../src/lib/strength-trends";
+import { TREND_WEEKS, strengthTrends } from "../src/lib/strength-trends";
 import type { Workout } from "../src/lib/training";
 import { celebrateSince, recentMilestones } from "./milestones";
 import { addDays, toISODate } from "../src/lib/dates";
@@ -174,7 +174,11 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     for (const [id, list] of byMember) {
       const m = members.get(id);
       try {
-        if (m) m.slipping = slippingLifts(list, today);
+        if (m) {
+          const trends = strengthTrends(list, today);
+          m.slipping = trends.filter((t) => t.status === "down").map((t) => t.name);
+          m.liftsTracked = trends.filter((t) => t.status !== "new").length;
+        }
       } catch (e) {
         // One member's odd workout must never break the whole dashboard.
         console.error("strength trends failed", { member: id, error: e instanceof Error ? e.message : String(e) });

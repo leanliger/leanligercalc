@@ -13,6 +13,7 @@ import {
   Inbox,
   MessageCircle,
   MessageSquare,
+  Zap,
   PanelRightClose,
   PanelRightOpen,
   RefreshCw,
@@ -43,6 +44,11 @@ import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
 import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
+import { MemberInsights } from "@/components/coach-member-insights";
+import { RoutineReplies, type RoutineItem } from "@/components/coach-routine-replies";
+import { reportFor, triageCheckin } from "@/lib/checkin-report-input";
+import type { Checkin } from "@/lib/checkins";
+import type { CoachMacros } from "@/lib/coach-macros";
 import { RemindMenu, useCoachReminders, type SentReminder } from "@/components/coach-remind-menu";
 import { suggestedReminders } from "@/lib/coach-reminders";
 import { CommunityStatsCard } from "@/components/coach-community-stats";
@@ -146,8 +152,19 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("member") ? "members" : "today",
   );
   const [libraryTab, setLibraryTab] = React.useState<"programs" | "results" | "announcements" | "nudges" | "testimonials">("programs");
-  // Inbox: check-ins to answer, or chats with members.
+  // Inbox: check-ins to answer, or chats with members; the routine-replies review.
   const [inboxTab, setInboxTab] = React.useState<"checkins" | "messages">("checkins");
+  const [inboxMode, setInboxMode] = React.useState<"list" | "routine">("list");
+  // Every unanswered check-in with what it needs, for the Inbox badges and routine replies.
+  const [waiting, setWaiting] = React.useState<{ memberId: string; checkin: Checkin; previous: Checkin | null; coachMacros: CoachMacros | null }[] | null>(null);
+  const loadWaiting = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/coach/checkins/waiting?company=${encodeURIComponent(companyId)}`, { credentials: "same-origin", headers: { accept: "application/json" } });
+      if (res.ok) setWaiting(((await res.json()) as { items: NonNullable<typeof waiting> }).items);
+    } catch {
+      /* no badges this time */
+    }
+  }, [companyId]);
   // Members ticked in the list for bulk actions, and the ones handed to Assign program.
   const [picked, setPicked] = React.useState<string[]>([]);
   const [assignPicked, setAssignPicked] = React.useState<string[]>([]);
@@ -321,6 +338,25 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     if (!res.ok) throw new Error("Couldn't send kudos.");
     void chats.refresh();
   };
+  // Each waiting check-in's report and what it needs from you (src/lib/checkin-report-input.ts).
+  const triaged = React.useMemo(() => {
+    const out = new Map<string, { ready: boolean; reasons: string[]; item: RoutineItem }>();
+    for (const w of waiting ?? []) {
+      const s = summaries.find((m) => m.data.userId === w.memberId);
+      if (!s) continue;
+      try {
+        const bundle = reportFor(s, w.checkin, w.previous, w.coachMacros, unit);
+        out.set(w.memberId, { ...triageCheckin(bundle.report, w.checkin), item: { summary: s, checkin: w.checkin, bundle } });
+      } catch {
+        /* no badge for this one */
+      }
+    }
+    return out;
+  }, [waiting, summaries, unit]);
+  const routineItems = [...triaged.values()].filter((t) => t.ready && t.item.summary.flags.includes("reply")).map((t) => t.item);
+  React.useEffect(() => {
+    if (view === "inbox") void loadWaiting();
+  }, [view, loadWaiting]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const navItems: CoachNavItem[] = [
@@ -474,8 +510,21 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               onOpenProfile={(id) => openMember(id)}
               switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
             />
+          ) : view === "inbox" && inboxMode === "routine" ? (
+            <RoutineReplies
+              companyId={companyId}
+              items={routineItems}
+              onBack={() => {
+                setInboxMode("list");
+                void loadWaiting();
+              }}
+              onSent={markReplied}
+            />
           ) : view === "inbox" ? (
             <CoachInbox
+              triage={triaged}
+              routineCount={routineItems.length}
+              onRoutine={() => setInboxMode("routine")}
               switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
               items={inbox}
               openId={inboxId}
@@ -1119,7 +1168,7 @@ function pausedLabel(p: PausePeriod): string {
 
 /* ================================= detail ================================= */
 
-type DetailTab = "overview" | "timeline" | "checkins" | "food" | "training" | "body";
+type DetailTab = "overview" | "insights" | "timeline" | "checkins" | "food" | "training" | "body";
 
 type TrainingView = "progress" | "log" | "muscles" | "program";
 
@@ -1137,6 +1186,7 @@ const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
   { id: "body", label: "Body" },
+  { id: "insights", label: "Insights" },
 ];
 
 function MemberDetail({
@@ -1460,6 +1510,8 @@ function MemberDetail({
               This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
             </p>
           </>
+        ) : tab === "insights" ? (
+          <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} />
         ) : tab === "timeline" ? (
           <MemberTimelineCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} today={today} />
         ) : tab === "checkins" ? (
@@ -1670,9 +1722,16 @@ function CoachInbox({
   onReplied,
   onOpenProfile,
   switcher,
+  triage,
+  routineCount,
+  onRoutine,
 }: {
   /** Check-ins | Messages. */
   switcher: React.ReactNode;
+  /** Per member: 1-click ready, or what needs the coach. */
+  triage: ReadonlyMap<string, { ready: boolean; reasons: string[] }>;
+  routineCount: number;
+  onRoutine: () => void;
   items: MemberSummary[];
   openId: string | null;
   onOpenId: (id: string | null) => void;
@@ -1714,9 +1773,18 @@ function CoachInbox({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
         {switcher}
-        <p className="w-full text-sm text-muted-foreground">
-          {items.length} check-in{items.length === 1 ? "" : "s"} waiting · oldest first
-        </p>
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            {items.length} check-in{items.length === 1 ? "" : "s"} waiting · oldest first
+            {routineCount > 0 ? ` · 1-click ready: ${routineCount}` : ""}
+          </p>
+          {routineCount > 0 ? (
+            <Button size="sm" className="ml-auto" onClick={onRoutine}>
+              <Zap />
+              Send routine replies ({routineCount})
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start">
         <ul aria-label="Check-ins waiting" className={cn("molten-card space-y-1 rounded-[1.25rem] border border-primary/15 bg-card p-2", current && "max-lg:hidden")}>
@@ -1737,6 +1805,18 @@ function CoachInbox({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold">{m.displayName}</span>
                     <span className="block truncate text-[12px] text-muted-foreground">{sentAgo(m.lastCheckin?.submittedAt, now)}</span>
+                    {triage.get(m.data.userId) ? (
+                      triage.get(m.data.userId)!.ready ? (
+                        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold text-success">
+                          <Zap className="h-3 w-3" aria-hidden />
+                          1-click ready
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">
+                          Needs you: {triage.get(m.data.userId)!.reasons.join(" · ")}
+                        </span>
+                      )
+                    ) : null}
                   </span>
                   <HealthPill health={m.health} />
                 </button>

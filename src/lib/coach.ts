@@ -16,6 +16,8 @@ import { weekStartOf, weeklyScore, type Zone } from "./habits";
 import { sanitizeAppState, type AppState } from "./persistence";
 import { dailyStreak } from "./streaks";
 import { activePause, withPauses, type PausePeriod } from "./pause";
+import { losingMuscle, weightChangeOver } from "./muscle-check";
+import { dropOffRisk, type DropOffRisk } from "./dropoff";
 
 export {
   COMPANY_ID_PATTERN,
@@ -40,6 +42,8 @@ export type Flag =
   | "no-weigh-in"
   | "no-workouts"
   | "slipping"
+  | "muscle-loss"
+  | "drop-off"
   | "checkin"
   | "inactive"
   | "no-plan";
@@ -85,6 +89,8 @@ export interface MemberSummary {
   /** Client health score 0–100 (healthScore); null while paused. */
   health: HealthScore | null;
   flags: Flag[];
+  /** How likely they are to go quiet and quit (src/lib/dropoff.ts). */
+  risk: DropOffRisk;
 }
 
 /**
@@ -134,6 +140,8 @@ export const FLAG_LABELS: Record<Flag, string> = {
   "no-weigh-in": `No weigh-in ${WEIGH_IN_GAP_DAYS}+ days`,
   "no-workouts": "No workouts this week",
   slipping: "Strength slipping",
+  "muscle-loss": "Losing muscle",
+  "drop-off": "At risk of quitting",
   checkin: "No check-in this week",
   inactive: `No logs ${INACTIVE_DAYS}+ days`,
   "no-plan": "No plan yet",
@@ -210,6 +218,7 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
   const health = paused ? null : healthScore(daysLogged7, score.percent, hasPlan ? (progress?.status ?? "no-data") : null);
 
   const flags: Flag[] = [];
+  const behindPlan = progress?.status === "behind";
   if (lastCheckin && !lastCheckin.replied) flags.push("reply");
   if (!hasPlan) flags.push("no-plan");
   // Safety first: these sit at the top of the list.
@@ -226,10 +235,15 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     if (data.workoutDates.length > 0 && workouts7 === 0) flags.push("no-workouts");
     // A lift whose estimated max fell more than 2% over six weeks.
     if ((data.slipping?.length ?? 0) > 0) flags.push("slipping");
+    // Cutting while several lifts slip (src/lib/muscle-check.ts).
+    if (losingMuscle(weightChangeOver(weighIns, today), data.slipping?.length ?? 0, data.liftsTracked ?? 0)) flags.push("muscle-loss");
     if (!checkedIn) flags.push("checkin");
   }
   // A paused member isn't expected to log.
   if (!paused && (daysSinceLog === null || daysSinceLog >= INACTIVE_DAYS)) flags.push("inactive");
+  // Likely to go quiet and quit (src/lib/dropoff.ts).
+  const risk = dropOffRisk(data, { daysSinceLog, healthScore: health?.score ?? null, behind: behindPlan, paused: paused !== null }, today);
+  if (risk.level === "high") flags.push("drop-off");
 
   return {
     data,
@@ -252,6 +266,7 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     checkedIn,
     health,
     flags,
+    risk,
   };
 }
 
@@ -267,6 +282,8 @@ export function sortForAttention(list: MemberSummary[]): MemberSummary[] {
     "no-weigh-in": 3,
     "no-workouts": 3,
     slipping: 3,
+    "muscle-loss": 4,
+    "drop-off": 6,
     inactive: 2,
     checkin: 1,
     "no-plan": 1,

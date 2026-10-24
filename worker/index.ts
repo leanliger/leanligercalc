@@ -49,6 +49,8 @@
  *   GET/PUT /api/coach/digest?company=…              coaches: my daily digest switch (see digest.ts)
  *   GET/PUT/DELETE /api/water-reminders  my hydration reminders (see water-reminders.ts)
  *   POST   /api/coach/checkins/draft    coaches: an AI draft reply to a check-in (see checkin-drafts.ts)
+ *   GET    /api/coach/checkins/waiting?company=…  coaches: every unanswered check-in, for Inbox badges and routine replies
+ *   GET    /api/coach/member-changes?company&member  coaches: every change made for a member, for "What moved the needle"
  *   GET    /api/coach/testimonials?company=…  coaches: members who said yes, with their newest comparison
  *   GET/POST /api/photos, GET/DELETE /api/photos/:id, PUT /api/photo-settings
  *                                   progress photos (optional; see photos.ts)
@@ -141,6 +143,7 @@ import {
 import { deleteSavedReply, getSavedReplies, saveSavedReply } from "./saved-replies";
 import { getNotifications, markNotificationsSeen } from "./notifications";
 import { getDigest, saveDigest, sendCoachDigests } from "./digest";
+import { sendFocusNudges } from "./focus-nudges";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
@@ -156,6 +159,8 @@ import {
   getTags,
   saveTags,
   bulkMacros,
+  coachWaitingCheckins,
+  coachMemberChanges,
   bulkMemberTags,
   setMemberTags,
   shareReport,
@@ -754,6 +759,14 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (voiceMatch) {
     if (method !== "GET") return error(405, "Method not allowed.");
     return (await memberVoice(env, userId, voiceMatch[1]!)) ?? error(404, "No voice reply.");
+  }
+  if (path === "/api/coach/member-changes") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachMemberChanges(env, userId, q("company"), q("member")));
+  }
+  if (path === "/api/coach/checkins/waiting") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await coachWaitingCheckins(env, userId, q("company")));
   }
   if (path === "/api/coach/checkins/reply") {
     if (method !== "POST") return error(405, "Method not allowed.");
@@ -1439,6 +1452,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_nudges_sent WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_messages WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_reminders WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_macro_history WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
@@ -1543,6 +1557,16 @@ export default {
           })
           .catch((e) => console.error("milestones crashed", e)),
       );
+      // Mid-week checks on check-in focus items: 15:00–23:45 UTC.
+      if (when.getUTCHours() >= 15) {
+        ctx.waitUntil(
+          sendFocusNudges(env, when)
+            .then((r) => {
+              if (r.due > 0) console.log("focus nudges", r);
+            })
+            .catch((e) => console.error("focus nudges crashed", e)),
+        );
+      }
       // Coaches' daily digest: 8am their time.
       ctx.waitUntil(
         sendCoachDigests(env, when)

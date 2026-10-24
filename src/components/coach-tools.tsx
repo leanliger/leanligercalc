@@ -47,6 +47,8 @@ export const FLAG_VARIANT: Record<Flag, "danger" | "warning" | "secondary" | "de
   "no-weigh-in": "warning",
   "no-workouts": "warning",
   slipping: "warning",
+  "muscle-loss": "danger",
+  "drop-off": "danger",
   checkin: "secondary",
   inactive: "secondary",
   "no-plan": "secondary",
@@ -289,6 +291,9 @@ export function MemberCheckinsCard({
   const [reply, setReply] = React.useState("");
   // Focus items from the one-click report, when its reply was moved into the box to edit.
   const [focus, setFocus] = React.useState<string[]>([]);
+  // The one-click report as text (for "Draft with AI"), and its focus types and mid-week choice.
+  const [brief, setBrief] = React.useState("");
+  const [choices, setChoices] = React.useState<{ kinds: string[]; midweek: boolean }>({ kinds: [], midweek: true });
   const [sending, setSending] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [drafting, setDrafting] = React.useState(false);
@@ -302,7 +307,7 @@ export function MemberCheckinsCard({
     try {
       const r = await call<{ draft: string; left: number }>("/api/coach/checkins/draft", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, member: memberId, weekStart, name: memberName, unit, style }),
+        body: JSON.stringify({ company: companyId, member: memberId, weekStart, name: memberName, unit, style, report: brief }),
       });
       setReply(r.draft);
       setDrafted(true);
@@ -336,7 +341,15 @@ export function MemberCheckinsCard({
     try {
       const r = await call<{ checkins: Checkin[]; notified: boolean }>("/api/coach/checkins/reply", {
         method: "POST",
-        body: JSON.stringify({ company: companyId, member: memberId, weekStart, reply, focus }),
+        body: JSON.stringify({
+          company: companyId,
+          member: memberId,
+          weekStart,
+          reply,
+          focus,
+          focusKinds: focus.length > 0 ? choices.kinds : [],
+          midweek: choices.midweek,
+        }),
       });
       setCheckins(r.checkins);
       setReply("");
@@ -378,6 +391,7 @@ export function MemberCheckinsCard({
                     setOpen(isOpen ? null : c.weekStart);
                     setReply("");
                     setFocus([]);
+                    setBrief("");
                     setDrafted(false);
                     setMessage(null);
                   }}
@@ -424,6 +438,10 @@ export function MemberCheckinsCard({
                                 r.notified ? `Sent. ${first(memberName)} got a notification.` : `Sent. ${first(memberName)} sees it next time they open the app.`,
                               );
                               onReplied?.();
+                            }}
+                            onReport={(b, c) => {
+                              setBrief(b);
+                              setChoices({ kinds: c.kinds, midweek: c.midweek });
                             }}
                             onEdit={(text, items) => {
                               setReply(text);

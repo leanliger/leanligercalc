@@ -200,6 +200,105 @@ export async function submitCheckin(env: SharingEnv, userId: string, raw: unknow
   return { ok: true, body: { checkins: await checkinsOf(env, userId) } };
 }
 
+/**
+ * Every unanswered check-in from the last two weeks across the whop's
+ * current members who share their progress, each with the one before it and
+ * the macros the coach set: the Inbox works out "1-click ready" and the
+ * routine replies from these (src/lib/checkin-report-input.ts).
+ */
+export async function coachWaitingCheckins(env: SharingEnv, viewerId: string, company: string): Promise<SharingResult> {
+  const denied = await adminOf(env, viewerId, company);
+  if (denied) return denied;
+  const listed = await companyMembers(env, company);
+  if (!listed.ok) return { ok: false, status: 502, error: "Couldn't get your member list from Whop. Try again in a moment." };
+  const ids = [...listed.profiles.keys()];
+  const since = addDays(todayISO(), -14);
+  const items: { memberId: string; checkin: Checkin; previous: Checkin | null; coachMacros: CoachMacros | null }[] = [];
+  for (let i = 0; i < ids.length; i += 45) {
+    const chunk = ids.slice(i, i + 45);
+    const marks = chunk.map(() => "?").join(",");
+    const [waiting, macros] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT c.user_id, c.week_start, c.answers, c.stats, c.submitted_at, c.reply, c.replied_at, c.reply_audio, c.reply_audio_seconds, c.coach_focus,
+                (SELECT json_object('week_start', p.week_start, 'answers', p.answers, 'stats', p.stats, 'submitted_at', p.submitted_at)
+                   FROM checkins p WHERE p.user_id = c.user_id AND p.week_start < c.week_start ORDER BY p.week_start DESC LIMIT 1) AS prev
+           FROM checkins c JOIN coach_sharing s ON s.user_id = c.user_id AND s.shared = 1
+          WHERE c.user_id IN (${marks}) AND c.reply IS NULL AND c.reply_audio IS NULL AND c.week_start >= ?`,
+      ).bind(...chunk, since),
+      env.DB.prepare(`SELECT user_id, kcal, protein, carbs, fat, note, set_at FROM coach_macros WHERE user_id IN (${marks})`).bind(...chunk),
+    ]);
+    const macroBy = new Map(((macros!.results ?? []) as (MacroRow & { user_id: string })[]).map((r) => [r.user_id, toMacros(r)]));
+    for (const r of (waiting!.results ?? []) as (CheckinRow & { user_id: string; prev: string | null })[]) {
+      const checkin = toCheckin(r);
+      if (!checkin) continue;
+      let previous: Checkin | null = null;
+      try {
+        const p = r.prev ? (JSON.parse(r.prev) as { week_start: string; answers: string; stats: string; submitted_at: string }) : null;
+        previous = p
+          ? toCheckin({ ...p, reply: null, replied_at: null, reply_audio: null, reply_audio_seconds: null, coach_focus: null })
+          : null;
+      } catch {
+        previous = null;
+      }
+      items.push({ memberId: r.user_id, checkin, previous, coachMacros: macroBy.get(r.user_id) ?? null });
+    }
+  }
+  return { ok: true, body: { items } };
+}
+
+/**
+ * Every change made for a member that could move their results, oldest
+ * first: macros set (history, else the current ones), programs and habit sets
+ * they added, program edits, check-in replies with focus items, reminders and
+ * automatic nudges. For src/lib/needle.ts on the Insights tab.
+ */
+export async function coachMemberChanges(env: SharingEnv, viewerId: string, company: string, member: string): Promise<SharingResult> {
+  const c = await coachCheck(env, viewerId, { company, member });
+  if ("error" in c) return c.error;
+  if (!(await isSharingProgress(env, c.memberId))) return { ok: false, status: 403, error: "This member isn't sharing their progress with you." };
+  const m = c.memberId;
+  const since = addDays(todayISO(), -200);
+  const [hist, current, assigned, edits, focus, reminders, nudges] = await env.DB.batch([
+    env.DB.prepare("SELECT kcal, protein, carbs, fat, set_at FROM coach_macro_history WHERE user_id = ? AND set_at >= ? ORDER BY set_at").bind(m, since),
+    env.DB.prepare("SELECT kcal, protein, carbs, fat, set_at FROM coach_macros WHERE user_id = ?").bind(m),
+    env.DB.prepare(
+      `SELECT a.kind, a.title, t.responded_at FROM assignments a JOIN assignment_targets t ON t.assignment_id = a.id
+        WHERE t.user_id = ? AND t.status = 'accepted' AND t.responded_at >= ?`,
+    ).bind(m, since),
+    env.DB.prepare("SELECT created_at FROM coach_program_edits WHERE member_id = ? AND created_at >= ?").bind(m, since),
+    env.DB.prepare("SELECT replied_at, coach_focus FROM checkins WHERE user_id = ? AND coach_focus IS NOT NULL AND replied_at >= ?").bind(m, since),
+    env.DB.prepare("SELECT kind, sent_at FROM coach_reminders WHERE member_id = ? AND sent_at >= ?").bind(m, since),
+    env.DB.prepare("SELECT kind, sent_at FROM coach_nudges_sent WHERE user_id = ? AND sent_at >= ?").bind(m, since),
+  ]);
+  type Row = Record<string, unknown>;
+  const rows = (r: D1Result | undefined) => (r?.results ?? []) as Row[];
+  const changes: { date: string; kind: string; title: string }[] = [];
+  const macroRows = rows(hist).length ? rows(hist) : rows(current);
+  for (const r of macroRows) {
+    changes.push({ date: String(r.set_at).slice(0, 10), kind: "macros", title: `Macros set: ${Number(r.kcal).toLocaleString("en-US")} kcal (P ${r.protein} · C ${r.carbs} · F ${r.fat})` });
+  }
+  for (const r of rows(assigned)) changes.push({ date: String(r.responded_at).slice(0, 10), kind: String(r.kind), title: `Started ${r.kind === "habits" ? "habits" : "program"} "${r.title}"` });
+  for (const r of rows(edits)) changes.push({ date: String(r.created_at).slice(0, 10), kind: "program-edit", title: "Program edited" });
+  for (const r of rows(focus)) {
+    let items: string[] = [];
+    try {
+      items = validateFocus(JSON.parse(String(r.coach_focus)));
+    } catch {
+      items = [];
+    }
+    if (items.length) changes.push({ date: String(r.replied_at).slice(0, 10), kind: "focus", title: `Focus: ${items
+          .map((x) => {
+            const s = x.split(/[.:(,]/)[0]!.trim();
+            return s.length > 40 ? `${s.slice(0, 39)}…` : s;
+          })
+          .join("; ")}` });
+  }
+  for (const r of rows(reminders)) changes.push({ date: String(r.sent_at).slice(0, 10), kind: "reminder", title: `Reminder: ${r.kind}` });
+  for (const r of rows(nudges)) changes.push({ date: String(r.sent_at).slice(0, 10), kind: "nudge", title: `Automatic nudge: ${r.kind}` });
+  changes.sort((a, b) => a.date.localeCompare(b.date));
+  return { ok: true, body: { changes } };
+}
+
 export async function coachCheckins(env: SharingEnv, viewerId: string, company: string, member: string): Promise<SharingResult> {
   const c = await coachCheck(env, viewerId, { company, member });
   if ("error" in c) return c.error;
@@ -216,11 +315,18 @@ export async function replyToCheckin(env: SharingEnv, viewerId: string, raw: unk
   if (!reply) return { ok: false, status: 422, error: "Write a reply first." };
   // Focus items from the one-click report, for the member's Today page; left as they were when none are sent.
   const focus = validateFocus(b.focus);
+  const kinds = Array.isArray(b.focusKinds)
+    ? b.focusKinds.filter((k): k is string => typeof k === "string" && /^[a-z-]{1,24}$/.test(k)).slice(0, focus.length)
+    : [];
+  // The mid-week check (worker/focus-nudges.ts) goes with focus items, unless the coach unticked it.
+  const nudge = focus.length === 0 ? null : b.midweek === false ? "off" : "pending";
   // (A voice reply sets reply to '' so the check-in counts as answered; text can follow.)
   const res = await env.DB.prepare(
-    `UPDATE checkins SET reply = ?, replied_by = ?, replied_at = ${NOW_SQL}, coach_focus = COALESCE(?, coach_focus) WHERE user_id = ? AND week_start = ?`,
+    `UPDATE checkins SET reply = ?, replied_by = ?, replied_at = ${NOW_SQL}, coach_focus = COALESCE(?, coach_focus),
+       coach_focus_kinds = COALESCE(?, coach_focus_kinds), focus_nudge = COALESCE(?, focus_nudge)
+     WHERE user_id = ? AND week_start = ?`,
   )
-    .bind(reply, viewerId, focus.length > 0 ? JSON.stringify(focus) : null, c.memberId, weekStart)
+    .bind(reply, viewerId, focus.length > 0 ? JSON.stringify(focus) : null, focus.length > 0 ? JSON.stringify(kinds) : null, nudge, c.memberId, weekStart)
     .run();
   if (!res.meta.changes) return { ok: false, status: 404, error: "That check-in isn't there any more." };
 
@@ -275,6 +381,9 @@ export async function coachSetMacros(env: SharingEnv, viewerId: string, raw: unk
        carbs = excluded.carbs, fat = excluded.fat, note = excluded.note, set_by = excluded.set_by, set_at = ${NOW_SQL}`,
   )
     .bind(c.memberId, obj(raw).company, v.value.kcal, v.value.protein, v.value.carbs, v.value.fat, v.value.note, viewerId)
+    .run();
+  await env.DB.prepare("INSERT INTO coach_macro_history (user_id, company_id, kcal, protein, carbs, fat, set_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(c.memberId, obj(raw).company, v.value.kcal, v.value.protein, v.value.carbs, v.value.fat, viewerId)
     .run();
   let notified = false;
   const exp = await experienceOf(env, c.memberId);
@@ -331,15 +440,24 @@ export async function bulkMacros(env: SharingEnv, viewerId: string, raw: unknown
     return { ok: false, status: 422, error: "Bad request." };
   }
 
-  for (let i = 0; i < writes.length; i += 40) {
+  for (let i = 0; i < writes.length; i += 20) {
     await env.DB.batch(
-      writes.slice(i, i + 40).map((w) =>
+      writes.slice(i, i + 20).flatMap((w) => [
+        env.DB.prepare("INSERT INTO coach_macro_history (user_id, company_id, kcal, protein, carbs, fat, set_by) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(
+          w.userId,
+          company,
+          w.m.kcal,
+          w.m.protein,
+          w.m.carbs,
+          w.m.fat,
+          viewerId,
+        ),
         env.DB.prepare(
           `INSERT INTO coach_macros (user_id, company_id, kcal, protein, carbs, fat, note, set_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (user_id) DO UPDATE SET company_id = excluded.company_id, kcal = excluded.kcal, protein = excluded.protein,
              carbs = excluded.carbs, fat = excluded.fat, note = excluded.note, set_by = excluded.set_by, set_at = ${NOW_SQL}`,
         ).bind(w.userId, company, w.m.kcal, w.m.protein, w.m.carbs, w.m.fat, w.m.note, viewerId),
-      ),
+      ]),
     );
   }
   // One notification per community: the same words for everyone.
