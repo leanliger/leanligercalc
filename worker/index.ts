@@ -119,7 +119,7 @@ import { describeMeal } from "./meal-describe";
 import { measurementSettings, sendMeasureDayReminders } from "./measure-day";
 import { coachMemberFood } from "./member-food";
 import { coachMemberTimeline } from "./member-timeline";
-import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
+import { getNudges, previewNudges, runNudgesNow, saveNudges, sendCoachNudges } from "./nudges";
 import { coachProgramResults } from "./program-results";
 import { communityStats } from "./community-stats";
 import { getReminders, sendReminder } from "./coach-reminders";
@@ -142,8 +142,8 @@ import {
 } from "./messages";
 import { deleteSavedReply, getSavedReplies, saveSavedReply } from "./saved-replies";
 import { getNotifications, markNotificationsSeen } from "./notifications";
-import { getDigest, saveDigest, sendCoachDigests } from "./digest";
-import { sendFocusNudges } from "./focus-nudges";
+import { getDigest, listDigests, previewDigest, saveDigest, sendCoachDigests, sendDigestNow } from "./digest";
+import { focusCheck, sendFocusNudges } from "./focus-nudges";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
 import { sendPhotoDayReminders } from "./photo-day";
@@ -950,8 +950,39 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     await markNotificationsSeen(env, userId);
     return noContent();
   }
+  if (path === "/api/coach/digests") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await listDigests(env, userId, q("company")));
+  }
+  if (path === "/api/coach/digest/preview") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await previewDigest(env, userId, q("company")));
+  }
+  if (path === "/api/coach/digest/send") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await sendDigestNow(env, userId, body.value));
+  }
+  if (path === "/api/coach/nudges/preview") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await previewNudges(env, userId, q("company")));
+  }
+  if (path === "/api/coach/nudges/run") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await runNudgesNow(env, userId, body.value));
+  }
+  if (path === "/api/coach/focus-check") {
+    if (method === "GET") return send(await focusCheck(env, userId, { company: q("company"), member: q("member"), weekStart: q("weekStart") }, false));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await focusCheck(env, userId, body.value, true));
+  }
   if (path === "/api/coach/digest") {
-    if (method === "GET") return send(await getDigest(env, userId, q("company")));
+    if (method === "GET") return send(await getDigest(env, userId, q("company"), url.searchParams.get("tz")));
     if (method !== "PUT") return error(405, "Method not allowed.");
     const body = await readJson(request);
     if (!body.ok) return body.response;
@@ -1455,6 +1486,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_macro_history WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_digest_log WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM food_logs WHERE user_id = ?").bind(userId),

@@ -3,6 +3,8 @@
  *
  *   GET /api/coach/nudges?company=…   coaches: the rules, and the nudges sent lately
  *   PUT /api/coach/nudges             coaches: save the rules { company, rules }
+ *   GET /api/coach/nudges/preview?company=…   coaches: who'd get a nudge right now, nothing sent
+ *   POST /api/coach/nudges/run         coaches: send them now { company, members }
  *
  * Checked from the cron every 15 minutes between 17:00 and 19:45 UTC (late
  * morning in the Americas, evening in Europe). Each whop with a rule on is
@@ -112,12 +114,19 @@ async function lastDays(env: Env, ids: readonly string[], kinds: ReadonlySet<Nud
   return out;
 }
 
-async function checkCompany(env: Env, companyId: string, today: string, budget: number): Promise<{ used: number; sent: number; done: boolean }> {
+type Picks = Map<NudgeKind, { userId: string; anchor: string }[]>;
+
+/**
+ * Who's due a nudge today, and for which rule: members Whop lists, sharing
+ * their progress, not paused today and not nudged today; for each, the first
+ * rule due for a gap not nudged yet. `used` counts Whop requests (the member list).
+ */
+async function planCompany(env: Env, companyId: string, today: string): Promise<{ ok: boolean; used: number; rules: NudgeRule[]; picks: Picks }> {
   const rules = (await savedRules(env, companyId)).filter((r) => r.enabled);
-  if (rules.length === 0) return { used: 0, sent: 0, done: true };
+  const picks: Picks = new Map();
+  if (rules.length === 0) return { ok: true, used: 0, rules, picks };
   const listed = await companyMembers(env, companyId);
-  let used = 1;
-  if (!listed.ok) return { used, sent: 0, done: false };
+  if (!listed.ok) return { ok: false, used: 1, rules, picks };
   const memberIds = [...listed.profiles.keys()];
 
   // Sharing members, when they started sharing, their pauses, and what they were sent.
@@ -147,11 +156,9 @@ async function checkCompany(env: Env, companyId: string, today: string, budget: 
     }
   }
   const candidates = [...since.keys()].filter((id) => !paused.has(id) && !sentToday.has(id));
-  if (candidates.length === 0) return { used, sent: 0, done: true };
+  if (candidates.length === 0) return { ok: true, used: 1, rules, picks };
 
-  // The first rule due for each member, about a gap not nudged yet.
   const last = await lastDays(env, candidates, new Set(rules.map((r) => r.kind)));
-  const picks = new Map<NudgeKind, { userId: string; anchor: string }[]>();
   for (const id of candidates) {
     for (const kind of NUDGE_ORDER) {
       const rule = rules.find((r) => r.kind === kind);
@@ -162,9 +169,19 @@ async function checkCompany(env: Env, companyId: string, today: string, budget: 
       break;
     }
   }
-  if (picks.size === 0) return { used, sent: 0, done: true };
+  return { ok: true, used: 1, rules, picks };
+}
 
-  // One request per community and message, for everyone getting it.
+/** Send the picks: one request per community and message, for everyone getting it. */
+async function sendPicks(
+  env: Env,
+  companyId: string,
+  today: string,
+  rules: NudgeRule[],
+  picks: Picks,
+  budget: number,
+  used: number,
+): Promise<{ used: number; sent: number; done: boolean }> {
   const experiences = await experiencesOf(env, [...picks.values()].flat().map((p) => p.userId));
   let sent = 0;
   let done = true;
@@ -205,6 +222,49 @@ async function checkCompany(env: Env, companyId: string, today: string, budget: 
     }
   }
   return { used, sent, done };
+}
+
+async function checkCompany(env: Env, companyId: string, today: string, budget: number): Promise<{ used: number; sent: number; done: boolean }> {
+  const plan = await planCompany(env, companyId, today);
+  if (!plan.ok) return { used: plan.used, sent: 0, done: false };
+  if (plan.picks.size === 0) return { used: plan.used, sent: 0, done: true };
+  return sendPicks(env, companyId, today, plan.rules, plan.picks, budget, plan.used);
+}
+
+/* ------------------------------- on demand ------------------------------- */
+
+/** "Run nudges now": who would get one right now, and the message. Nothing is sent. */
+export async function previewNudges(env: Env, viewerId: string, companyId: string, now = new Date()): Promise<Result> {
+  const denied = await adminCheck(env, viewerId, companyId);
+  if (denied) return denied;
+  const plan = await planCompany(env, companyId, now.toISOString().slice(0, 10));
+  if (!plan.ok) return { ok: false, status: 502, error: "Couldn't get your member list from Whop. Try again in a moment." };
+  if (plan.rules.length === 0) return { ok: true, body: { items: [], rulesOn: 0 } };
+  const items = [...plan.picks].flatMap(([kind, list]) => {
+    const rule = plan.rules.find((r) => r.kind === kind)!;
+    return list.map((p) => ({ memberId: p.userId, kind, message: rule.message }));
+  });
+  return { ok: true, body: { items, rulesOn: plan.rules.length } };
+}
+
+/** Send now to the members the coach kept ticked (still only those due, and once a day). */
+export async function runNudgesNow(env: Env, viewerId: string, raw: unknown, now = new Date()): Promise<Result> {
+  const b = (typeof raw === "object" && raw !== null ? raw : {}) as { company?: unknown; members?: unknown };
+  const companyId = typeof b.company === "string" ? b.company : "";
+  const denied = await adminCheck(env, viewerId, companyId);
+  if (denied) return denied;
+  const keep = new Set(Array.isArray(b.members) ? b.members.filter((x): x is string => typeof x === "string") : []);
+  if (keep.size === 0) return { ok: false, status: 422, error: "Pick at least one member." };
+  const today = now.toISOString().slice(0, 10);
+  const plan = await planCompany(env, companyId, today);
+  if (!plan.ok) return { ok: false, status: 502, error: "Couldn't get your member list from Whop. Try again in a moment." };
+  const picks: Picks = new Map();
+  for (const [kind, list] of plan.picks) {
+    const kept = list.filter((p) => keep.has(p.userId));
+    if (kept.length) picks.set(kind, kept);
+  }
+  const r = await sendPicks(env, companyId, today, plan.rules, picks, REQUESTS_PER_RUN, plan.used);
+  return { ok: true, body: { sent: r.sent } };
 }
 
 export async function sendCoachNudges(env: Env, now: Date): Promise<{ companies: number; sent: number }> {

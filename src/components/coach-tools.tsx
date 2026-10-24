@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { VoicePlayer, VoiceRecorder } from "@/components/voice-reply";
 import { SavedRepliesButton } from "@/components/saved-replies";
 import { CheckinReportPanel } from "@/components/checkin-report";
+import { ProgressCheckNow } from "@/components/coach-send-now";
 
 /** Coach dashboard pieces: private notes, check-ins, set macros, and the "look at today" list. */
 
@@ -419,6 +420,11 @@ export function MemberCheckinsCard({
                       <div className="rounded-md bg-primary/5 p-2.5">
                         <p className="text-[11px] font-medium uppercase tracking-wide text-primary">Your reply · {formatShort((c.repliedAt ?? "").slice(0, 10))}</p>
                         <p className="whitespace-pre-wrap text-sm">{c.reply}</p>
+                        {c.coachFocus?.length ? (
+                          <div className="mt-2 border-t border-primary/15 pt-2">
+                            <ProgressCheckNow companyId={companyId} memberId={memberId} memberName={memberName} weekStart={c.weekStart} />
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-2">

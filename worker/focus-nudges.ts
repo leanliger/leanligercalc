@@ -16,7 +16,7 @@ import { STEPS_KEY, type HabitEntries } from "../src/lib/habits";
 import { sanitizeAppState } from "../src/lib/persistence";
 import { currentPlanWeek, effectiveCarbInputs } from "../src/lib/plan-link";
 import { sendWhop, type ReminderEnv } from "./reminders";
-import { experienceOf } from "./sharing";
+import { coachCheck, experienceOf, type SharingEnv } from "./sharing";
 import type { WhopEnv } from "./whop";
 
 type Env = WhopEnv & ReminderEnv & { DB: D1Database };
@@ -57,6 +57,43 @@ export async function sendFocusNudges(env: Env, now: Date): Promise<{ due: numbe
     else console.error("focus nudge failed", { status: res.status, reason: res.reason });
   }
   return { due: results.length, sent };
+}
+
+type Result = { ok: true; body: unknown } | { ok: false; status: number; error: string };
+
+/**
+ * "Send progress check now" (a member's Check-ins tab):
+ *
+ *   GET  /api/coach/focus-check?company&member&weekStart   the message as it would arrive, nothing sent
+ *   POST /api/coach/focus-check                            send it now { company, member, weekStart }
+ *
+ * Once per check-in: sending it now means the automatic one doesn't go.
+ */
+export async function focusCheck(env: Env & SharingEnv, viewerId: string, raw: unknown, send: boolean, now = new Date()): Promise<Result> {
+  const c = await coachCheck(env, viewerId, raw);
+  if ("error" in c) return c.error;
+  const b = raw as Record<string, unknown>;
+  const weekStart = typeof b.weekStart === "string" && /^\d{4}-\d\d-\d\d$/.test(b.weekStart) ? b.weekStart : "";
+  const row = await env.DB.prepare("SELECT replied_at, coach_focus_kinds, focus_nudge FROM checkins WHERE user_id = ? AND week_start = ?")
+    .bind(c.memberId, weekStart)
+    .first<{ replied_at: string | null; coach_focus_kinds: string | null; focus_nudge: string | null }>();
+  if (!row?.replied_at || !row.coach_focus_kinds) return { ok: false, status: 404, error: "That check-in has no focus items to check on." };
+  const sentAt = row.focus_nudge && row.focus_nudge !== "pending" && row.focus_nudge !== "off" ? row.focus_nudge : null;
+  let kinds: string[] = [];
+  try {
+    kinds = JSON.parse(row.coach_focus_kinds) as string[];
+  } catch {
+    kinds = [];
+  }
+  const message = { title: "Halfway check on your focus", content: await progressLine(env, c.memberId, row.replied_at.slice(0, 10), now.toISOString().slice(0, 10), kinds) };
+  if (!send) return { ok: true, body: { message, sentAt } };
+  if (sentAt) return { ok: false, status: 409, error: `Already sent on ${sentAt.slice(0, 10)}.` };
+  const exp = await experienceOf(env, c.memberId);
+  if (!exp) return { ok: false, status: 409, error: "We don't know which community to notify them in yet. They need to open the app from your Whop first." };
+  const res = await sendWhop(env, exp, c.memberId, message);
+  if (!res.ok) return { ok: false, status: 502, error: "Whop didn't take the notification. Try again in a moment." };
+  await env.DB.prepare("UPDATE checkins SET focus_nudge = ? WHERE user_id = ? AND week_start = ?").bind(now.toISOString(), c.memberId, weekStart).run();
+  return { ok: true, body: { sentAt: now.toISOString() } };
 }
 
 /** How they're doing since the reply on the focus items that can be counted. */

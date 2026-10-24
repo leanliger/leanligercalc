@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { formatShort } from "@/lib/dates";
 import { ANNOUNCEMENT_BODY_MAX, ANNOUNCEMENT_TITLE_MAX, DIGEST_HOUR, NOTIFICATIONS_DAYS, formatSendAt, type Announcement } from "@/lib/messages";
 import type { MemberTag } from "@/lib/member-tags";
+import { cn } from "@/lib/utils";
+import { DigestNow } from "@/components/coach-send-now";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -234,6 +236,62 @@ export function CoachAnnouncements({ companyId, tags }: { companyId: string; tag
   );
 }
 
+const DIGEST_STATUS: Record<string, { label: string; tone: string }> = {
+  sent: { label: "Sent to you on Whop", tone: "bg-success/15 text-success" },
+  "sent-community": { label: "Sent on Whop (through your community)", tone: "bg-success/15 text-success" },
+  off: { label: "Notification off", tone: "bg-muted text-muted-foreground" },
+  nothing: { label: "All caught up", tone: "bg-muted text-muted-foreground" },
+};
+
+/** Today → Daily digests: every morning's digest, newest first, and what happened to its notification. */
+export function DigestHistory({ companyId }: { companyId: string }) {
+  const [list, setList] = React.useState<{ date: string; title: string; content: string; status: string }[] | null>(null);
+  const [showAll, setShowAll] = React.useState(false);
+  React.useEffect(() => {
+    let live = true;
+    call<{ digests: { date: string; title: string; content: string; status: string }[] }>(`/api/coach/digests?company=${encodeURIComponent(companyId)}`)
+      .then((r) => live && setList(r.digests))
+      .catch(() => live && setList([]));
+    return () => {
+      live = false;
+    };
+  }, [companyId]);
+  const shown = showAll ? list ?? [] : (list ?? []).slice(0, 7);
+  return (
+    <section aria-label="Daily digests" className="space-y-2 rounded-[1.25rem] border border-primary/15 p-4">
+      <h3 className="text-sm font-semibold">Daily digests</h3>
+      {list === null ? (
+        <div className="h-16 animate-pulse rounded-xl bg-muted/30" aria-busy="true" />
+      ) : list.length === 0 ? (
+        <p className="text-[12px] text-muted-foreground">Your first digest is saved here tomorrow at {DIGEST_HOUR}am your time.</p>
+      ) : (
+        <ol className="divide-y divide-border">
+          {shown.map((d) => {
+            const s = DIGEST_STATUS[d.status] ?? { label: `Not sent: ${d.status.replace(/^failed: ?/, "")}`, tone: "bg-destructive/15 text-destructive" };
+            return (
+              <li key={d.date} className="space-y-0.5 py-2">
+                <p className="flex flex-wrap items-center gap-2">
+                  <span className="text-[12px] font-semibold text-muted-foreground">
+                    {new Date(`${d.date}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                  </span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", s.tone)}>{s.label}</span>
+                </p>
+                <p className="text-sm font-semibold">{d.title}</p>
+                <p className="text-[13px] text-muted-foreground">{d.content}</p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {list && list.length > 7 ? (
+        <button type="button" onClick={() => setShowAll((v) => !v)} className="text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
+          {showAll ? "Show the last week" : `Show all ${list.length}`}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * Today → "Daily digest": one Whop notification each morning at 8am (this
  * device's time zone) summing up what needs the coach.
@@ -245,7 +303,8 @@ export function CoachDigestToggle({ companyId }: { companyId: string }) {
   const q = `company=${encodeURIComponent(companyId)}`;
 
   React.useEffect(() => {
-    call<{ enabled: boolean }>(`/api/coach/digest?${q}`)
+    // With this device's time zone, so the dashboard keeps a digest each morning (8am here).
+    call<{ enabled: boolean }>(`/api/coach/digest?${q}&tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`)
       .then((r) => setEnabled(r.enabled))
       .catch(() => setEnabled(null));
   }, [q]);
@@ -274,8 +333,8 @@ export function CoachDigestToggle({ companyId }: { companyId: string }) {
           Daily digest
         </label>
         <p className="text-[12px] text-muted-foreground">
-          A Whop notification at {DIGEST_HOUR}am your time: check-ins to reply to, members to reach out to, slipping lifts, wins and unread
-          messages. Skipped on days nothing needs you.
+          Every morning at {DIGEST_HOUR}am your time: check-ins to reply to, members to reach out to, slipping lifts, wins and unread
+          messages. It&apos;s always kept below; switch this on to get it as a Whop notification too.
         </p>
         {error ? (
           <p role="alert" className="text-[12px] text-destructive">
@@ -284,6 +343,7 @@ export function CoachDigestToggle({ companyId }: { companyId: string }) {
         ) : null}
       </div>
       <Switch id={id} checked={enabled === true} disabled={enabled === null} onCheckedChange={(v) => void change(v)} />
+      <DigestNow companyId={companyId} />
     </div>
   );
 }

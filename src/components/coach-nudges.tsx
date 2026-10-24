@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatShort } from "@/lib/dates";
 import { NUDGE_DAYS_MAX, NUDGE_DAYS_MIN, NUDGE_INFO, NUDGE_MESSAGE_MAX, type NudgeKind, type NudgeRule } from "@/lib/nudges";
 import { cn } from "@/lib/utils";
+import { NudgesNow } from "@/components/coach-send-now";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -88,6 +89,7 @@ export function CoachNudges({ companyId, names }: { companyId: string; names: Re
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <NudgesNow companyId={companyId} names={names} />
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}

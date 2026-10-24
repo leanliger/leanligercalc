@@ -42,7 +42,7 @@ import { PhysiqueFocusCard } from "@/components/physique-focus-card";
 import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-compare-card";
 import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
-import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
+import { CoachAnnouncements, CoachDigestToggle, DigestHistory } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
 import { MemberInsights } from "@/components/coach-member-insights";
 import { RoutineReplies, type RoutineItem } from "@/components/coach-routine-replies";
@@ -600,6 +600,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 </EmptyNote>
               ) : null}
               <CoachDigestToggle companyId={companyId} />
+              <DigestHistory companyId={companyId} />
             </div>
           ) : current ? (
             <MemberDetail
