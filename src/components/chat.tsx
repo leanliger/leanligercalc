@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Clock, ImagePlus, Loader2, MessageCircle, Mic, Send, X } from "lucide-react";
+import { Clock, ImagePlus, Loader2, MessageCircle, Mic, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/coach-today";
 import { prepareForUpload } from "@/components/photos-card";
 import { SavedRepliesButton } from "@/components/saved-replies";
 import { VoicePlayer, VoiceRecorder } from "@/components/voice-reply";
@@ -27,9 +26,6 @@ const timeOf = (iso: string) => {
   const today = new Date().toDateString() === d.toDateString();
   return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : `${formatShort(iso.slice(0, 10))}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 };
-
-/** What a message says in a one-line preview. */
-export const messagePreview = (m: ChatMessage) => m.body || (m.attachment?.kind === "photo" ? "Photo" : m.attachment?.kind === "voice" ? "Voice note" : "");
 
 /** Polls `load` every few seconds while mounted and the page is visible. */
 function usePolled(load: () => Promise<void>, deps: React.DependencyList) {
@@ -468,100 +464,6 @@ export function CoachChatPanel({
         }}
       />
     </section>
-  );
-}
-
-/**
- * Inbox → Messages: every chat, newest first, with unread counts; the open one
- * beside the list on a computer, in its place on a phone.
- */
-export function CoachMessagesInbox({
-  companyId,
-  threads,
-  names,
-  onRead,
-  onOpenProfile,
-  switcher,
-}: {
-  companyId: string;
-  threads: ChatThread[];
-  names: ReadonlyMap<string, { name: string; avatarUrl: string | null }>;
-  onRead: () => void;
-  onOpenProfile: (userId: string) => void;
-  switcher: React.ReactNode;
-}) {
-  const [openId, setOpenId] = React.useState<string | null>(null);
-  const open = threads.find((t) => t.memberId === openId) ?? null;
-  const who = (id: string) => names.get(id) ?? { name: "A member", avatarUrl: null };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
-        {switcher}
-      </div>
-      {threads.length === 0 ? (
-        <p className="rounded-[1.25rem] border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          No messages yet. Members can message you from the chat icon at the top of their app, and you can start a chat from the Message
-          button on any member&apos;s page.
-        </p>
-      ) : (
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start">
-          <ul aria-label="Chats" className={cn("molten-card space-y-1 rounded-[1.25rem] border border-primary/15 bg-card p-2", open && "max-lg:hidden")}>
-            {threads.map((t) => {
-              const p = who(t.memberId);
-              const on = openId === t.memberId;
-              return (
-                <li key={t.memberId}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenId(t.memberId)}
-                    aria-current={on ? "true" : undefined}
-                    className={cn(
-                      "flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      on ? "bg-primary/[0.14]" : "hover:bg-muted/40",
-                    )}
-                  >
-                    <Avatar name={p.name} url={p.avatarUrl} />
-                    <span className="min-w-0 flex-1">
-                      <span className={cn("block truncate", t.unread > 0 ? "font-extrabold" : "font-semibold")}>{p.name}</span>
-                      <span className="block truncate text-[12px] text-muted-foreground">
-                        {t.last.fromCoach ? "You: " : ""}
-                        {messagePreview(t.last)}
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 flex-col items-end gap-1">
-                      <span className="text-[11px] text-muted-foreground">{formatShort(t.last.at.slice(0, 10))}</span>
-                      {t.unread > 0 ? (
-                        <span className="tabular rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground" aria-label={`${t.unread} unread`}>
-                          {t.unread}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {open ? (
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={() => setOpenId(null)}>
-                  <ArrowLeft />
-                  All chats
-                </Button>
-                <Button size="sm" variant="outline" className="ml-auto" onClick={() => onOpenProfile(open.memberId)}>
-                  Open profile
-                </Button>
-              </div>
-              <CoachChatPanel key={open.memberId} companyId={companyId} memberId={open.memberId} memberName={who(open.memberId).name} onRead={onRead} />
-            </div>
-          ) : (
-            <p className="hidden rounded-[1.25rem] border border-dashed border-border p-6 text-center text-sm text-muted-foreground lg:block">Pick a chat.</p>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

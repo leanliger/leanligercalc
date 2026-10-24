@@ -43,6 +43,9 @@ export interface ChatMessage {
   scheduledFor?: string | null;
 }
 
+/** What a message says in a one-line preview. */
+export const messagePreview = (m: ChatMessage) => m.body || (m.attachment?.kind === "photo" ? "Photo" : m.attachment?.kind === "voice" ? "Voice note" : "");
+
 /** One member's thread in the coach's list. */
 export interface ChatThread {
   memberId: string;

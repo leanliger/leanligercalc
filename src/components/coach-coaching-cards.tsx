@@ -476,9 +476,9 @@ export function ClientFile({
   );
 }
 
-export function ClientFileButton({ onOpen }: { onOpen: () => void }) {
+export function ClientFileButton({ onOpen, disabled }: { onOpen: () => void; disabled?: boolean }) {
   return (
-    <Button size="sm" variant="outline" onClick={onOpen}>
+    <Button size="sm" variant="outline" onClick={onOpen} disabled={disabled}>
       <FileText />
       Client file
     </Button>

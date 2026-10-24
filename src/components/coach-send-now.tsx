@@ -199,7 +199,7 @@ export function NudgesNow({ companyId, names }: { companyId: string; names: Read
     }
   };
   return (
-    <div className="space-y-2 rounded-2xl border border-border p-3">
+    <div id="run-nudges" className="scroll-mt-20 space-y-2 rounded-2xl border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <BellRing className="h-4 w-4 text-primary" aria-hidden />
         <p className="text-sm font-semibold">Run nudges now</p>

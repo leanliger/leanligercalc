@@ -1,16 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Check, Loader2, MessageSquare, PartyPopper, Search } from "lucide-react";
-import { FLAG_LABELS, healthZone, type Flag, type MemberSummary } from "@/lib/coach";
-import { kudosMessage } from "@/lib/messages";
+import { Check, Loader2, MessageCircle, MessageSquare, MoreHorizontal, PartyPopper, Zap } from "lucide-react";
+import { FLAG_LABELS, type Flag, type MemberSummary } from "@/lib/coach";
+import { kudosMessage, messagePreview, type ChatThread } from "@/lib/messages";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
  * The coach dashboard's frame (coach-dashboard.tsx): the side menu, the
- * "Today" lists of who needs the coach, and the strip of this week's numbers.
+ * "Today" queue of what needs the coach, and the strip of this week's numbers.
  */
 
 /** Drifting: any flag other than a check-in waiting on the coach. */
@@ -23,7 +23,7 @@ const flagReason = (m: MemberSummary, f: Flag) =>
     : FLAG_LABELS[f];
 
 /** Where a member opens from Today: their lift progress when slipping strength is the only reason, else their overview. */
-const openTab = (m: MemberSummary): "training" | "overview" =>
+export const openTab = (m: MemberSummary): "training" | "overview" =>
   m.flags.filter((f) => f !== "reply").every((f) => f === "slipping" || f === "muscle-loss") && m.flags.includes("slipping") ? "training" : "overview";
 
 export function Avatar({ name, url, size = "h-9 w-9" }: { name: string; url: string | null; size?: string }) {
@@ -107,9 +107,7 @@ export function CoachNav({ items, footer, className }: { items: CoachNavItem[]; 
 
 /* ================================== today ================================== */
 
-const LANE_LIMIT = 4;
-
-function sentAgo(iso: string | undefined, now: number): string {
+export function sentAgo(iso: string | undefined, now: number): string {
   if (!iso) return "Check-in waiting";
   const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
   if (h < 1) return "Sent just now";
@@ -118,10 +116,6 @@ function sentAgo(iso: string | undefined, now: number): string {
   return d === 1 ? "Sent yesterday" : `Sent ${d} days ago`;
 }
 
-/**
- * Who needs the coach today, in two lists: check-ins waiting for a reply, and
- * members drifting (any other flag). Most urgent first, as the list sorts them.
- */
 /** A member's newest milestone, in words ("Down 10 lb since starting"). */
 const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => {
   const w = [...(m.data.milestones ?? [])].sort((a, b) => b.reachedOn.localeCompare(a.reachedOn))[0];
@@ -194,155 +188,248 @@ export function KudosButton({
   );
 }
 
-export function TodayLanes({
+const newestWin = (m: MemberSummary) => (m.data.milestones ?? []).reduce((d, x) => (x.reachedOn > d ? x.reachedOn : d), "");
+
+/* ================================ action queue ================================ */
+
+type QueueKind = "safety" | "drop-off" | "checkin" | "message" | "muscle" | "risk" | "win";
+type QueueFilter = "all" | "checkins" | "messages" | "risk" | "wins";
+
+/** Most urgent first: safety, then quitting, then people waiting on a reply, then drifting, then wins. */
+const KIND: Record<QueueKind, { rank: number; label: string; stripe: string; chip: string; filter: QueueFilter }> = {
+  safety: { rank: 0, label: "Safety", stripe: "border-l-destructive", chip: "bg-destructive/15 text-destructive", filter: "risk" },
+  "drop-off": { rank: 1, label: "May quit", stripe: "border-l-destructive", chip: "bg-destructive/15 text-destructive", filter: "risk" },
+  checkin: { rank: 2, label: "Check-in", stripe: "border-l-primary", chip: "bg-primary/15 text-primary", filter: "checkins" },
+  message: { rank: 3, label: "Message", stripe: "border-l-primary", chip: "bg-primary/15 text-primary", filter: "messages" },
+  muscle: { rank: 4, label: "Losing muscle", stripe: "border-l-warning", chip: "bg-warning/15 text-warning", filter: "risk" },
+  risk: { rank: 5, label: "Drifting", stripe: "border-l-warning", chip: "bg-warning/15 text-warning", filter: "risk" },
+  win: { rank: 6, label: "Win", stripe: "border-l-success", chip: "bg-success/15 text-success", filter: "wins" },
+};
+
+const QUEUE_LIMIT = 10;
+
+interface QueueRow {
+  key: string;
+  kind: QueueKind;
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  summary: MemberSummary | null;
+  reason: string;
+  /** Other things waiting from them ("2 unread", "Check-in waiting"). */
+  also: string[];
+  /** Within a kind: oldest first for replies, the list's urgency order for the rest. */
+  order: string;
+}
+
+/**
+ * Today: one list of everything that needs the coach, most urgent first.
+ * Each member shows once, at their most urgent reason (wins are listed apart),
+ * with the action for it right there: Reply opens the Inbox, Remind sends a
+ * reminder, Kudos sends congratulations. Check-ins that are 1-click ready are
+ * left out and cleared together from the button at the top.
+ */
+export function ActionQueue({
   members,
+  threads,
+  names,
+  triage,
+  routineCount,
   unit,
+  onRoutine,
+  onInbox,
   onOpen,
-  onShowAll,
   onKudos,
+  remind,
 }: {
   members: MemberSummary[];
+  threads: ChatThread[];
+  /** Everyone's name and photo, for messages from members who don't share. */
+  names: ReadonlyMap<string, { name: string; avatarUrl: string | null }>;
+  triage: ReadonlyMap<string, { ready: boolean; reasons: string[] }>;
+  routineCount: number;
   unit: WeightUnit;
-  /** Send kudos as a chat message. */
-  onKudos?: (memberId: string, text: string) => Promise<void>;
-  /** Open a member, on the check-ins tab or their overview. */
-  onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
-  /** Show the whole list, filtered to this lane. */
-  onShowAll: (filter: "reply" | "risk" | "all") => void;
+  onRoutine: () => void;
+  /** Their waiting check-in and chat. */
+  onInbox: (userId: string) => void;
+  onOpen: (userId: string, tab: "overview" | "training") => void;
+  onKudos: (memberId: string, text: string) => Promise<void>;
+  /** The Remind menu for a member. */
+  remind: (m: MemberSummary) => React.ReactNode;
 }) {
+  const [show, setShow] = React.useState<QueueFilter>("all");
+  const [all, setAll] = React.useState(false);
   const now = Date.now();
-  const reply = members.filter((m) => m.flags.includes("reply"));
-  const risk = members.filter(isAtRisk);
-  // Milestones in the last week, newest first.
-  const wins = members
-    .filter((m) => (m.data.milestones ?? []).length > 0)
-    .sort((a, b) => newestWin(b).localeCompare(newestWin(a)));
+  const unread = new Map(threads.filter((t) => t.unread > 0 && !t.last.fromCoach).map((t) => [t.memberId, t]));
+
+  const rows: QueueRow[] = [];
+  members.forEach((m, i) => {
+    const id = m.data.userId;
+    const f = m.flags;
+    const thread = unread.get(id);
+    const t = triage.get(id);
+    const waitingReply = f.includes("reply");
+    const base = { id, name: m.displayName, avatarUrl: m.data.avatarUrl, summary: m, order: String(i).padStart(5, "0") };
+    let row: { kind: QueueKind; reason: string; order?: string } | null = null;
+    if (f.includes("too-fast") || f.includes("under-floor")) {
+      row = { kind: "safety", reason: f.filter((x) => x === "too-fast" || x === "under-floor").map((x) => FLAG_LABELS[x]).join(" · ") };
+    } else if (f.includes("drop-off")) {
+      row = { kind: "drop-off", reason: m.risk.reasons[0]?.text ?? FLAG_LABELS["drop-off"] };
+    } else if (waitingReply && !t?.ready) {
+      row = {
+        kind: "checkin",
+        reason: [sentAgo(m.lastCheckin?.submittedAt, now), t && t.reasons.length ? `needs you: ${t.reasons.join(", ")}` : null].filter(Boolean).join(" · "),
+        order: m.lastCheckin?.submittedAt ?? "",
+      };
+    } else if (thread) {
+      row = { kind: "message", reason: `“${messagePreview(thread.last)}”`, order: thread.last.at };
+    } else if (f.includes("muscle-loss")) {
+      row = { kind: "muscle", reason: flagReason(m, f.includes("slipping") ? "slipping" : "muscle-loss") };
+    } else if (isAtRisk(m)) {
+      row = { kind: "risk", reason: f.filter((x) => x !== "reply").map((x) => flagReason(m, x)).join(" · ") };
+    }
+    if (row) {
+      const also = [
+        row.kind !== "message" && thread ? `${thread.unread} unread` : null,
+        row.kind !== "checkin" && waitingReply ? (t?.ready ? "Check-in 1-click ready" : "Check-in waiting") : null,
+      ].filter((x): x is string => x !== null);
+      rows.push({ ...base, ...row, key: `${row.kind}:${id}`, also, order: row.order ?? base.order });
+    }
+    if ((m.data.milestones ?? []).length > 0) {
+      rows.push({ ...base, key: `win:${id}`, kind: "win", reason: newestWinLabel(m, unit) ?? "A milestone this week", also: [], order: newestWin(m) });
+    }
+  });
+  // Messages from members who don't share their progress.
+  for (const t of unread.values()) {
+    if (members.some((m) => m.data.userId === t.memberId)) continue;
+    const who = names.get(t.memberId) ?? { name: "A member", avatarUrl: null };
+    rows.push({ key: `message:${t.memberId}`, kind: "message", id: t.memberId, name: who.name, avatarUrl: who.avatarUrl, summary: null, reason: `“${messagePreview(t.last)}”`, also: [], order: t.last.at });
+  }
+  rows.sort((a, b) => KIND[a.kind].rank - KIND[b.kind].rank || (a.kind === "win" ? b.order.localeCompare(a.order) : a.order.localeCompare(b.order)));
+
+  const count = (f: QueueFilter) => (f === "all" ? rows.filter((r) => r.kind !== "win").length : rows.filter((r) => KIND[r.kind].filter === f).length);
+  // "Needs you" is everything but wins; wins have their own chip.
+  const list = rows.filter((r) => (show === "all" ? r.kind !== "win" : KIND[r.kind].filter === show));
+  const shown = all ? list : list.slice(0, QUEUE_LIMIT);
+  const chips: { id: QueueFilter; label: string }[] = [
+    { id: "all", label: "Needs you" },
+    { id: "checkins", label: "Check-ins" },
+    { id: "messages", label: "Messages" },
+    { id: "risk", label: "At risk" },
+    { id: "wins", label: "Wins" },
+  ];
+
   return (
-    <section aria-label="Today" className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 xl:grid-cols-3">
-      <Lane
-        title="Reply to check-ins"
-        icon={<MessageSquare />}
-        tone="primary"
-        list={reply}
-        empty="No check-ins waiting on you."
-        reason={(m) => sentAgo(m.lastCheckin?.submittedAt, now)}
-        action="Reply"
-        onOpen={(id) => onOpen(id, "checkins")}
-        onMore={() => onShowAll("reply")}
-      />
-      <Lane
-        title="Reach out"
-        icon={<AlertTriangle />}
-        tone="destructive"
-        list={risk}
-        empty="Nobody is drifting. Everyone sharing with you is on track."
-        reason={(m) =>
-          m.flags
-            .filter((f) => f !== "reply")
-            .map((f) => flagReason(m, f))
-            .join(" · ")
-        }
-        action="Open"
-        onOpen={(id) => {
-          const m = risk.find((x) => x.data.userId === id);
-          onOpen(id, m ? openTab(m) : "overview");
-        }}
-        onMore={() => onShowAll("risk")}
-      />
-      <Lane
-        title="Celebrate"
-        icon={<PartyPopper />}
-        tone="success"
-        list={wins}
-        empty="No milestones this week. They show here when someone is 5 lb down, or an inch off the waist."
-        reason={(m) =>
-          [...(m.data.milestones ?? [])]
-            .sort((a, b) => b.reachedOn.localeCompare(a.reachedOn))
-            .map((x) => milestoneLabel(x, unit))
-            .join(" · ")
-        }
-        action="Open"
-        onOpen={(id) => onOpen(id, "overview")}
-        onMore={() => onShowAll("all")}
-        extra={onKudos ? (m) => <KudosButton m={m} unit={unit} onKudos={onKudos} /> : undefined}
-      />
+    <section aria-label="What needs you" className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="radiogroup" aria-label="Show" className="no-scrollbar flex min-w-0 basis-full gap-1.5 overflow-x-auto sm:basis-0 sm:flex-1">
+          {chips.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="radio"
+              aria-checked={show === c.id}
+              onClick={() => {
+                setShow(c.id);
+                setAll(false);
+              }}
+              className={cn(
+                "h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                show === c.id ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted/40",
+              )}
+            >
+              {c.label} <span className="tabular opacity-80">{count(c.id)}</span>
+            </button>
+          ))}
+        </div>
+        {routineCount > 0 ? (
+          <button
+            type="button"
+            onClick={onRoutine}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-success/15 px-3 text-xs font-bold text-success hover:bg-success/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Zap className="h-3.5 w-3.5" aria-hidden />
+            Clear {routineCount} routine check-in{routineCount === 1 ? "" : "s"}
+          </button>
+        ) : null}
+      </div>
+
+      {list.length === 0 ? (
+        <p className="rounded-[1.25rem] border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          {show === "wins"
+            ? "No milestones this week. They show here when someone is 5 lb down, or an inch off the waist."
+            : show === "all" && routineCount > 0
+              ? "Only routine check-ins left: clear them in one go with the button above."
+              : "Nothing here. Everyone is on track."}
+        </p>
+      ) : (
+        <ol className="molten-card divide-y divide-border overflow-hidden rounded-[1.25rem] border border-primary/15 bg-card">
+          {shown.map((r) => {
+            const k = KIND[r.kind];
+            const replyKind = r.kind === "checkin" || r.kind === "message";
+            const open = () => (replyKind || !r.summary ? onInbox(r.id) : onOpen(r.id, r.kind === "muscle" ? "training" : openTab(r.summary)));
+            return (
+              <li key={r.key} className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 border-l-[3px] px-3 py-2.5", k.stripe)}>
+                <button
+                  type="button"
+                  onClick={open}
+                  className="flex min-w-0 flex-1 basis-64 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Avatar name={r.name} url={r.avatarUrl} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="truncate text-sm font-semibold">{r.name}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", k.chip)}>{k.label}</span>
+                      {r.also.map((a) => (
+                        <span key={a} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {a}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="block truncate text-[12px] text-muted-foreground">{r.reason}</span>
+                  </span>
+                </button>
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {r.kind === "win" && r.summary ? <KudosButton m={r.summary} unit={unit} onKudos={onKudos} /> : null}
+                  {!replyKind && r.kind !== "win" && r.summary ? remind(r.summary) : null}
+                  {!replyKind && r.kind !== "win" ? (
+                    <QueueButton onClick={() => onInbox(r.id)} label={`Message ${r.name}`}>
+                      <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                      Message
+                    </QueueButton>
+                  ) : null}
+                  <QueueButton onClick={open} primary={replyKind} label={replyKind ? `Reply to ${r.name}` : `Open ${r.name}`}>
+                    {replyKind ? <MessageSquare className="h-3.5 w-3.5" aria-hidden /> : null}
+                    {replyKind ? "Reply" : "Open"}
+                  </QueueButton>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {list.length > QUEUE_LIMIT ? (
+        <button type="button" onClick={() => setAll((v) => !v)} className="text-xs font-semibold text-primary underline-offset-2 hover:underline">
+          {all ? `Show the top ${QUEUE_LIMIT}` : `Show all ${list.length}`}
+        </button>
+      ) : null}
     </section>
   );
 }
 
-const newestWin = (m: MemberSummary) => (m.data.milestones ?? []).reduce((d, x) => (x.reachedOn > d ? x.reachedOn : d), "");
-
-const TONE = {
-  primary: { icon: "bg-primary/10 text-primary", count: "text-primary", action: "text-primary" },
-  success: { icon: "bg-success/10 text-success", count: "text-success", action: "text-foreground" },
-  destructive: { icon: "bg-destructive/10 text-destructive", count: "text-destructive", action: "text-foreground" },
-} as const;
-
-function Lane({
-  title,
-  icon,
-  tone,
-  list,
-  empty,
-  reason,
-  action,
-  onOpen,
-  onMore,
-  extra,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  tone: keyof typeof TONE;
-  list: MemberSummary[];
-  empty: string;
-  reason: (m: MemberSummary) => string;
-  action: string;
-  onOpen: (userId: string) => void;
-  onMore: () => void;
-  /** A button beside each row (kudos). */
-  extra?: (m: MemberSummary) => React.ReactNode;
-}) {
-  const t = TONE[tone];
+function QueueButton({ onClick, primary, label, children }: { onClick: () => void; primary?: boolean; label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
-      <div className="flex items-center gap-2">
-        <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&_svg]:h-4 [&_svg]:w-4", t.icon)}>{icon}</span>
-        <h3 className="flex-1 text-sm font-semibold">{title}</h3>
-        <span className={cn("tabular text-lg font-bold", t.count)}>{list.length}</span>
-      </div>
-      {list.length === 0 ? (
-        <p className="py-2 text-sm text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="divide-y divide-border/70">
-          {list.slice(0, LANE_LIMIT).map((m) => (
-            <li key={m.data.userId} className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => onOpen(m.data.userId)}
-                className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-8 w-8" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{m.displayName}</span>
-                  <span className="block truncate text-[12px] text-muted-foreground">{reason(m)}</span>
-                </span>
-                <span className={cn("shrink-0 text-xs font-semibold", t.action)}>{action}</span>
-              </button>
-              {extra?.(m)}
-            </li>
-          ))}
-        </ul>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={cn(
+        "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        primary ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : "border-border text-foreground/85 hover:bg-muted/40",
       )}
-      {list.length > LANE_LIMIT ? (
-        <button
-          type="button"
-          onClick={onMore}
-          className="self-start rounded text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          See all {list.length}
-        </button>
-      ) : null}
-    </div>
+    >
+      {children}
+    </button>
   );
 }
 
@@ -375,174 +462,66 @@ export function WeekStrip({ items }: { items: WeekNumber[] }) {
   );
 }
 
-/* ================================ on phones ================================ */
-
-const ZONE_CIRCLE = {
-  green: "border-success/45 bg-success/10 text-success",
-  yellow: "border-warning/45 bg-warning/10 text-warning",
-  red: "border-destructive/45 bg-destructive/10 text-destructive",
-} as const;
-
 /**
- * Today on a phone: three counts (check-ins to reply, members to reach out
- * to, wins), a Needs you · At risk · All switch, and one card per member with
- * their health score and what to do. Wider screens get the lanes instead.
+ * The coach's sections as a bar along the bottom of a phone: the first
+ * `main` items, then More with the rest in a sheet above the bar.
  */
-export function PhoneToday({
-  members,
-  today,
-  onOpen,
-  onSearch,
-  unit,
-  onKudos,
-}: {
-  members: MemberSummary[];
-  today: string;
-  unit: WeightUnit;
-  onKudos?: (memberId: string, text: string) => Promise<void>;
-  onOpen: (userId: string, tab: "checkins" | "overview" | "training") => void;
-  onSearch: () => void;
-}) {
-  const [show, setShow] = React.useState<"needs" | "risk" | "wins" | "all">("needs");
-  const now = Date.now();
-  const reply = members.filter((m) => m.flags.includes("reply"));
-  const risk = members.filter(isAtRisk);
-  const wins = members.filter((m) => (m.data.milestones ?? []).length > 0);
-  const needs = members.filter((m) => m.flags.length > 0);
-  const list = show === "needs" ? needs : show === "risk" ? risk : show === "wins" ? wins : members;
-  const reason = (m: MemberSummary) => {
-    const flags = m.flags.filter((f) => f !== "reply").map((f) => flagReason(m, f));
-    if (m.flags.includes("reply")) return [sentAgo(m.lastCheckin?.submittedAt, now).replace(/^Sent/, "Check-in waiting · sent"), ...flags.slice(0, 1)].join(" · ");
-    if (flags.length > 0) return flags.join(" · ");
-    const win = (m.data.milestones ?? [])[0];
-    return win ? "A milestone this week" : "On track";
-  };
-  const stats = [
-    { id: "needs" as const, n: reply.length, label: "Check-ins to reply", tone: "text-primary" },
-    { id: "risk" as const, n: risk.length, label: "Members to reach out to", tone: "text-destructive" },
-    { id: "wins" as const, n: wins.length, label: "Wins to celebrate", tone: "text-success" },
-  ];
-  const pills = [
-    { id: "needs" as const, label: "Needs you", n: needs.length },
-    { id: "risk" as const, label: "At risk", n: risk.length },
-    { id: "all" as const, label: "All", n: members.length },
+export function CoachBottomNav({ items, main = 3 }: { items: CoachNavItem[]; main?: number }) {
+  const [more, setMore] = React.useState(false);
+  const rest = items.slice(main);
+  const bar: CoachNavItem[] = [
+    ...items.slice(0, main),
+    ...(rest.length
+      ? [
+          {
+            id: "more",
+            label: "More",
+            icon: <MoreHorizontal />,
+            count: rest.reduce((n, it) => n + (it.count ?? 0), 0),
+            active: more || rest.some((it) => it.active),
+            onSelect: () => setMore((v) => !v),
+          },
+        ]
+      : []),
   ];
   return (
-    <section aria-label="Today" className="space-y-4 lg:hidden">
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] text-muted-foreground">
-            {new Date(`${today}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
-          </p>
-          <h2 className="text-2xl font-semibold tracking-tight">Today</h2>
-        </div>
-        <button
-          type="button"
-          onClick={onSearch}
-          aria-label="Search members"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Search className="h-[18px] w-[18px]" />
-        </button>
-      </div>
-
-      <div className="no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4">
-        {stats.map((s) => (
-          <button
-            key={s.label}
-            type="button"
-            onClick={() => setShow(s.id)}
-            className="flex w-[7.5rem] shrink-0 flex-col gap-0.5 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <>
+      {more ? (
+        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMore(false)}>
+          <ul
+            aria-label="More sections"
+            className="absolute inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] space-y-1 rounded-2xl border border-border bg-card p-2 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            <span className={cn("tabular text-2xl font-bold", s.tone)}>{s.n}</span>
-            <span className="text-[12px] leading-snug text-foreground/85">{s.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div role="radiogroup" aria-label="Show" className="no-scrollbar flex gap-1.5 overflow-x-auto">
-        {pills.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            role="radio"
-            aria-checked={show === p.id}
-            onClick={() => setShow(p.id)}
-            className={cn(
-              "h-9 shrink-0 rounded-full border px-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              show === p.id ? "border-primary bg-primary font-semibold text-primary-foreground" : "border-border text-foreground/85",
-            )}
-          >
-            {p.label} <span className="tabular">{p.n}</span>
-          </button>
-        ))}
-      </div>
-
-      {list.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
-          {show === "needs" ? "Nobody needs you right now." : show === "risk" ? "Nobody is drifting." : show === "wins" ? "No milestones this week." : "Nobody is sharing yet."}
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {list.map((m) => {
-            const toReply = m.flags.includes("reply");
-            const win = onKudos && (m.data.milestones ?? []).length > 0;
-            return (
-              <li key={m.data.userId} className="relative">
+            {rest.map((it) => (
+              <li key={it.id}>
                 <button
                   type="button"
-                  onClick={() => onOpen(m.data.userId, toReply ? "checkins" : openTab(m))}
+                  onClick={() => {
+                    setMore(false);
+                    it.onSelect();
+                  }}
+                  aria-current={it.active ? "page" : undefined}
                   className={cn(
-                    "flex w-full items-center gap-3 molten-card rounded-[1.25rem] border bg-card p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    toReply ? "border-primary/45" : "border-border",
-                    win && "pb-12",
+                    "flex h-12 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:h-5 [&_svg]:w-5",
+                    it.active ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/40",
                   )}
                 >
-                  {m.health ? (
-                    <span
-                      className={cn(
-                        "tabular flex h-10 w-10 shrink-0 items-center justify-center rounded-full border font-bold",
-                        ZONE_CIRCLE[healthZone(m.health.score)],
-                      )}
-                    >
-                      {m.health.score}
-                      <span className="sr-only"> health score</span>
-                    </span>
-                  ) : (
-                    <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-10 w-10" />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{m.displayName}</span>
-                    <span className="block truncate text-[12px] text-muted-foreground">{reason(m)}</span>
-                  </span>
-                  <span className={cn("shrink-0 text-[13px] font-semibold", toReply ? "text-primary" : "text-foreground/85")}>
-                    {toReply ? "Reply" : "Open"}
-                  </span>
+                  {it.icon}
+                  <span className="flex-1 text-left">{it.label}</span>
+                  {it.count ? <span className="tabular rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">{it.count}</span> : null}
                 </button>
-                {win ? (
-                  <span className="absolute bottom-2.5 left-[4.25rem] right-3 flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-success">{newestWinLabel(m, unit)}</span>
-                    <KudosButton m={m} unit={unit} onKudos={onKudos!} />
-                  </span>
-                ) : null}
               </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/** The coach's sections as a bar along the bottom of a phone. */
-export function CoachBottomNav({ items }: { items: CoachNavItem[] }) {
-  return (
+            ))}
+          </ul>
+        </div>
+      ) : null}
     <nav
       aria-label="Coach sections"
       className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-1.5 backdrop-blur lg:hidden"
-      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+      style={{ gridTemplateColumns: `repeat(${bar.length}, minmax(0, 1fr))` }}
     >
-      {items.map((it) => (
+      {bar.map((it) => (
         <button
           key={it.id}
           type="button"
@@ -561,6 +540,7 @@ export function CoachBottomNav({ items }: { items: CoachNavItem[] }) {
         </button>
       ))}
     </nav>
+    </>
   );
 }
 

@@ -74,7 +74,15 @@ function SendButton({ companyId, memberId, text, label }: { companyId: string; m
  * monthly recap to send or save. Worked out here from what they already log
  * (src/lib/member-insights.ts).
  */
-export function MemberInsights({ companyId, summary, unit, today }: { companyId: string; summary: MemberSummary; unit: WeightUnit; today: string }) {
+export type InsightsData = ReturnType<typeof useInsightsData>;
+
+/**
+ * Everything the insights are worked out from: their workouts, food,
+ * check-ins and the macros you set, loaded once per member page and shared by
+ * the Overview's key insights, History's "What moved the needle" and the
+ * client file.
+ */
+export function useInsightsData(companyId: string, summary: MemberSummary, unit: WeightUnit, today: string) {
   const memberId = summary.data.userId;
   const first = summary.displayName.split(" ")[0] || summary.displayName;
   const qs = `company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}`;
@@ -113,8 +121,95 @@ export function MemberInsights({ companyId, summary, unit, today }: { companyId:
     [data, today, unit, first, summary.data],
   );
 
-  // What moved the needle (needs the changes list), and the printable client file.
+  // What moved the needle (needs the changes list).
   const needle = useNeedle(companyId, summary, input, today, unit);
+  return { data, input, error, needle };
+}
+
+/** Overview → Key insights: the four that matter most, each one line; "See all insights" opens the rest. */
+export function KeyInsights({
+  summary,
+  loaded,
+  unit,
+  today,
+  allOpen,
+  onSeeAll,
+}: {
+  summary: MemberSummary;
+  loaded: InsightsData;
+  unit: WeightUnit;
+  today: string;
+  /** Every insight is showing below. */
+  allOpen: boolean;
+  onSeeAll: () => void;
+}) {
+  const { input, needle } = loaded;
+  const r = summary.risk;
+  const muscle = React.useMemo(() => (input ? muscleCheck(input) : null), [input]);
+  const p = summary.progress;
+  const plan = summary.state;
+  const goal = plan.fatLoss.goalType === "weight" ? plan.fatLoss.targetWeight : null;
+  const sixWeeks = weightChangeOver(summary.data.weighIns, today);
+  const rate = p?.observedRate ?? (sixWeeks === null ? null : -sixWeeks / 6);
+  const eta = forecast({ today, trendLb: p?.trendWeight ?? summary.latestWeightLb, rateLb: rate, goalLb: goal, kcalDelta: 0, stepsDelta: 0 });
+  const lastChange = needle.effects[0] ?? null;
+  const tiles: { label: string; value: string; text: string; tone: string }[] = [
+    {
+      label: "Drop-off risk",
+      value: `${r.level === "high" ? "High" : r.level === "medium" ? "Medium" : "Low"} · ${r.score}`,
+      text: r.level === "low" ? "No warning signs." : (r.reasons[0]?.text ?? r.action),
+      tone: r.level === "high" ? "text-destructive" : r.level === "medium" ? "text-warning" : "text-success",
+    },
+    {
+      label: "Muscle",
+      value: !muscle ? "…" : muscle.verdict === "losing" ? "Losing" : muscle.verdict === "kept" ? "Kept" : muscle.verdict === "slipping" ? "Lifts slipping" : muscle.verdict === "steady" ? "Steady" : "Not enough data",
+      text: muscle ? (muscle.down.length ? `Slipping: ${muscle.down.slice(0, 3).join(", ")}` : muscle.up.length ? `Up: ${muscle.up.slice(0, 3).join(", ")}` : "Lifts holding.") : "Loading their workouts…",
+      tone: muscle?.verdict === "losing" ? "text-destructive" : muscle?.verdict === "slipping" ? "text-warning" : muscle?.verdict === "kept" ? "text-success" : "text-foreground",
+    },
+    {
+      label: "Goal date",
+      value: eta.date ? formatShort(eta.date) : "—",
+      text: eta.date
+        ? `At ${eta.rate === null ? "their" : `${r1(fromLb(Math.abs(eta.rate), unit))} ${unit}`} a week, about ${Math.max(0, Math.round(eta.weeks ?? 0))} weeks.`
+        : goal === null
+          ? "No goal weight set."
+          : "Not heading toward the goal at this rate.",
+      tone: "text-foreground",
+    },
+    {
+      label: "Last change you made",
+      value: needle.loading ? "…" : lastChange ? (lastChange.verdict === "helped" ? "Helped" : lastChange.verdict === "hurt" ? "Hurt" : lastChange.verdict === "too-soon" ? "Too soon" : "No change") : "None yet",
+      text: lastChange ? `${formatShort(lastChange.date)}: ${lastChange.changes[0]!.title}` : "Macros, programs or focus items you set show here.",
+      tone: lastChange?.verdict === "helped" ? "text-success" : lastChange?.verdict === "hurt" ? "text-destructive" : "text-foreground",
+    },
+  ];
+  return (
+    <section aria-label="Key insights" className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold">Key insights</h3>
+        <button type="button" onClick={onSeeAll} aria-expanded={allOpen} className="ml-auto text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
+          {allOpen ? "Hide all insights" : "See all insights"}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border xl:grid-cols-4">
+        {tiles.map((t) => (
+          <div key={t.label} className="min-w-0 space-y-0.5 bg-card px-3 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.label}</p>
+            <p className={cn("tabular text-base font-semibold", t.tone)}>{t.value}</p>
+            <p className="text-[12px] leading-snug text-muted-foreground">{t.text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Every insight about a member, from the data the page already loaded. */
+export function MemberInsights({ companyId, summary, unit, today, loaded }: { companyId: string; summary: MemberSummary; unit: WeightUnit; today: string; loaded: InsightsData }) {
+  const memberId = summary.data.userId;
+  const first = summary.displayName.split(" ")[0] || summary.displayName;
+  const { data, input, error, needle } = loaded;
+  // The printable client file.
   const [fileOpen, setFileOpen] = React.useState(false);
 
   if (error) {
@@ -578,4 +673,17 @@ async function recapImage(r: MonthRecap, first: string, stats: [string, string][
   g.font = "600 22px system-ui, sans-serif";
   g.fillText("Lean Stature System", 72, H - 48);
   return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error("image failed"))), "image/png"));
+}
+
+/** The member page's "Client file" button: opens the printable file once their data has loaded. */
+export function ClientFileLauncher({ summary, loaded, companyId, unit, today }: { summary: MemberSummary; loaded: InsightsData; companyId: string; unit: WeightUnit; today: string }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <ClientFileButton onOpen={() => setOpen(true)} disabled={!loaded.input} />
+      {open && loaded.input ? (
+        <ClientFile summary={summary} input={loaded.input} companyId={companyId} unit={unit} today={today} effects={loaded.needle.effects} onClose={() => setOpen(false)} />
+      ) : null}
+    </>
+  );
 }

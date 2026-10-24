@@ -22,8 +22,11 @@ import {
   Search,
   StickyNote,
   Sun,
+  TrendingUp,
   Users,
   Utensils,
+  Workflow,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,10 +44,14 @@ import { MemberProgramCard } from "@/components/coach-member-program";
 import { PhysiqueFocusCard } from "@/components/physique-focus-card";
 import { CoachComparisonCard, CoachTestimonials } from "@/components/physique-compare-card";
 import { CoachProgramResults } from "@/components/coach-program-results";
-import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
+import { CoachChatPanel, useCoachThreads } from "@/components/chat";
+import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/components/coach-command-palette";
+import { messagePreview, type ChatThread } from "@/lib/messages";
 import { CoachAnnouncements, CoachDigestToggle, DigestHistory } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
-import { MemberInsights } from "@/components/coach-member-insights";
+import { ClientFileLauncher, KeyInsights, MemberInsights, useInsightsData } from "@/components/coach-member-insights";
+import { NeedleCard } from "@/components/coach-coaching-cards";
+import { muscleCheck } from "@/lib/member-insights";
 import { RoutineReplies, type RoutineItem } from "@/components/coach-routine-replies";
 import { reportFor, triageCheckin } from "@/lib/checkin-report-input";
 import type { Checkin } from "@/lib/checkins";
@@ -57,7 +64,7 @@ import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
 import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
-import { Avatar, CoachBottomNav, CoachNav, PhoneToday, PhotoStorageMeter, TodayLanes, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
+import { ActionQueue, Avatar, CoachBottomNav, CoachNav, PhotoStorageMeter, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
 import { CoachIntakeChart } from "@/components/coach-member-food";
 import { MemberTimelineCard } from "@/components/coach-member-timeline";
 import { SegmentedControl } from "@/components/ui/segmented";
@@ -83,8 +90,8 @@ import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
-/** The list's quick filters; "risk" is any flag but a check-in waiting on the coach. */
-type Filter = "all" | "risk" | "ontrack" | Flag;
+/** The list's quick filters; "risk" is any flag but a check-in waiting on the coach; "safety" is losing too fast or eating too little. */
+type Filter = "all" | "risk" | "ontrack" | "safety" | Flag;
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
@@ -94,14 +101,51 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 /** The rest, one at a time from a menu. */
-const FLAG_FILTERS = ["too-fast", "under-floor", "behind", "plateau", "red", "no-weigh-in", "no-workouts", "checkin", "inactive", "no-plan"] as const satisfies readonly Flag[];
+const FLAG_FILTERS = [
+  "too-fast",
+  "under-floor",
+  "drop-off",
+  "muscle-loss",
+  "slipping",
+  "behind",
+  "plateau",
+  "red",
+  "no-weigh-in",
+  "no-workouts",
+  "checkin",
+  "inactive",
+  "no-plan",
+] as const satisfies readonly Flag[];
 
 function matchesFilter(m: MemberSummary, f: Filter): boolean {
   if (f === "all") return true;
   if (f === "risk") return isAtRisk(m);
   if (f === "ontrack") return !isAtRisk(m);
+  if (f === "safety") return m.flags.includes("too-fast") || m.flags.includes("under-floor");
   return m.flags.includes(f);
 }
+
+type MemberSort = "attention" | "health" | "name";
+
+/** A Members list setup: the quick views below, or one the coach saved. */
+interface SavedView {
+  id: string;
+  name: string;
+  filter: Filter;
+  tag: string | null;
+  sort: MemberSort;
+  query: string;
+}
+
+const BUILT_IN_VIEWS: SavedView[] = [
+  { id: "needs-reply", name: "Needs reply", filter: "reply", tag: null, sort: "attention", query: "" },
+  { id: "may-quit", name: "At risk of quitting", filter: "drop-off", tag: null, sort: "attention", query: "" },
+  { id: "losing-muscle", name: "Losing muscle", filter: "muscle-loss", tag: null, sort: "attention", query: "" },
+  { id: "safety", name: "Safety", filter: "safety", tag: null, sort: "attention", query: "" },
+];
+
+/** The dashboard's sections. */
+type View = "today" | "inbox" | "members" | "programs" | "automations" | "growth";
 
 /** The page's width: a little wider than `container`, for the menu, list and detail side by side. */
 const WRAP = "mx-auto w-full max-w-[1440px] px-4";
@@ -139,22 +183,30 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [tagsData, setTagsData] = React.useState<TagsData | null>(null);
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   // List order: most urgent first, lowest health score first, or by name.
-  const [sort, setSort] = React.useState<"attention" | "health" | "name">("attention");
+  const [sort, setSort] = React.useState<MemberSort>("attention");
   const [query, setQuery] = React.useState("");
   // ?member=user_… opens straight onto one member (bookmarkable).
   const [selected, setSelected] = React.useState<string | null>(() =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("member"),
   );
   const [unit, setUnit] = React.useState<WeightUnit>("lb");
-  // Members (progress) or Assign (send programs and habit sets).
-  // Today (what needs you), Inbox (check-ins to answer), Members (the list, or one member's page), Library.
-  const [view, setView] = React.useState<"today" | "inbox" | "members" | "library">(() =>
+  // Today (what needs you), Inbox (check-ins and messages), Members (the list, or one member's page),
+  // Programs (send programs and habit sets), Automations (what runs by itself), Growth (announcements and marketing).
+  const [view, setView] = React.useState<View>(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("member") ? "members" : "today",
   );
-  const [libraryTab, setLibraryTab] = React.useState<"programs" | "results" | "announcements" | "nudges" | "testimonials">("programs");
-  // Inbox: check-ins to answer, or chats with members; the routine-replies review.
-  const [inboxTab, setInboxTab] = React.useState<"checkins" | "messages">("checkins");
+  const [programsTab, setProgramsTab] = React.useState<"programs" | "results">("programs");
+  const [growthTab, setGrowthTab] = React.useState<"announcements" | "stats">("announcements");
+  // Inbox: the list, or the routine-replies review.
   const [inboxMode, setInboxMode] = React.useState<"list" | "routine">("list");
+  // Ctrl+K: find a member or run a command.
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const togglePalette = React.useCallback(() => setPaletteOpen((v) => !v), []);
+  usePaletteShortcut(togglePalette);
+  const [modKey, setModKey] = React.useState("Ctrl");
+  React.useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) setModKey("⌘");
+  }, []);
   // Every unanswered check-in with what it needs, for the Inbox badges and routine replies.
   const [waiting, setWaiting] = React.useState<{ memberId: string; checkin: Checkin; previous: Checkin | null; coachMacros: CoachMacros | null }[] | null>(null);
   const loadWaiting = React.useCallback(async () => {
@@ -255,11 +307,19 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     );
 
   const q = query.trim().toLowerCase();
-  const filtered = summaries.filter((m) => {
-    if (q && !`${m.data.name ?? ""} ${m.data.username ?? ""}`.toLowerCase().includes(q)) return false;
-    if (tagFilter && !(tagsData?.members[m.data.userId] ?? []).includes(tagFilter)) return false;
-    return matchesFilter(m, filter);
-  });
+  const inView = (m: MemberSummary, v: Pick<SavedView, "filter" | "tag" | "query">) => {
+    const vq = v.query.trim().toLowerCase();
+    if (vq && !`${m.data.name ?? ""} ${m.data.username ?? ""}`.toLowerCase().includes(vq)) return false;
+    if (v.tag && !(tagsData?.members[m.data.userId] ?? []).includes(v.tag)) return false;
+    return matchesFilter(m, v.filter);
+  };
+  const filtered = summaries.filter((m) => inView(m, { filter, tag: tagFilter, query }));
+  // Everyone's name and photo, sharing or not (for chats).
+  const people = React.useMemo(
+    () => new Map((overview?.members ?? []).map((m) => [m.userId, { name: memberName(m), avatarUrl: m.avatarUrl }])),
+    [overview],
+  );
+  const nameOf = React.useMemo(() => new Map([...people].map(([id, p]) => [id, p.name])), [people]);
   const shown =
     sort === "health"
       ? [...filtered].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
@@ -292,28 +352,30 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   /** Open a member's waiting check-in in the inbox. */
   const openInbox = (id: string | null = null) => {
     setView("inbox");
-    // Straight to the chats when only messages are waiting.
-    setInboxTab(id === null && counts.toReview === 0 && chats.unread > 0 ? "messages" : "checkins");
+    setInboxMode("list");
     setSelected(null);
     setInboxId(id);
     window.scrollTo({ top: 0 });
   };
-  /** From Today's lists: check-ins go to the inbox, everything else to the member's page. */
-  const openFromToday = (id: string, t: "checkins" | "overview" | "training") => (t === "checkins" ? openInbox(id) : openMember(id, t));
   const showMembers = (f: Filter) => {
     if (f === "reply") return openInbox();
     setView("members");
     setFilter(f);
     setSelected(null);
   };
-  const showToday = () => {
-    setView("today");
+  const showToday = () => go("today");
+  /** Another section, from the top. */
+  function go(v: View) {
+    setView(v);
     setSelected(null);
+    window.scrollTo({ top: 0 });
+  }
+  /** Scroll to a part of a section once it has loaded (a few tries). */
+  const scrollToId = (id: string, tries = 20) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    else if (tries > 0) window.setTimeout(() => scrollToId(id, tries - 1), 100);
   };
-  // Check-ins waiting, oldest first: the order to answer them in.
-  const inbox = summaries
-    .filter((m) => m.flags.includes("reply"))
-    .sort((a, b) => (a.lastCheckin?.submittedAt ?? "").localeCompare(b.lastCheckin?.submittedAt ?? ""));
   /** After a reply: that check-in is answered (until the next load) and the next one opens. */
   const markReplied = (userId: string) => {
     setOverview((prev) =>
@@ -354,16 +416,78 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     return out;
   }, [waiting, summaries, unit]);
   const routineItems = [...triaged.values()].filter((t) => t.ready && t.item.summary.flags.includes("reply")).map((t) => t.item);
+  // Today and the Inbox both show which check-ins are 1-click ready.
   React.useEffect(() => {
-    if (view === "inbox") void loadWaiting();
+    if (view === "inbox" || view === "today") void loadWaiting();
   }, [view, loadWaiting]);
+  // Who's in the Inbox: waiting check-ins and chats, plus anyone you just chose to message.
+  const entries = React.useMemo(() => {
+    const list = inboxEntries(summaries, chats.threads, people);
+    if (inboxId && !list.some((e) => e.id === inboxId)) {
+      const s = summaries.find((m) => m.data.userId === inboxId) ?? null;
+      const who = people.get(inboxId);
+      if (s || who) {
+        list.unshift({ id: inboxId, name: s?.displayName ?? who!.name, avatarUrl: s?.data.avatarUrl ?? who?.avatarUrl ?? null, summary: s, checkin: false, thread: null, waitingSince: null });
+      }
+    }
+    return list;
+  }, [summaries, chats.threads, people, inboxId]);
+  const showRoutine = () => {
+    go("inbox");
+    setInboxMode("routine");
+  };
+  const assignTo = (ids: string[]) => {
+    setAssignPicked(ids);
+    setProgramsTab("programs");
+    go("programs");
+  };
+
+  // The command palette's list: sections, on-demand actions, then every member with their own actions.
+  const commands: PaletteCommand[] = [
+    { id: "go-today", group: "Go to", label: "Today", keywords: "home queue", run: showToday },
+    { id: "go-inbox", group: "Go to", label: "Inbox", hint: counts.toReview + chats.unread > 0 ? `${counts.toReview + chats.unread} waiting` : undefined, keywords: "check-ins messages chat", run: () => openInbox() },
+    { id: "go-members", group: "Go to", label: "Members", run: () => showMembers("all") },
+    { id: "go-programs", group: "Go to", label: "Programs & habits", keywords: "assign", run: () => { setProgramsTab("programs"); go("programs"); } },
+    { id: "go-results", group: "Go to", label: "Program results", run: () => { setProgramsTab("results"); go("programs"); } },
+    { id: "go-nudges", group: "Go to", label: "Automatic nudges", keywords: "automations", run: () => go("automations") },
+    { id: "go-digest", group: "Go to", label: "Daily digest", keywords: "automations digests", run: () => { go("automations"); scrollToId("daily-digest"); } },
+    { id: "go-announce", group: "Go to", label: "Announcements", keywords: "growth broadcast", run: () => { setGrowthTab("announcements"); go("growth"); } },
+    { id: "go-stats", group: "Go to", label: "Community stats & testimonials", keywords: "growth marketing wins", run: () => { setGrowthTab("stats"); go("growth"); } },
+    ...(routineItems.length > 0
+      ? [{ id: "do-routine", group: "Actions" as const, label: `Send routine replies (${routineItems.length})`, keywords: "1-click check-ins", run: showRoutine }]
+      : []),
+    { id: "do-nudges", group: "Actions", label: "Run nudges now", run: () => { go("automations"); scrollToId("run-nudges"); } },
+    { id: "do-digest", group: "Actions", label: "Preview my digest", keywords: "send digest", run: () => { go("automations"); scrollToId("daily-digest"); } },
+    { id: "do-refresh", group: "Actions", label: "Refresh the dashboard", keywords: "reload", run: () => void load() },
+    { id: "do-unit", group: "Actions", label: `Show weights in ${unit === "lb" ? "kg" : "lb"}`, keywords: "units", run: () => setUnit(unit === "lb" ? "kg" : "lb") },
+    ...summaries.flatMap((m): PaletteCommand[] => {
+      const id = m.data.userId;
+      const name = m.displayName;
+      const hint = m.data.username ? `@${m.data.username}` : undefined;
+      const kw = `${m.data.username ?? ""} ${m.data.name ?? ""}`;
+      return [
+        { id: `open-${id}`, group: "Members", label: name, hint: m.flags.length ? FLAG_LABELS[m.flags[0]!] : hint, keywords: kw, run: () => openMember(id) },
+        { id: `msg-${id}`, group: "Members", label: `Message ${name}`, hint, keywords: kw, searchOnly: true, run: () => openInbox(id) },
+        { id: `ci-${id}`, group: "Members", label: `Check-ins: ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "checkins") },
+        { id: `mac-${id}`, group: "Members", label: `Set macros for ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "food") },
+        { id: `prog-${id}`, group: "Members", label: `Assign a program to ${name}`, hint, keywords: kw, searchOnly: true, run: () => assignTo([id]) },
+        { id: `hist-${id}`, group: "Members", label: `History: ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "timeline") },
+      ];
+    }),
+    ...notSharing.flatMap((m): PaletteCommand[] => [
+      { id: `open-${m.userId}`, group: "Members", label: memberName(m), hint: "not sharing", keywords: m.username ?? "", searchOnly: true, run: () => openMember(m.userId) },
+      { id: `msg-${m.userId}`, group: "Members", label: `Message ${memberName(m)}`, hint: "not sharing", keywords: m.username ?? "", searchOnly: true, run: () => openInbox(m.userId) },
+    ]),
+  ];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const navItems: CoachNavItem[] = [
     { id: "today", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
     { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview + chats.unread, active: view === "inbox", onSelect: () => openInbox() },
     { id: "members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
-    { id: "library", label: "Library", icon: <ClipboardList />, active: view === "library", onSelect: () => setView("library") },
+    { id: "programs", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
+    { id: "automations", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
+    { id: "growth", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
   ];
 
   return (
@@ -380,26 +504,20 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
           </div>
           <div className="ml-auto flex items-center gap-2">
             {overview ? (
-              <div className="relative hidden w-72 lg:block">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <label htmlFor="coach-find" className="sr-only">
-                  Find a member
-                </label>
-                <Input
-                  id="coach-find"
-                  type="search"
-                  placeholder="Find a member"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    if (view !== "members" || selected) {
-                      setView("members");
-                      setSelected(null);
-                    }
-                  }}
-                  className="pl-9"
-                />
-              </div>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPaletteOpen(true)}
+                  className="hidden h-10 w-72 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:flex"
+                >
+                  <Search className="h-4 w-4" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-left">Search or jump to…</span>
+                  <kbd className="rounded border border-border px-1.5 text-[11px]">{modKey} K</kbd>
+                </button>
+                <Button variant="outline" size="icon" className="lg:hidden" onClick={() => setPaletteOpen(true)} aria-label="Find a member or command">
+                  <Search />
+                </Button>
+              </>
             ) : null}
             <SegmentedControl
               ariaLabel="Units"
@@ -424,6 +542,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
           <>
             <CoachNav className="hidden lg:block" items={navItems} />
             <CoachBottomNav items={navItems} />
+            <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
           </>
         ) : (
           <div aria-hidden className="hidden lg:block" />
@@ -452,64 +571,71 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               <div className="h-20 animate-pulse rounded-lg bg-muted/30" />
               <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
             </div>
-          ) : view === "library" ? (
+          ) : view === "programs" ? (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold tracking-tight">Library</h2>
+                <h2 className="text-2xl font-bold tracking-tight">Programs</h2>
                 <SegmentedControl
-                  ariaLabel="Library section"
-                  value={libraryTab}
-                  onValueChange={setLibraryTab}
+                  ariaLabel="Programs section"
+                  value={programsTab}
+                  onValueChange={setProgramsTab}
                   options={[
                     { value: "programs" as const, label: "Programs & habits" },
                     { value: "results" as const, label: "Program results" },
-                    { value: "announcements" as const, label: "Announcements" },
-                    { value: "nudges" as const, label: "Automatic nudges" },
-                    { value: "testimonials" as const, label: "Wins & testimonials" },
                   ]}
                   className="w-auto"
                 />
               </div>
-              {libraryTab === "programs" ? (
+              {programsTab === "programs" ? (
                 <CoachAssignPanel key={assignPicked.join(",")} companyId={companyId} members={overview.members} tags={tagsData} picked={assignPicked} />
-              ) : libraryTab === "announcements" ? (
-                <CoachAnnouncements companyId={companyId} tags={tagsData?.tags ?? []} />
-              ) : libraryTab === "results" ? (
-                <CoachProgramResults
-                  companyId={companyId}
-                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
-                  unit={unit}
-                />
-              ) : libraryTab === "nudges" ? (
-                <CoachNudges
-                  companyId={companyId}
-                  names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
-                />
               ) : (
-                <div className="space-y-5">
-                  <CommunityStatsCard companyId={companyId} unit={unit} />
-                  <CoachTestimonials
-                    companyId={companyId}
-                    names={new Map(overview.members.map((m) => [m.userId, m.name?.trim() || (m.username ? `@${m.username}` : "Member")]))}
-                    unit={unit}
-                  />
-                </div>
+                <CoachProgramResults companyId={companyId} names={nameOf} unit={unit} />
               )}
+            </div>
+          ) : view === "automations" ? (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">Automations</h2>
+                <p className="text-sm text-muted-foreground">What runs by itself, and the buttons to run it now. You see who gets what before anything is sent.</p>
+              </div>
+              <CoachNudges companyId={companyId} names={nameOf} />
+              <section id="daily-digest" aria-labelledby="daily-digest-title" className="scroll-mt-20 space-y-3">
+                <h3 id="daily-digest-title" className="text-base font-semibold">
+                  Daily digest
+                </h3>
+                <CoachDigestToggle companyId={companyId} />
+                <DigestHistory companyId={companyId} />
+              </section>
               {overview.photoStorage ? (
                 <div className="max-w-xs rounded-[1.25rem] border border-primary/15 p-4">
                   <PhotoStorageMeter {...overview.photoStorage} />
                 </div>
               ) : null}
             </div>
-          ) : view === "inbox" && inboxTab === "messages" ? (
-            <CoachMessagesInbox
-              companyId={companyId}
-              threads={chats.threads}
-              names={new Map(overview.members.map((m) => [m.userId, { name: m.name?.trim() || (m.username ? `@${m.username}` : "Member"), avatarUrl: m.avatarUrl }]))}
-              onRead={() => void chats.refresh()}
-              onOpenProfile={(id) => openMember(id)}
-              switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
-            />
+          ) : view === "growth" ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-2xl font-bold tracking-tight">Growth</h2>
+                <SegmentedControl
+                  ariaLabel="Growth section"
+                  value={growthTab}
+                  onValueChange={setGrowthTab}
+                  options={[
+                    { value: "announcements" as const, label: "Announcements" },
+                    { value: "stats" as const, label: "Community stats & testimonials" },
+                  ]}
+                  className="w-auto"
+                />
+              </div>
+              {growthTab === "announcements" ? (
+                <CoachAnnouncements companyId={companyId} tags={tagsData?.tags ?? []} />
+              ) : (
+                <div className="space-y-5">
+                  <CommunityStatsCard companyId={companyId} unit={unit} />
+                  <CoachTestimonials companyId={companyId} names={nameOf} unit={unit} />
+                </div>
+              )}
+            </div>
           ) : view === "inbox" && inboxMode === "routine" ? (
             <RoutineReplies
               companyId={companyId}
@@ -525,8 +651,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               triage={triaged}
               routineCount={routineItems.length}
               onRoutine={() => setInboxMode("routine")}
-              switcher={<InboxSwitcher value={inboxTab} onChange={setInboxTab} checkins={counts.toReview} messages={chats.unread} />}
-              items={inbox}
+              entries={entries}
+              onMessagesRead={() => void chats.refresh()}
               openId={inboxId}
               onOpenId={setInboxId}
               companyId={companyId}
@@ -536,20 +662,6 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             />
           ) : view === "today" ? (
             <div className="space-y-5">
-              {summaries.length > 0 ? (
-                <PhoneToday
-                  members={summaries}
-                  today={today}
-                  unit={unit}
-                  onKudos={sendKudos}
-                  onOpen={openFromToday}
-                  onSearch={() => {
-                    showMembers("all");
-                    requestAnimationFrame(() => document.getElementById("coach-search")?.focus());
-                  }}
-                />
-              ) : null}
-              <div className={cn("space-y-5", summaries.length > 0 && "max-lg:hidden")}>
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <div>
                   <h2 className="text-2xl font-semibold tracking-tight">{greeting}, Coach</h2>
@@ -564,9 +676,31 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   Updated {new Date(overview.generatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </p>
               </div>
+              {summaries.length > 0 || chats.unread > 0 ? (
+                <ActionQueue
+                  members={summaries}
+                  threads={chats.threads}
+                  names={people}
+                  triage={triaged}
+                  routineCount={routineItems.length}
+                  unit={unit}
+                  onRoutine={showRoutine}
+                  onInbox={(id) => openInbox(id)}
+                  onOpen={(id, t) => openMember(id, t)}
+                  onKudos={sendKudos}
+                  remind={(m) => (
+                    <RemindMenu
+                      companyId={companyId}
+                      members={[{ id: m.data.userId, name: m.displayName }]}
+                      suggested={suggestedReminders(m)}
+                      recent={reminderState.reminders}
+                      onSent={reminderState.setReminders}
+                    />
+                  )}
+                />
+              ) : null}
               {summaries.length > 0 ? (
                 <>
-                  <TodayLanes members={summaries} unit={unit} onOpen={openFromToday} onShowAll={showMembers} onKudos={sendKudos} />
                   <WeekStrip
                     items={[
                       { label: "Logged this week", value: counts.loggedWeek, of: `of ${counts.total}`, sub: "any log in the last 7 days" },
@@ -591,7 +725,6 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   />
                 </>
               ) : null}
-              </div>
               {summaries.length === 0 ? (
                 <EmptyNote>
                   {overview.members.length === 0
@@ -599,11 +732,31 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     : "Nobody is sharing their progress with you yet. Ask them from Members, or they can turn on sharing in their app's Settings."}
                 </EmptyNote>
               ) : null}
-              <CoachDigestToggle companyId={companyId} />
-              <DigestHistory companyId={companyId} />
+              {/* This morning's digest and the ones before, folded away; its settings are in Automations. */}
+              <details className="group space-y-3">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground">
+                  <span className="transition-transform group-open:rotate-90" aria-hidden>
+                    ›
+                  </span>
+                  Daily digests
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      go("automations");
+                      scrollToId("daily-digest");
+                    }}
+                    className="ml-auto text-[12px] font-semibold text-primary underline-offset-2 hover:underline"
+                  >
+                    Digest settings
+                  </button>
+                </summary>
+                <DigestHistory companyId={companyId} />
+              </details>
             </div>
           ) : current ? (
             <MemberDetail
+              key={current.data.userId}
               tags={<MemberTagsCard companyId={companyId} memberId={current.data.userId} data={tagsData} onChange={setTagsData} />}
               m={current}
               unit={unit}
@@ -632,6 +785,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <h2 id="coach-members" className="text-base font-semibold">
                   Members
                 </h2>
+                <SavedViews
+                  companyId={companyId}
+                  current={{ filter, tag: tagFilter, sort, query }}
+                  count={(v) => summaries.filter((m) => inView(m, v)).length}
+                  onApply={(v) => {
+                    setFilter(v.filter);
+                    setTagFilter(v.tag);
+                    setSort(v.sort);
+                    setQuery(v.query);
+                  }}
+                />
                 <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
                   {FILTERS.map((f) => {
                     const n = summaries.filter((m) => matchesFilter(m, f.value)).length;
@@ -658,7 +822,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <div className="relative min-w-[12rem] flex-1 lg:hidden">
+                <div className="relative min-w-[12rem] flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <label htmlFor="coach-search" className="sr-only">
                     Search members
@@ -823,12 +987,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   onClear={() => setPicked([])}
                   onTagsChanged={setTagsData}
                   onMessaged={() => void chats.refresh()}
-                  onAssign={() => {
-                    setAssignPicked(picked);
-                    setLibraryTab("programs");
-                    setView("library");
-                    window.scrollTo({ top: 0 });
-                  }}
+                  onAssign={() => assignTo(picked)}
                 />
               ) : null}
               {notSharing.length > 0 ? (
@@ -857,6 +1016,118 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">{children}</p>;
+}
+
+/**
+ * Members → Views: one tap to the lists you check most (built in: needs a
+ * reply, at risk of quitting, losing muscle, safety), and your own: save the
+ * filter, tag, order and search you have now under a name. Saved on this
+ * device, per whop.
+ */
+function SavedViews({
+  companyId,
+  current,
+  count,
+  onApply,
+}: {
+  companyId: string;
+  current: Pick<SavedView, "filter" | "tag" | "sort" | "query">;
+  count: (v: SavedView) => number;
+  onApply: (v: SavedView) => void;
+}) {
+  const key = `prep-calculator:coach-views:${companyId}`;
+  const [mine, setMine] = React.useState<SavedView[]>([]);
+  const [naming, setNaming] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+      if (Array.isArray(raw)) setMine(raw.filter((v): v is SavedView => typeof v?.id === "string" && typeof v?.name === "string"));
+    } catch {
+      /* none saved */
+    }
+  }, [key]);
+  const store = (next: SavedView[]) => {
+    setMine(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* kept until the page closes */
+    }
+  };
+  const same = (v: SavedView) => v.filter === current.filter && v.tag === current.tag && v.sort === current.sort && v.query.trim() === current.query.trim();
+  const isDefault = current.filter === "all" && current.tag === null && current.sort === "attention" && current.query.trim() === "";
+  const unsaved = !isDefault && ![...BUILT_IN_VIEWS, ...mine].some(same);
+  const save = () => {
+    const name = (naming ?? "").trim();
+    if (!name) return;
+    store([...mine, { id: `v${Date.now().toString(36)}`, name: name.slice(0, 40), ...current, query: current.query.trim() }]);
+    setNaming(null);
+  };
+  const chip = (v: SavedView, removable: boolean) => {
+    const on = same(v);
+    return (
+      <span key={v.id} className={cn("inline-flex h-8 items-center rounded-full border text-xs font-medium", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>
+        <button
+          type="button"
+          aria-pressed={on}
+          onClick={() => onApply(on ? { ...v, filter: "all", tag: null, sort: "attention", query: "" } : v)}
+          className="h-full rounded-full px-3 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {v.name} <span className="tabular opacity-80">{count(v)}</span>
+        </button>
+        {removable ? (
+          <button
+            type="button"
+            onClick={() => store(mine.filter((x) => x.id !== v.id))}
+            aria-label={`Delete the view ${v.name}`}
+            className="-ml-1 mr-1 flex h-6 w-6 items-center justify-center rounded-full hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        ) : null}
+      </span>
+    );
+  };
+  return (
+    <div role="group" aria-label="Views" className="flex w-full flex-wrap items-center gap-1.5">
+      <span className="text-[12px] text-muted-foreground">Views:</span>
+      {BUILT_IN_VIEWS.map((v) => chip(v, false))}
+      {mine.map((v) => chip(v, true))}
+      {naming !== null ? (
+        <form
+          className="flex items-center gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <label htmlFor="coach-view-name" className="sr-only">
+            Name this view
+          </label>
+          <Input
+            id="coach-view-name"
+            autoFocus
+            value={naming}
+            maxLength={40}
+            onChange={(e) => setNaming(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setNaming(null)}
+            placeholder="Name this view"
+            className="h-8 w-40 text-xs"
+          />
+          <Button type="submit" size="sm" className="h-8" disabled={!naming.trim()}>
+            Save
+          </Button>
+          <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => setNaming(null)}>
+            Cancel
+          </Button>
+        </form>
+      ) : unsaved ? (
+        <button type="button" onClick={() => setNaming("")} className="h-8 rounded-full border border-dashed border-primary/50 px-3 text-xs font-semibold text-primary hover:bg-primary/5">
+          + Save this view
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /** Member · health · week · weight per week · check-in; on phones the numbers move under the name. */
@@ -1169,7 +1440,7 @@ function pausedLabel(p: PausePeriod): string {
 
 /* ================================= detail ================================= */
 
-type DetailTab = "overview" | "insights" | "timeline" | "checkins" | "food" | "training" | "body";
+type DetailTab = "overview" | "body" | "food" | "training" | "checkins" | "timeline";
 
 type TrainingView = "progress" | "log" | "muscles" | "program";
 
@@ -1180,15 +1451,20 @@ const TRAINING_VIEWS: { value: TrainingView; label: string }[] = [
   { value: "program", label: "Program & calendar" },
 ];
 
+/** Overview first (with the key insights), then the numbers, then the check-ins and everything that happened. */
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
-  { id: "timeline", label: "Timeline" },
-  { id: "checkins", label: "Check-ins" },
+  { id: "body", label: "Progress" },
   { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
-  { id: "body", label: "Body" },
-  { id: "insights", label: "Insights" },
+  { id: "checkins", label: "Check-ins" },
+  { id: "timeline", label: "History" },
 ];
+
+const RISK_CHIP: Record<"high" | "medium", string> = {
+  high: "border-destructive/40 bg-destructive/10 text-destructive",
+  medium: "border-warning/40 bg-warning/10 text-warning",
+};
 
 function MemberDetail({
   m,
@@ -1223,12 +1499,17 @@ function MemberDetail({
   onStopped: (sharing: MemberSharing) => void;
 }) {
   const [stopError, setStopError] = React.useState<string | null>(null);
+  // Their workouts, food, check-ins and macros: loaded once for the key insights, History and the client file.
+  const loaded = useInsightsData(companyId, m, unit, today);
+  const muscle = React.useMemo(() => (loaded.input ? muscleCheck(loaded.input) : null), [loaded.input]);
+  // Overview → "See all insights".
+  const [allInsights, setAllInsights] = React.useState(false);
   // The chat beside the notes: open by itself when they've written and you haven't read it.
   const [chatOpen, setChatOpen] = React.useState(unreadMessages > 0);
   React.useEffect(() => {
     if (unreadMessages > 0) setChatOpen(true);
   }, [unreadMessages]);
-  // The notes column folds away on a computer, so the charts get the full width (remembered on this device).
+  // The side column folds away on a computer, so the charts get the full width (remembered on this device).
   const [notesHidden, setNotesHidden] = React.useState(false);
   React.useEffect(() => {
     try {
@@ -1274,6 +1555,74 @@ function MemberDetail({
     document.getElementById(`member-tab-${next.id}`)?.focus();
   };
 
+  // What you can do for them: in the side column on a computer, under their name on a phone (or when the column is hidden).
+  const actions = (where: "head" | "rail") => (
+    <>
+      {toReview ? (
+        <Button size="sm" className={cn(where === "rail" && "col-span-2")} onClick={() => onTab("checkins")}>
+          <MessageSquare />
+          Reply to check-in
+        </Button>
+      ) : null}
+      <Button
+        size="sm"
+        variant={unreadMessages > 0 && !toReview ? "default" : "outline"}
+        onClick={openChat}
+        aria-expanded={chatOpen}
+        aria-controls="member-chat"
+      >
+        <MessageCircle />
+        Message
+        {unreadMessages > 0 ? (
+          <span className="tabular ml-0.5 rounded-full bg-destructive px-1.5 text-[11px] font-bold leading-[1.125rem] text-destructive-foreground" aria-label={`${unreadMessages} unread`}>
+            {unreadMessages}
+          </span>
+        ) : null}
+      </Button>
+      <RemindMenu
+        variant="button"
+        companyId={companyId}
+        members={[{ id: m.data.userId, name: m.displayName }]}
+        suggested={suggestedReminders(m)}
+        recent={reminders}
+        onSent={onReminders}
+      />
+      <Button size="sm" variant="outline" onClick={() => onTab("food")}>
+        <Utensils />
+        Set macros
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setTrainingView("program");
+          onTab("training");
+        }}
+      >
+        <ClipboardList />
+        Assign program
+      </Button>
+      <ClientFileLauncher summary={m} loaded={loaded} companyId={companyId} unit={unit} today={today} />
+      {where === "head" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            showNotes(true);
+            requestAnimationFrame(() => {
+              const notes = document.getElementById("member-notes");
+              notes?.scrollIntoView({ behavior: "smooth", block: "start" });
+              notes?.querySelector<HTMLTextAreaElement>("#notes-" + m.data.userId)?.focus({ preventScroll: true });
+            });
+          }}
+        >
+          <StickyNote />
+          Add note
+        </Button>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onBack}>
@@ -1301,6 +1650,36 @@ function MemberDetail({
           </div>
           <HealthPill health={m.health} large />
         </div>
+        {/* The three numbers to know before anything else: health, how likely they are to quit, and whether they're keeping muscle. */}
+        <div className="flex flex-wrap gap-1.5">
+          {m.health ? (
+            <span className={cn("tabular rounded-full border px-2.5 py-0.5 text-[12px] font-semibold", ZONE_RING[healthZone(m.health.score)])}>Health {m.health.score}</span>
+          ) : null}
+          {m.risk.level !== "low" ? (
+            <span className={cn("tabular rounded-full border px-2.5 py-0.5 text-[12px] font-semibold", RISK_CHIP[m.risk.level])} title={m.risk.reasons.map((r) => r.text).join("\n")}>
+              Quit risk {m.risk.level} · {m.risk.score}
+            </span>
+          ) : (
+            <span className="rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 text-[12px] font-semibold text-success">Quit risk low</span>
+          )}
+          {muscle && muscle.verdict !== "unknown" ? (
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[12px] font-semibold",
+                muscle.verdict === "losing"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : muscle.verdict === "slipping"
+                    ? "border-warning/40 bg-warning/10 text-warning"
+                    : muscle.verdict === "kept"
+                      ? "border-success/40 bg-success/10 text-success"
+                      : "border-border text-muted-foreground",
+              )}
+              title={muscle.text}
+            >
+              {muscle.verdict === "losing" ? "Losing muscle" : muscle.verdict === "slipping" ? "Lifts slipping" : muscle.verdict === "kept" ? "Muscle kept" : "Lifts steady"}
+            </span>
+          ) : null}
+        </div>
         {m.flags.length > 0 || m.paused ? (
           <div className="flex flex-wrap gap-1">
             {m.paused ? <Badge variant="secondary">{pausedLabel(m.paused)}</Badge> : null}
@@ -1314,70 +1693,18 @@ function MemberDetail({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          {toReview ? (
-            <Button size="sm" onClick={() => onTab("checkins")}>
-              <MessageSquare />
-              Reply to check-in
-            </Button>
-          ) : null}
-          <Button size="sm" variant={unreadMessages > 0 && !toReview ? "default" : "outline"} onClick={openChat} aria-expanded={chatOpen} aria-controls="member-chat">
-            <MessageCircle />
-            Message
-            {unreadMessages > 0 ? (
-              <span className="tabular ml-0.5 rounded-full bg-destructive px-1.5 text-[11px] font-bold leading-[1.125rem] text-destructive-foreground" aria-label={`${unreadMessages} unread`}>
-                {unreadMessages}
-              </span>
-            ) : null}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => onTab("food")}>
-            <Utensils />
-            Set macros
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setTrainingView("program");
-              onTab("training");
-            }}
-          >
-            <ClipboardList />
-            Assign program
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              showNotes(true);
-              requestAnimationFrame(() => {
-                const notes = document.getElementById("member-notes");
-                notes?.scrollIntoView({ behavior: "smooth", block: "start" });
-                notes?.querySelector<HTMLTextAreaElement>("#notes-" + m.data.userId)?.focus({ preventScroll: true });
-              });
-            }}
-          >
-            <StickyNote />
-            Add note
-          </Button>
-          <RemindMenu
-            variant="button"
-            companyId={companyId}
-            members={[{ id: m.data.userId, name: m.displayName }]}
-            suggested={suggestedReminders(m)}
-            recent={reminders}
-            onSent={onReminders}
-          />
+          <div className={cn("contents", !notesHidden && "lg:hidden")}>{actions("head")}</div>
           {notesHidden ? (
             <Button size="sm" variant="ghost" className="hidden lg:inline-flex" onClick={() => showNotes(true)}>
               <PanelRightOpen />
-              Show notes column
+              Show side column
             </Button>
           ) : null}
           <ConfirmButton
             label="Stop viewing"
             icon={<EyeOff />}
             confirmLabel="Yes, stop viewing"
-            variant="outline"
+            variant="ghost"
             onConfirm={async () => {
               try {
                 const r = await sharingCall<{ sharing: MemberSharing }>("stop", companyId, m.data.userId);
@@ -1426,6 +1753,18 @@ function MemberDetail({
       <div role="tabpanel" id="member-tabpanel" aria-labelledby={`member-tab-${tab}`} className="space-y-5">
         {tab === "overview" ? (
           <>
+            <KeyInsights summary={m} loaded={loaded} unit={unit} today={today} allOpen={allInsights} onSeeAll={() => setAllInsights((v) => !v)} />
+            {allInsights ? (
+              <div className="space-y-2 rounded-[1.25rem] border border-primary/15 p-3">
+                <div className="flex items-center">
+                  <h3 className="text-sm font-semibold">All insights</h3>
+                  <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => setAllInsights(false)}>
+                    Hide
+                  </Button>
+                </div>
+                <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} loaded={loaded} />
+              </div>
+            ) : null}
             {m.health ? (
               <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                 <HealthPill health={m.health} large />
@@ -1511,10 +1850,11 @@ function MemberDetail({
               This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
             </p>
           </>
-        ) : tab === "insights" ? (
-          <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} />
         ) : tab === "timeline" ? (
-          <MemberTimelineCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} today={today} />
+          <>
+            <NeedleCard effects={loaded.needle.effects} loading={loaded.needle.loading} unit={unit} />
+            <MemberTimelineCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} today={today} />
+          </>
         ) : tab === "checkins" ? (
           <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} summary={m} />
         ) : tab === "food" ? (
@@ -1637,13 +1977,17 @@ function MemberDetail({
       </div>
       </div>
       {/* Notes and tags stay beside the member's page on a computer, under it on a phone. */}
-      <aside id="member-notes" aria-label="Chat, notes and tags" className={cn("min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20", notesHidden && "lg:hidden")}>
-        <div className="hidden justify-end lg:flex">
-          <Button size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground" onClick={() => showNotes(false)}>
-            <PanelRightClose />
-            Hide this column
-          </Button>
-        </div>
+      <aside id="member-notes" aria-label="Actions, chat, notes and tags" className={cn("min-w-0 space-y-4 scroll-mt-20 lg:sticky lg:top-20", notesHidden && "lg:hidden")}>
+        <section aria-label={`Do something for ${m.displayName}`} className="hidden space-y-2 rounded-[1.25rem] border border-primary/15 bg-card p-3 lg:block">
+          <div className="flex items-center">
+            <h3 className="text-sm font-semibold">Do something</h3>
+            <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-muted-foreground" onClick={() => showNotes(false)} aria-label="Hide this column">
+              <PanelRightClose />
+              Hide
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 [&>*]:w-full [&_button]:w-full [&_button]:justify-start">{actions("rail")}</div>
+        </section>
         {chatOpen ? (
           <CoachChatPanel
             key={m.data.userId}
@@ -1674,74 +2018,91 @@ function Mini({ label, value }: { label: string; value: string }) {
 
 /* ================================== inbox ================================== */
 
-function InboxSwitcher({
-  value,
-  onChange,
-  checkins,
-  messages,
-}: {
-  value: "checkins" | "messages";
-  onChange: (v: "checkins" | "messages") => void;
-  checkins: number;
-  messages: number;
-}) {
-  return (
-    <SegmentedControl
-      ariaLabel="Inbox"
-      value={value}
-      onValueChange={onChange}
-      options={[
-        { value: "checkins" as const, label: checkins > 0 ? `Check-ins (${checkins})` : "Check-ins" },
-        { value: "messages" as const, label: messages > 0 ? `Messages (${messages})` : "Messages" },
-      ]}
-      className="w-auto"
-    />
-  );
+/** One member in the Inbox: their waiting check-in, their chat, or both. */
+interface InboxEntry {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  /** Null for members who don't share their progress (chat only). */
+  summary: MemberSummary | null;
+  checkin: boolean;
+  thread: ChatThread | null;
+  /** When they started waiting on you; null when nothing is waiting. */
+  waitingSince: string | null;
 }
 
-function sentAgo(iso: string | undefined, now: number): string {
-  if (!iso) return "Check-in waiting";
+type InboxFilter = "all" | "checkins" | "messages" | "needs" | "ready";
+
+/** Waiting on you, oldest first; then the other chats, newest first. */
+function inboxEntries(summaries: MemberSummary[], threads: ChatThread[], names: ReadonlyMap<string, { name: string; avatarUrl: string | null }>): InboxEntry[] {
+  const byId = new Map<string, InboxEntry>();
+  for (const m of summaries) {
+    if (!m.flags.includes("reply")) continue;
+    const id = m.data.userId;
+    byId.set(id, { id, name: m.displayName, avatarUrl: m.data.avatarUrl, summary: m, checkin: true, thread: null, waitingSince: m.lastCheckin?.submittedAt ?? "" });
+  }
+  for (const t of threads) {
+    const unreadSince = t.unread > 0 && !t.last.fromCoach ? t.last.at : null;
+    const e = byId.get(t.memberId);
+    if (e) {
+      e.thread = t;
+      if (unreadSince && (e.waitingSince === null || unreadSince < e.waitingSince)) e.waitingSince = unreadSince;
+      continue;
+    }
+    const s = summaries.find((m) => m.data.userId === t.memberId) ?? null;
+    const who = names.get(t.memberId) ?? { name: "A member", avatarUrl: null };
+    byId.set(t.memberId, { id: t.memberId, name: s?.displayName ?? who.name, avatarUrl: s?.data.avatarUrl ?? who.avatarUrl, summary: s, checkin: false, thread: t, waitingSince: unreadSince });
+  }
+  return [...byId.values()].sort((a, b) => {
+    if ((a.waitingSince === null) !== (b.waitingSince === null)) return a.waitingSince === null ? 1 : -1;
+    if (a.waitingSince !== null && b.waitingSince !== null) return a.waitingSince.localeCompare(b.waitingSince);
+    return (b.thread?.last.at ?? "").localeCompare(a.thread?.last.at ?? "");
+  });
+}
+
+function sentAgoShort(iso: string | null, now: number): string {
+  if (!iso) return "";
   const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
-  if (h < 1) return "Sent just now";
-  if (h < 24) return `Sent ${h} h ago`;
-  const d = Math.round(h / 24);
-  return d === 1 ? "Sent yesterday" : `Sent ${d} days ago`;
+  if (h < 1) return "now";
+  if (h < 24) return `${h} h`;
+  return `${Math.round(h / 24)} d`;
 }
 
 /**
- * Check-ins to answer, oldest first: the list on the left, the open one on
- * the right with its numbers, the AI draft and voice reply. "Send & next"
- * answers it and opens the next, so the week's batch is one sitting. On a
- * phone the list and the check-in take turns.
+ * Everything members are waiting on, in one list: check-ins and messages
+ * together, one row per member, longest waiting first. The open member shows
+ * their check-in (with the numbers, the draft and "Send & next") beside their
+ * chat, so a reply and a message are one sitting. On a phone the list and
+ * the member take turns.
  */
 function CoachInbox({
-  items,
+  entries,
   openId,
   onOpenId,
   companyId,
   unit,
   onReplied,
   onOpenProfile,
-  switcher,
+  onMessagesRead,
   triage,
   routineCount,
   onRoutine,
 }: {
-  /** Check-ins | Messages. */
-  switcher: React.ReactNode;
+  entries: InboxEntry[];
   /** Per member: 1-click ready, or what needs the coach. */
   triage: ReadonlyMap<string, { ready: boolean; reasons: string[] }>;
   routineCount: number;
   onRoutine: () => void;
-  items: MemberSummary[];
   openId: string | null;
   onOpenId: (id: string | null) => void;
   companyId: string;
   unit: WeightUnit;
   onReplied: (userId: string) => void;
   onOpenProfile: (userId: string) => void;
+  onMessagesRead: () => void;
 }) {
   const [wide, setWide] = React.useState(false);
+  const [show, setShow] = React.useState<InboxFilter>("all");
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
     const on = () => setWide(mq.matches);
@@ -1750,150 +2111,207 @@ function CoachInbox({
     return () => mq.removeEventListener("change", on);
   }, []);
   const now = Date.now();
-  // On a computer the oldest opens by itself; on a phone the list shows first.
-  const current = items.find((m) => m.data.userId === openId) ?? (wide ? (items[0] ?? null) : null);
+  const ready = (e: InboxEntry) => e.checkin && !!triage.get(e.id)?.ready;
+  const needs = (e: InboxEntry) => (e.checkin && !ready(e)) || (e.thread !== null && e.thread.unread > 0 && !e.thread.last.fromCoach);
+  const match = (e: InboxEntry, f: InboxFilter) =>
+    f === "all" ? true : f === "checkins" ? e.checkin : f === "messages" ? e.thread !== null : f === "needs" ? needs(e) : ready(e);
+  const list = entries.filter((e) => match(e, show));
+  const waiting = entries.filter((e) => e.waitingSince !== null);
+  // On a computer the longest waiting opens by itself; on a phone the list shows first.
+  const current = entries.find((e) => e.id === openId) ?? (wide ? (list[0] ?? null) : null);
   const nextAfter = (id: string) => {
-    const i = items.findIndex((m) => m.data.userId === id);
-    return items[i + 1]?.data.userId ?? items.find((m) => m.data.userId !== id)?.data.userId ?? null;
+    const i = waiting.findIndex((e) => e.id === id);
+    return waiting[i + 1]?.id ?? waiting.find((e) => e.id !== id)?.id ?? null;
   };
-
-  if (items.length === 0) {
-    return (
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
-          {switcher}
-        </div>
-        <EmptyNote>All caught up. No check-ins are waiting for a reply.</EmptyNote>
-      </div>
-    );
-  }
+  const filters: { id: InboxFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "checkins", label: "Check-ins" },
+    { id: "messages", label: "Messages" },
+    { id: "needs", label: "Needs you" },
+    { id: "ready", label: "1-click ready" },
+  ];
+  const checkins = entries.filter((e) => e.checkin).length;
+  const unread = entries.reduce((n, e) => n + (e.thread?.unread ?? 0), 0);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
-        {switcher}
-        <div className="flex w-full flex-wrap items-center gap-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight">Inbox</h2>
           <p className="text-sm text-muted-foreground">
-            {items.length} check-in{items.length === 1 ? "" : "s"} waiting · oldest first
-            {routineCount > 0 ? ` · 1-click ready: ${routineCount}` : ""}
+            {checkins} check-in{checkins === 1 ? "" : "s"} · {unread} unread message{unread === 1 ? "" : "s"} · longest waiting first
           </p>
-          {routineCount > 0 ? (
-            <Button size="sm" className="ml-auto" onClick={onRoutine}>
-              <Zap />
-              Send routine replies ({routineCount})
-            </Button>
-          ) : null}
         </div>
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start">
-        <ul aria-label="Check-ins waiting" className={cn("molten-card space-y-1 rounded-[1.25rem] border border-primary/15 bg-card p-2", current && "max-lg:hidden")}>
-          {items.map((m) => {
-            const on = current?.data.userId === m.data.userId;
-            return (
-              <li key={m.data.userId}>
-                <button
-                  type="button"
-                  onClick={() => onOpenId(m.data.userId)}
-                  aria-current={on ? "true" : undefined}
-                  className={cn(
-                    "flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    on ? "bg-primary/[0.14]" : "hover:bg-muted/40",
-                  )}
-                >
-                  <Avatar name={m.displayName} url={m.data.avatarUrl} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{m.displayName}</span>
-                    <span className="block truncate text-[12px] text-muted-foreground">{sentAgo(m.lastCheckin?.submittedAt, now)}</span>
-                    {triage.get(m.data.userId) ? (
-                      triage.get(m.data.userId)!.ready ? (
-                        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold text-success">
-                          <Zap className="h-3 w-3" aria-hidden />
-                          1-click ready
-                        </span>
-                      ) : (
-                        <span className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">
-                          Needs you: {triage.get(m.data.userId)!.reasons.join(" · ")}
-                        </span>
-                      )
-                    ) : null}
-                  </span>
-                  <HealthPill health={m.health} />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-
-        {current ? (
-          <div className="min-w-0 space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={() => onOpenId(null)}>
-                <ArrowLeft />
-                All check-ins
-              </Button>
-            </div>
-            <div className="molten-card flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-primary/15 bg-card p-4">
-              <Avatar name={current.displayName} url={current.data.avatarUrl} size="h-11 w-11" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-lg font-bold">{current.displayName}</p>
-                <p className="tabular text-xs text-muted-foreground">
-                  {[
-                    current.week.percent === null ? null : `Week ${current.week.percent}%`,
-                    current.weekChangeLb === null ? null : `${signedWeight(current.weekChangeLb, unit)} / wk`,
-                    current.food7 ? `food ${current.food7.days}/7 days` : "no food logged",
-                    `last log ${describeDaysAgo(current.daysSinceLog)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                {current.flags.filter((f) => f !== "reply").length > 0 ? (
-                  <span className="mt-1 flex flex-wrap gap-1">
-                    {current.flags
-                      .filter((f) => f !== "reply")
-                      .map((f) => (
-                        <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
-                          {FLAG_LABELS[f]}
-                        </Badge>
-                      ))}
-                  </span>
-                ) : null}
-              </div>
-              <HealthPill health={current.health} large />
-              <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-                <Button size="sm" variant="outline" onClick={() => onOpenProfile(current.data.userId)}>
-                  Open profile
-                </Button>
-                {items.length > 1 ? (
-                  <Button size="sm" variant="ghost" onClick={() => onOpenId(nextAfter(current.data.userId))}>
-                    Skip for now
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            <MemberCheckinsCard
-              key={current.data.userId}
-              companyId={companyId}
-              memberId={current.data.userId}
-              memberName={current.displayName}
-              unit={unit}
-              summary={current}
-              sendLabel={items.length > 1 ? "Send & next" : "Send reply"}
-              onReplied={() => {
-                const id = current.data.userId;
-                const next = nextAfter(id);
-                // A moment to see "Sent", then on to the next one.
-                window.setTimeout(() => {
-                  onReplied(id);
-                  onOpenId(next);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }, 1200);
-              }}
-            />
-          </div>
+        {routineCount > 0 ? (
+          <Button size="sm" className="ml-auto" onClick={onRoutine}>
+            <Zap />
+            Send routine replies ({routineCount})
+          </Button>
         ) : null}
       </div>
+      <div role="radiogroup" aria-label="Show" className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            role="radio"
+            aria-checked={show === f.id}
+            onClick={() => setShow(f.id)}
+            className={cn(
+              "h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              show === f.id ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted/40",
+            )}
+          >
+            {f.label} <span className="tabular opacity-80">{entries.filter((e) => match(e, f.id)).length}</span>
+          </button>
+        ))}
+      </div>
+
+      {entries.length === 0 ? (
+        <EmptyNote>
+          All caught up. No check-ins or messages are waiting. Members can message you from the chat icon in their app, and you can start a chat from
+          Message on anyone&apos;s page.
+        </EmptyNote>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,19rem)_minmax(0,1fr)] lg:items-start">
+          <ul aria-label="Waiting on you" className={cn("molten-card space-y-1 rounded-[1.25rem] border border-primary/15 bg-card p-2", current && "max-lg:hidden")}>
+            {list.length === 0 ? <li className="p-4 text-center text-sm text-muted-foreground">Nobody here.</li> : null}
+            {list.map((e) => {
+              const on = current?.id === e.id;
+              const t = triage.get(e.id);
+              const unreadHere = e.thread && !e.thread.last.fromCoach ? e.thread.unread : 0;
+              return (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenId(e.id)}
+                    aria-current={on ? "true" : undefined}
+                    className={cn(
+                      "flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      on ? "bg-primary/[0.14]" : "hover:bg-muted/40",
+                    )}
+                  >
+                    <Avatar name={e.name} url={e.avatarUrl} />
+                    <span className="min-w-0 flex-1">
+                      <span className={cn("block truncate", e.waitingSince !== null ? "font-bold" : "font-medium")}>{e.name}</span>
+                      <span className="block truncate text-[12px] text-muted-foreground">
+                        {e.checkin ? "Check-in waiting" : e.thread ? `${e.thread.last.fromCoach ? "You: " : ""}${messagePreview(e.thread.last)}` : ""}
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap gap-1">
+                        {e.checkin && t ? (
+                          t.ready ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">
+                              <Zap className="h-3 w-3" aria-hidden />
+                              1-click ready
+                            </span>
+                          ) : (
+                            <span className="max-w-full truncate rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
+                              Needs you{t.reasons.length ? `: ${t.reasons.join(" · ")}` : ""}
+                            </span>
+                          )
+                        ) : null}
+                        {unreadHere > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            <MessageCircle className="h-3 w-3" aria-hidden />
+                            {unreadHere} unread
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    {e.waitingSince !== null ? <span className="tabular shrink-0 text-[11px] text-muted-foreground">{sentAgoShort(e.waitingSince, now)}</span> : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {current ? (
+            <div className="min-w-0 space-y-4">
+              <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={() => onOpenId(null)}>
+                <ArrowLeft />
+                Inbox
+              </Button>
+              <div className="molten-card flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-primary/15 bg-card p-4">
+                <Avatar name={current.name} url={current.avatarUrl} size="h-11 w-11" />
+                <div className="min-w-0 flex-1 basis-56">
+                  <p className="truncate text-lg font-bold">{current.name}</p>
+                  {current.summary ? (
+                    <>
+                      <p className="tabular text-xs text-muted-foreground">
+                        {[
+                          current.summary.week.percent === null ? null : `Week ${current.summary.week.percent}%`,
+                          current.summary.weekChangeLb === null ? null : `${signedWeight(current.summary.weekChangeLb, unit)} / wk`,
+                          current.summary.food7 ? `food ${current.summary.food7.days}/7 days` : "no food logged",
+                          `last log ${describeDaysAgo(current.summary.daysSinceLog)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      {current.summary.flags.filter((f) => f !== "reply").length > 0 ? (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {current.summary.flags
+                            .filter((f) => f !== "reply")
+                            .map((f) => (
+                              <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
+                                {FLAG_LABELS[f]}
+                              </Badge>
+                            ))}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Not sharing their progress with you: chat only.</p>
+                  )}
+                </div>
+                {current.summary ? <HealthPill health={current.summary.health} large /> : null}
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                  <Button size="sm" variant="outline" onClick={() => onOpenProfile(current.id)}>
+                    Open profile
+                  </Button>
+                  {waiting.length > 1 ? (
+                    <Button size="sm" variant="ghost" onClick={() => onOpenId(nextAfter(current.id))}>
+                      Skip for now
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-4 xl:items-start", current.checkin && "xl:grid-cols-[minmax(0,1fr)_22rem]")}>
+                {current.checkin && current.summary ? (
+                  <MemberCheckinsCard
+                    key={current.id}
+                    companyId={companyId}
+                    memberId={current.id}
+                    memberName={current.name}
+                    unit={unit}
+                    summary={current.summary}
+                    sendLabel={waiting.length > 1 ? "Send & next" : "Send reply"}
+                    onReplied={() => {
+                      const id = current.id;
+                      const next = nextAfter(id);
+                      // A moment to see "Sent", then on to the next one.
+                      window.setTimeout(() => {
+                        onReplied(id);
+                        onOpenId(next);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }, 1200);
+                    }}
+                  />
+                ) : null}
+                <CoachChatPanel
+                  key={`chat-${current.id}`}
+                  className="xl:sticky xl:top-20"
+                  companyId={companyId}
+                  memberId={current.id}
+                  memberName={current.name}
+                  onRead={onMessagesRead}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="hidden rounded-[1.25rem] border border-dashed border-border p-6 text-center text-sm text-muted-foreground lg:block">Pick someone.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

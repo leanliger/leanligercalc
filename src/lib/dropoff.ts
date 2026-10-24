@@ -56,7 +56,7 @@ export function dropOffRisk(
   const before = loggedDays(d, addDays(today, -27), addDays(today, -7), false) / 3;
   if (before >= 3) {
     const drop = 1 - recent / before;
-    if (drop >= 0.5) reasons.push({ id: "fading", text: `Logging down ${Math.round(drop * 100)}% on their usual (${recent} days this week vs about ${Math.round(before)})`, points: 25 });
+    if (drop >= 0.5) reasons.push({ id: "fading", text: `Logging down ${Math.round(drop * 100)}% on their usual (${recent} day${recent === 1 ? "" : "s"} this week vs about ${Math.round(before)})`, points: 25 });
     else if (drop >= 0.3) reasons.push({ id: "fading", text: `Logging down ${Math.round(drop * 100)}% on their usual`, points: 15 });
   }
 
