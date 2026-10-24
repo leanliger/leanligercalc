@@ -19,6 +19,7 @@ import {
   type NotificationItem,
   type NotificationsResponse,
 } from "../src/lib/messages";
+import { reminderInfo, reminderText } from "../src/lib/coach-reminders";
 import { companyOfExperience } from "./messages";
 import type { ReminderEnv } from "./reminders";
 import type { WhopEnv } from "./whop";
@@ -32,7 +33,7 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
   const since = `${addDays(now.toISOString().slice(0, 10), -NOTIFICATIONS_DAYS)}T00:00:00.000Z`;
 
   const q = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(...binds);
-  const [seen, checkins, assigned, edits, macros, milestones, nudges, tags, announcements, chat, comments] = await env.DB.batch([
+  const [seen, checkins, assigned, edits, macros, milestones, nudges, tags, announcements, chat, comments, reminders] = await env.DB.batch([
     q("SELECT seen_at FROM notification_seen WHERE user_id = ?", userId),
     q("SELECT week_start, reply, replied_at FROM checkins WHERE user_id = ? AND replied_at >= ?", userId, since),
     q(
@@ -61,6 +62,7 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
     ),
     q("SELECT COUNT(*) AS n FROM coach_messages WHERE member_id = ? AND company_id = ? AND from_coach = 1 AND pending = 0 AND read_at IS NULL", userId, companyId ?? ""),
     q("SELECT id, coach_comment, coach_comment_at FROM physique_analyses WHERE user_id = ? AND source = 'compare' AND coach_comment_at >= ?", userId, since),
+    q("SELECT id, kind, sent_at FROM coach_reminders WHERE member_id = ? AND sent_at >= ?", userId, since),
   ]);
   const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
 
@@ -125,6 +127,19 @@ export async function getNotifications(env: Env, userId: string, experienceId: s
       body: clip(c.coach_comment),
       at: c.coach_comment_at,
       target: "checkin",
+    });
+  }
+  for (const r of rows<{ id: string; kind: string; sent_at: string }>(reminders)) {
+    const info = reminderInfo(r.kind);
+    if (!info) continue;
+    const t = reminderText(info.kind, "");
+    items.push({
+      id: `reminder-${r.id}`,
+      kind: "reminder",
+      title: t.title,
+      body: t.content.replace(/^Hey, /, "").replace(/^./, (c) => c.toUpperCase()),
+      at: r.sent_at,
+      target: info.target,
     });
   }
   for (const u of APP_UPDATES) {

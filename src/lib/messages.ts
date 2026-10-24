@@ -150,7 +150,8 @@ export type NotificationKind =
   | "macros"
   | "milestone"
   | "nudge"
-  | "comparison-comment";
+  | "comparison-comment"
+  | "reminder";
 
 /** Where tapping one takes the member. */
 export type NotificationTarget = "today" | "checkin" | "training" | "macros" | "chat" | null;

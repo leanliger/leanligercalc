@@ -10,6 +10,7 @@ import { addDays } from "./dates";
 import { weekStartOf } from "./habits";
 import { milestoneLabel, type MilestoneKind } from "./milestones";
 import { NUDGE_INFO, type NudgeKind } from "./nudges";
+import { reminderInfo } from "./coach-reminders";
 import type { WeightUnit } from "./types";
 import { fromLb } from "./units";
 
@@ -28,14 +29,15 @@ export type TimelineKind =
   | "workout"
   | "nudge"
   | "message-in"
-  | "message-out";
+  | "message-out"
+  | "reminder";
 
 /** Groups for the feed's filter. */
 export const TIMELINE_GROUPS = {
   checkins: ["check-in", "reply"],
   body: ["weigh-in", "measurement", "photos", "milestone"],
   training: ["workout", "program", "program-edit"],
-  coach: ["note", "macros", "habits", "program", "program-edit", "reply", "nudge", "message-out"],
+  coach: ["note", "macros", "habits", "program", "program-edit", "reply", "nudge", "message-out", "reminder"],
   messages: ["message-in", "message-out"],
 } as const satisfies Record<string, readonly TimelineKind[]>;
 export type TimelineGroup = keyof typeof TIMELINE_GROUPS;
@@ -78,6 +80,8 @@ export interface TimelineRows {
   nudges?: { kind: NudgeKind; message: string | null; sentAt: string }[];
   /** Chat messages (src/lib/messages.ts), delivered ones only. Optional for callers that don't read them. */
   messages?: { fromCoach: boolean; body: string; at: string; attachment: "photo" | "voice" | null }[];
+  /** Reminders the coach sent (src/lib/coach-reminders.ts). Optional for callers that don't read them. */
+  reminders?: { kind: string; sentAt: string }[];
 }
 
 const clip = (s: string, n = 180) => {
@@ -236,6 +240,12 @@ export function buildTimeline(rows: TimelineRows, since: string, unit: WeightUni
       title: `Automatic nudge: ${NUDGE_INFO[n.kind].label.toLowerCase()}`,
       detail: n.message ? `“${clip(n.message)}”` : undefined,
     });
+  }
+
+  for (const r of rows.reminders ?? []) {
+    if (day(r.sentAt) < since) continue;
+    const info = reminderInfo(r.kind);
+    out.push({ date: day(r.sentAt), at: r.sentAt, kind: "reminder", title: `You sent a reminder: ${(info?.label ?? r.kind).toLowerCase()}` });
   }
 
   // Chat: one entry per day and side, so a long conversation doesn't bury everything else.

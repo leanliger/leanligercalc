@@ -40,7 +40,10 @@ export function BulkBar({
   onTagsChanged,
   onAssign,
   onMessaged,
+  remind,
 }: {
+  /** The Remind menu for everyone selected. */
+  remind?: React.ReactNode;
   companyId: string;
   selected: string[];
   tags: TagsData | null;
@@ -154,6 +157,7 @@ export function BulkBar({
             <ClipboardList />
             Assign program
           </Button>
+          {remind}
         </span>
         <Button size="sm" variant="ghost" className="ml-auto" onClick={onClear}>
           <X />

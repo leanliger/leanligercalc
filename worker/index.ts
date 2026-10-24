@@ -66,6 +66,7 @@
  *   GET    /api/coach/member-workouts?company=…&member=…  coaches: a member's workouts (newest 500)
  *   GET    /api/coach/member-physique?company=…&member=…  coaches: a member's latest physique analysis (photo sharing only)
  *   PUT    /api/coach/comparison-comment          coaches: a comment on a member's monthly comparison (see physique-focus.ts)
+ *   GET/POST /api/coach/reminders?company=…           coaches: on-demand reminders to members (see coach-reminders.ts)
  *   GET    /api/coach/community-stats?company=…&period=…  coaches: totals across sharing members, for marketing (see community-stats.ts)
  *   …      notes, check-ins and coach-set macros: see coaching.ts
  *   GET    /api/program-edits                 members: coach edits waiting for my app; POST /api/program-edits/:id/applied
@@ -119,6 +120,7 @@ import { coachMemberTimeline } from "./member-timeline";
 import { getNudges, saveNudges, sendCoachNudges } from "./nudges";
 import { coachProgramResults } from "./program-results";
 import { communityStats } from "./community-stats";
+import { getReminders, sendReminder } from "./coach-reminders";
 import {
   cancelScheduledMessage,
   coachAttachment,
@@ -837,6 +839,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await coachMemberFood(env, userId, q("company"), q("member")));
   }
+  if (path === "/api/coach/reminders") {
+    if (method === "GET") return send(await getReminders(env, userId, q("company")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await sendReminder(env, userId, body.value));
+  }
   if (path === "/api/coach/community-stats") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await communityStats(env, userId, q("company"), q("period")));
@@ -1429,6 +1438,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_program_edits WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_nudges_sent WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_messages WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_reminders WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),

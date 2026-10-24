@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bell, ClipboardList, Dumbbell, ImageIcon, Megaphone, MessageSquare, PartyPopper, Sparkles, Utensils, X } from "lucide-react";
+import { Bell, BellRing, ClipboardList, Dumbbell, ImageIcon, Megaphone, MessageSquare, PartyPopper, Sparkles, Utensils, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatShort } from "@/lib/dates";
 import { BELL_POLL_MS, type NotificationItem, type NotificationKind, type NotificationTarget, type NotificationsResponse } from "@/lib/messages";
@@ -50,6 +50,7 @@ const ICONS: Record<NotificationKind, React.ReactNode> = {
   milestone: <PartyPopper />,
   nudge: <Bell />,
   "comparison-comment": <ImageIcon />,
+  reminder: <BellRing />,
 };
 
 const LABELS: Record<NotificationKind, string> = {
@@ -63,6 +64,7 @@ const LABELS: Record<NotificationKind, string> = {
   milestone: "Milestone",
   nudge: "Coach",
   "comparison-comment": "Photos",
+  reminder: "Reminder",
 };
 
 const ago = (iso: string) => {

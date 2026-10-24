@@ -40,6 +40,7 @@ const KIND_STYLE: Record<TimelineKind, { icon: React.ReactNode; tone: string }> 
   nudge: { icon: <BellRing />, tone: "text-violet-400 bg-violet-400/[0.12]" },
   "message-in": { icon: <MessageCircle />, tone: "text-sky-400 bg-sky-400/[0.12]" },
   "message-out": { icon: <MessageCircle />, tone: "text-violet-400 bg-violet-400/[0.12]" },
+  reminder: { icon: <BellRing />, tone: "text-violet-400 bg-violet-400/[0.12]" },
 };
 
 const FILTERS: { id: "all" | TimelineGroup; label: string }[] = [

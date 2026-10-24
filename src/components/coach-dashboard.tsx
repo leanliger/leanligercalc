@@ -43,6 +43,8 @@ import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, CoachMessagesInbox, useCoachThreads } from "@/components/chat";
 import { CoachAnnouncements, CoachDigestToggle } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
+import { RemindMenu, useCoachReminders, type SentReminder } from "@/components/coach-remind-menu";
+import { suggestedReminders } from "@/lib/coach-reminders";
 import { CommunityStatsCard } from "@/components/coach-community-stats";
 import { MemberWorkoutsCard } from "@/components/coach-member-workouts";
 import { CoachReportPanel } from "@/components/coach-report";
@@ -149,6 +151,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   // Members ticked in the list for bulk actions, and the ones handed to Assign program.
   const [picked, setPicked] = React.useState<string[]>([]);
   const [assignPicked, setAssignPicked] = React.useState<string[]>([]);
+  // On-demand reminders sent this week, for the menus beside each member.
+  const reminderState = useCoachReminders(companyId);
   // Every chat, for the unread counts on Inbox and on each member's Message button.
   const chats = useCoachThreads(companyId);
   // The check-in open in the inbox.
@@ -558,6 +562,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               tab={tab}
               onTab={setTab}
               unreadMessages={chats.threads.find((t) => t.memberId === current.data.userId)?.unread ?? 0}
+              reminders={reminderState.reminders}
+              onReminders={reminderState.setReminders}
               onMessagesRead={() => void chats.refresh()}
               onBack={() => setSelected(null)}
               onStopped={(sharing) => {
@@ -699,7 +705,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   <div
                     aria-hidden
                     className={cn(
-                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent py-2 pl-12 pr-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
+                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent py-2 pl-[5.75rem] pr-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
                       ROW_GRID,
                     )}
                   >
@@ -724,6 +730,16 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               onChange={(e) => setPicked((p) => (e.target.checked ? [...p, m.data.userId] : p.filter((id) => id !== m.data.userId)))}
                             />
                           </label>
+                          {/* Reminders, on demand: suggested ones (from their flags) show as a count. */}
+                          <div className="flex shrink-0 items-center pr-1">
+                            <RemindMenu
+                              companyId={companyId}
+                              members={[{ id: m.data.userId, name: m.displayName }]}
+                              suggested={suggestedReminders(m)}
+                              recent={reminderState.reminders}
+                              onSent={reminderState.setReminders}
+                            />
+                          </div>
                           <div className="min-w-0 flex-1">
                             <MemberRow
                               m={m}
@@ -744,6 +760,15 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <BulkBar
                   companyId={companyId}
                   selected={picked}
+                  remind={
+                    <RemindMenu
+                      variant="button"
+                      companyId={companyId}
+                      members={picked.map((id) => ({ id, name: summaries.find((s) => s.data.userId === id)?.displayName ?? "Member" }))}
+                      recent={reminderState.reminders}
+                      onSent={reminderState.setReminders}
+                    />
+                  }
                   tags={tagsData}
                   onClear={() => setPicked([])}
                   onTagsChanged={setTagsData}
@@ -1126,7 +1151,12 @@ function MemberDetail({
   tags,
   unreadMessages,
   onMessagesRead,
+  reminders,
+  onReminders,
 }: {
+  /** On-demand reminders sent this week (the Remind menu). */
+  reminders: SentReminder[];
+  onReminders: (r: SentReminder[]) => void;
   /** Their tags card. */
   tags?: React.ReactNode;
   /** Messages from them you haven't opened. */
@@ -1278,6 +1308,14 @@ function MemberDetail({
             <StickyNote />
             Add note
           </Button>
+          <RemindMenu
+            variant="button"
+            companyId={companyId}
+            members={[{ id: m.data.userId, name: m.displayName }]}
+            suggested={suggestedReminders(m)}
+            recent={reminders}
+            onSent={onReminders}
+          />
           {notesHidden ? (
             <Button size="sm" variant="ghost" className="hidden lg:inline-flex" onClick={() => showNotes(true)}>
               <PanelRightOpen />
