@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, MessageCircle, MessageSquare, MoreHorizontal, PartyPopper, Zap } from "lucide-react";
+import { Check, Clock, Loader2, MessageCircle, MessageSquare, MoreHorizontal, PartyPopper, Undo2, Zap } from "lucide-react";
+import { addDays, daysBetween } from "@/lib/dates";
 import { FLAG_LABELS, type Flag, type MemberSummary } from "@/lib/coach";
 import { kudosMessage, messagePreview, type ChatThread } from "@/lib/messages";
 import { goalLabel } from "@/lib/lift-goals";
@@ -204,8 +205,11 @@ const newestWin = (m: MemberSummary) => winsOf(m, "lb")[0]?.date ?? "";
 
 /* ================================ action queue ================================ */
 
-type QueueKind = "safety" | "drop-off" | "checkin" | "message" | "muscle" | "risk" | "win";
-type QueueFilter = "all" | "checkins" | "messages" | "risk" | "wins";
+type QueueKind = "safety" | "drop-off" | "checkin" | "message" | "muscle" | "risk" | "quiet" | "win";
+type QueueFilter = "all" | "checkins" | "messages" | "risk" | "quiet" | "wins";
+
+/** Days without a message, check-in reply or reminder from a coach before a member shows as Quiet. */
+export const QUIET_DAYS = 14;
 
 /** Most urgent first: safety, then quitting, then people waiting on a reply, then drifting, then wins. */
 const KIND: Record<QueueKind, { rank: number; label: string; stripe: string; chip: string; filter: QueueFilter }> = {
@@ -215,7 +219,8 @@ const KIND: Record<QueueKind, { rank: number; label: string; stripe: string; chi
   message: { rank: 3, label: "Message", stripe: "border-l-primary", chip: "bg-primary/15 text-primary", filter: "messages" },
   muscle: { rank: 4, label: "Losing muscle", stripe: "border-l-warning", chip: "bg-warning/15 text-warning", filter: "risk" },
   risk: { rank: 5, label: "Drifting", stripe: "border-l-warning", chip: "bg-warning/15 text-warning", filter: "risk" },
-  win: { rank: 6, label: "Win", stripe: "border-l-success", chip: "bg-success/15 text-success", filter: "wins" },
+  quiet: { rank: 6, label: "Quiet", stripe: "border-l-muted-foreground/40", chip: "bg-muted text-muted-foreground", filter: "quiet" },
+  win: { rank: 7, label: "Win", stripe: "border-l-success", chip: "bg-success/15 text-success", filter: "wins" },
 };
 
 const QUEUE_LIMIT = 10;
@@ -230,6 +235,8 @@ interface QueueRow {
   reason: string;
   /** Other things waiting from them ("2 unread", "Check-in waiting"). */
   also: string[];
+  /** Every other reason they're here, behind "+N more". */
+  more: string[];
   /** Within a kind: oldest first for replies, the list's urgency order for the rest. */
   order: string;
 }
@@ -253,7 +260,15 @@ export function ActionQueue({
   onOpen,
   onKudos,
   remind,
+  today,
+  snoozes,
+  onSnooze,
 }: {
+  today: string;
+  /** Rows hidden by the coach: "kind:memberId" → the day they show again. */
+  snoozes: ReadonlyMap<string, string>;
+  /** Hide a row until a day (Done for today, Snooze 3 days), or show it again (null). */
+  onSnooze: (memberId: string, kind: string, until: string | null) => void;
   members: MemberSummary[];
   threads: ChatThread[];
   /** Everyone's name and photo, for messages from members who don't share. */
@@ -271,6 +286,9 @@ export function ActionQueue({
 }) {
   const [show, setShow] = React.useState<QueueFilter>("all");
   const [all, setAll] = React.useState(false);
+  // Rows with every reason showing, and whether hidden rows are listed.
+  const [open, setOpen] = React.useState<ReadonlySet<string>>(new Set());
+  const [showHidden, setShowHidden] = React.useState(false);
   const now = Date.now();
   const unread = new Map(threads.filter((t) => t.unread > 0 && !t.last.fromCoach).map((t) => [t.memberId, t]));
 
@@ -283,6 +301,13 @@ export function ActionQueue({
     const waitingReply = f.includes("reply");
     const base = { id, name: m.displayName, avatarUrl: m.data.avatarUrl, summary: m, order: String(i).padStart(5, "0") };
     let row: { kind: QueueKind; reason: string; order?: string } | null = null;
+    // Everything that's true of them, for "+N more" (the row's own reason is dropped below).
+    const reasons = [
+      ...(waitingReply ? [t?.ready ? "Check-in 1-click ready" : `Check-in waiting (${sentAgo(m.lastCheckin?.submittedAt, now).replace(/^Sent /, "sent ")})`] : []),
+      ...(thread ? [`${thread.unread} unread message${thread.unread === 1 ? "" : "s"}`] : []),
+      ...(f.includes("drop-off") ? m.risk.reasons.map((r) => r.text) : []),
+      ...f.filter((x) => x !== "reply" && x !== "drop-off").map((x) => flagReason(m, x)),
+    ];
     if (f.includes("too-fast") || f.includes("under-floor")) {
       row = { kind: "safety", reason: f.filter((x) => x === "too-fast" || x === "under-floor").map((x) => FLAG_LABELS[x]).join(" · ") };
     } else if (f.includes("drop-off")) {
@@ -299,35 +324,60 @@ export function ActionQueue({
       row = { kind: "muscle", reason: flagReason(m, f.includes("slipping") ? "slipping" : "muscle-loss") };
     } else if (isAtRisk(m)) {
       row = { kind: "risk", reason: f.filter((x) => x !== "reply").map((x) => flagReason(m, x)).join(" · ") };
+    } else {
+      // Nothing wrong, but you haven't been in touch for a while (counted from when they started sharing).
+      const last = m.data.lastCoachContact ? m.data.lastCoachContact.slice(0, 10) : null;
+      const since = m.data.sharing.since?.slice(0, 10) ?? null;
+      const from = last ?? since;
+      if (from && daysBetween(from, today) >= QUIET_DAYS && !waitingReply) {
+        row = {
+          kind: "quiet",
+          reason: last
+            ? `No message, check-in reply or reminder from you in ${daysBetween(last, today)} days`
+            : `You haven't reached out since they started sharing (${daysBetween(since!, today)} days ago)`,
+          order: from,
+        };
+      }
     }
     if (row) {
       const also = [
         row.kind !== "message" && thread ? `${thread.unread} unread` : null,
         row.kind !== "checkin" && waitingReply ? (t?.ready ? "Check-in 1-click ready" : "Check-in waiting") : null,
       ].filter((x): x is string => x !== null);
-      rows.push({ ...base, ...row, key: `${row.kind}:${id}`, also, order: row.order ?? base.order });
+      // Not what the row or its chips already say.
+      const checkinShown = row.kind === "checkin" || also.some((x) => x.startsWith("Check-in"));
+      const unreadShown = row.kind === "message" || also.some((x) => x.includes("unread"));
+      const r0 = row;
+      const more = reasons.filter((x) => !r0.reason.includes(x) && !(checkinShown && x.startsWith("Check-in")) && !(unreadShown && x.includes("unread")));
+      rows.push({ ...base, ...row, key: `${row.kind}:${id}`, also, more, order: row.order ?? base.order });
     }
     if (winsOf(m, unit).length > 0) {
-      rows.push({ ...base, key: `win:${id}`, kind: "win", reason: newestWinLabel(m, unit) ?? "A milestone this week", also: [], order: newestWin(m) });
+      rows.push({ ...base, key: `win:${id}`, kind: "win", reason: newestWinLabel(m, unit) ?? "A milestone this week", also: [], more: winsOf(m, unit).slice(1).map((w) => w.label), order: newestWin(m) });
     }
   });
   // Messages from members who don't share their progress.
   for (const t of unread.values()) {
     if (members.some((m) => m.data.userId === t.memberId)) continue;
     const who = names.get(t.memberId) ?? { name: "A member", avatarUrl: null };
-    rows.push({ key: `message:${t.memberId}`, kind: "message", id: t.memberId, name: who.name, avatarUrl: who.avatarUrl, summary: null, reason: `“${messagePreview(t.last)}”`, also: [], order: t.last.at });
+    rows.push({ key: `message:${t.memberId}`, kind: "message", id: t.memberId, name: who.name, avatarUrl: who.avatarUrl, summary: null, reason: `“${messagePreview(t.last)}”`, also: [], more: [], order: t.last.at });
   }
   rows.sort((a, b) => KIND[a.kind].rank - KIND[b.kind].rank || (a.kind === "win" ? b.order.localeCompare(a.order) : a.order.localeCompare(b.order)));
 
-  const count = (f: QueueFilter) => (f === "all" ? rows.filter((r) => r.kind !== "win").length : rows.filter((r) => KIND[r.kind].filter === f).length);
+  // Rows you marked done or snoozed stay out until their day (replies clear themselves when sent).
+  const hidden = (r: QueueRow) => (snoozes.get(r.key) ?? "") > today;
+  const visible = rows.filter((r) => !hidden(r));
+  const hiddenCount = rows.length - visible.length;
+  const pool = showHidden ? rows : visible;
+  const count = (f: QueueFilter) => (f === "all" ? visible.filter((r) => r.kind !== "win").length : visible.filter((r) => KIND[r.kind].filter === f).length);
   // "Needs you" is everything but wins; wins have their own chip.
-  const list = rows.filter((r) => (show === "all" ? r.kind !== "win" : KIND[r.kind].filter === show));
+  const list = pool.filter((r) => (show === "all" ? r.kind !== "win" : KIND[r.kind].filter === show));
   const shown = all ? list : list.slice(0, QUEUE_LIMIT);
   const chips: { id: QueueFilter; label: string }[] = [
     { id: "all", label: "Needs you" },
     { id: "checkins", label: "Check-ins" },
     { id: "messages", label: "Messages" },
     { id: "risk", label: "At risk" },
+    { id: "quiet", label: "Quiet" },
     { id: "wins", label: "Wins" },
   ];
 
@@ -364,27 +414,43 @@ export function ActionQueue({
             Clear {routineCount} routine check-in{routineCount === 1 ? "" : "s"}
           </button>
         ) : null}
+        {hiddenCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowHidden((v) => !v)}
+            className="h-8 shrink-0 rounded-full px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+          >
+            {showHidden ? "Hide done and snoozed" : `${hiddenCount} done or snoozed`}
+          </button>
+        ) : null}
       </div>
 
       {list.length === 0 ? (
         <p className="rounded-[1.25rem] border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           {show === "wins"
             ? "No milestones this week. They show here when someone is 5 lb down, or an inch off the waist."
-            : show === "all" && routineCount > 0
-              ? "Only routine check-ins left: clear them in one go with the button above."
-              : "Nothing here. Everyone is on track."}
+            : show === "quiet"
+              ? `Nobody's gone ${QUIET_DAYS} days without hearing from you.`
+              : show === "all" && routineCount > 0
+                ? "Only routine check-ins left: clear them in one go with the button above."
+                : hiddenCount > 0
+                  ? "All done for now. Snoozed rows come back on their day."
+                  : "Nothing here. Everyone is on track."}
         </p>
       ) : (
         <ol className="molten-card divide-y divide-border overflow-hidden rounded-[1.25rem] border border-primary/15 bg-card">
           {shown.map((r) => {
             const k = KIND[r.kind];
             const replyKind = r.kind === "checkin" || r.kind === "message";
-            const open = () => (replyKind || !r.summary ? onInbox(r.id) : onOpen(r.id, r.kind === "muscle" ? "training" : openTab(r.summary)));
+            const openRow = () =>
+              replyKind || !r.summary || r.kind === "quiet" ? onInbox(r.id) : onOpen(r.id, r.kind === "muscle" ? "training" : openTab(r.summary));
+            const isHidden = hidden(r);
+            const expanded = open.has(r.key);
             return (
-              <li key={r.key} className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 border-l-[3px] px-3 py-2.5", k.stripe)}>
+              <li key={r.key} className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 border-l-[3px] px-3 py-2.5", k.stripe, isHidden && "opacity-60")}>
                 <button
                   type="button"
-                  onClick={open}
+                  onClick={openRow}
                   className="flex min-w-0 flex-1 basis-64 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Avatar name={r.name} url={r.avatarUrl} />
@@ -398,22 +464,67 @@ export function ActionQueue({
                         </span>
                       ))}
                     </span>
-                    <span className="block truncate text-[12px] text-muted-foreground">{r.reason}</span>
+                    <span className={cn("block text-[12px] text-muted-foreground", !expanded && "truncate")}>{r.reason}</span>
+                    {expanded ? (
+                      <span className="mt-0.5 block space-y-0.5">
+                        {r.more.map((x) => (
+                          <span key={x} className="block text-[12px] text-muted-foreground">
+                            · {x}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
+                {r.more.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpen((s) => {
+                        const n = new Set(s);
+                        if (n.has(r.key)) n.delete(r.key);
+                        else n.add(r.key);
+                        return n;
+                      })
+                    }
+                    aria-expanded={expanded}
+                    className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                  >
+                    {expanded ? "Less" : `+${r.more.length} more`}
+                  </button>
+                ) : null}
                 <span className="ml-auto flex shrink-0 items-center gap-1.5">
                   {r.kind === "win" && r.summary ? <KudosButton m={r.summary} unit={unit} onKudos={onKudos} /> : null}
                   {!replyKind && r.kind !== "win" && r.summary ? remind(r.summary) : null}
                   {!replyKind && r.kind !== "win" ? (
-                    <QueueButton onClick={() => onInbox(r.id)} label={`Message ${r.name}`}>
+                    <QueueButton onClick={() => onInbox(r.id)} primary={r.kind === "quiet"} label={`Message ${r.name}`}>
                       <MessageCircle className="h-3.5 w-3.5" aria-hidden />
                       Message
                     </QueueButton>
                   ) : null}
-                  <QueueButton onClick={open} primary={replyKind} label={replyKind ? `Reply to ${r.name}` : `Open ${r.name}`}>
-                    {replyKind ? <MessageSquare className="h-3.5 w-3.5" aria-hidden /> : null}
-                    {replyKind ? "Reply" : "Open"}
-                  </QueueButton>
+                  {r.kind !== "quiet" ? (
+                    <QueueButton onClick={openRow} primary={replyKind} label={replyKind ? `Reply to ${r.name}` : `Open ${r.name}`}>
+                      {replyKind ? <MessageSquare className="h-3.5 w-3.5" aria-hidden /> : null}
+                      {replyKind ? "Reply" : "Open"}
+                    </QueueButton>
+                  ) : null}
+                  {/* Replies clear themselves when sent; everything else can be put away. */}
+                  {!replyKind ? (
+                    isHidden ? (
+                      <QueueIcon label={`Show ${r.name} again`} onClick={() => onSnooze(r.id, r.kind, null)}>
+                        <Undo2 className="h-3.5 w-3.5" />
+                      </QueueIcon>
+                    ) : (
+                      <>
+                        <QueueIcon label={`Done for today: ${r.name}`} onClick={() => onSnooze(r.id, r.kind, addDays(today, 1))}>
+                          <Check className="h-3.5 w-3.5" />
+                        </QueueIcon>
+                        <QueueIcon label={`Snooze ${r.name} for 3 days`} onClick={() => onSnooze(r.id, r.kind, addDays(today, 3))}>
+                          <Clock className="h-3.5 w-3.5" />
+                        </QueueIcon>
+                      </>
+                    )
+                  ) : null}
                 </span>
               </li>
             );
@@ -426,6 +537,20 @@ export function ActionQueue({
         </button>
       ) : null}
     </section>
+  );
+}
+
+function QueueIcon({ onClick, label, children }: { onClick: () => void; label: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
   );
 }
 

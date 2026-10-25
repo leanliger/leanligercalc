@@ -51,6 +51,7 @@ import { CoachAnnouncements, CoachDigestToggle, DigestHistory } from "@/componen
 import { BulkBar } from "@/components/coach-bulk";
 import { ClientFileLauncher, KeyInsights, MemberInsights, useInsightsData } from "@/components/coach-member-insights";
 import { NeedleCard } from "@/components/coach-coaching-cards";
+import type { CoachChange } from "@/lib/needle";
 import { muscleCheck } from "@/lib/member-insights";
 import { CoachLiftGoals } from "@/components/lift-goals-card";
 import { isCutting } from "@/lib/lift-goals";
@@ -146,6 +147,9 @@ const BUILT_IN_VIEWS: SavedView[] = [
   { id: "safety", name: "Safety", filter: "safety", tag: null, sort: "attention", query: "" },
 ];
 
+/** How often the dashboard reloads by itself while it's open and showing. */
+const AUTO_REFRESH_MS = 3 * 60_000;
+
 /** The dashboard's sections. */
 type View = "today" | "inbox" | "members" | "programs" | "automations" | "growth";
 
@@ -240,9 +244,15 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     window.history.replaceState(null, "", url.pathname + url.search);
   }, [selected]);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // When the overview last loaded, for refreshing on coming back to the tab.
+  const lastLoad = React.useRef(0);
+  /** Load the overview; `silent` (the auto-refresh) keeps what's showing if it fails. */
+  const load = React.useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+    lastLoad.current = Date.now();
     try {
       const res = await fetch(`/api/coach/overview?company=${encodeURIComponent(companyId)}`, {
         credentials: "same-origin",
@@ -251,7 +261,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
       const isJson = (res.headers.get("content-type") ?? "").includes("application/json");
       const body = isJson ? ((await res.json()) as CoachOverview & { error?: string }) : null;
       if (!res.ok || !body) {
-        setError(
+        if (!silent) setError(
           res.status === 401
             ? "Open the coach dashboard from your Whop dashboard (Apps → Lean Stature System) so Whop can confirm it's you."
             : (body?.error ?? "Couldn't load the dashboard. Try again."),
@@ -265,9 +275,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
           });
       }
     } catch {
-      setError("Couldn't reach the server. Check your connection and try again.");
+      if (!silent) setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [companyId]);
 
@@ -354,6 +364,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   /** Open a member's waiting check-in in the inbox. */
   const openInbox = (id: string | null = null) => {
     setView("inbox");
+    setFresh(0);
     setInboxMode("list");
     setSelected(null);
     setInboxId(id);
@@ -418,6 +429,61 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     return out;
   }, [waiting, summaries, unit]);
   const routineItems = [...triaged.values()].filter((t) => t.ready && t.item.summary.flags.includes("reply")).map((t) => t.item);
+  // Today's rows you marked done or snoozed: "kind:memberId" → the day they show again (worker/coach-queue.ts).
+  const [snoozes, setSnoozes] = React.useState<Map<string, string>>(new Map());
+  React.useEffect(() => {
+    fetch(`/api/coach/snoozes?company=${encodeURIComponent(companyId)}&today=${today}`, { credentials: "same-origin", headers: { accept: "application/json" } })
+      .then((r) => (r.ok ? (r.json() as Promise<{ snoozes: { member: string; kind: string; until: string }[] }>) : null))
+      .then((b) => b && setSnoozes(new Map(b.snoozes.map((s) => [`${s.kind}:${s.member}`, s.until]))))
+      .catch(() => {
+        /* everything shows */
+      });
+  }, [companyId, today]);
+  const snooze = (member: string, kind: string, until: string | null) => {
+    setSnoozes((prev) => {
+      const next = new Map(prev);
+      if (until) next.set(`${kind}:${member}`, until);
+      else next.delete(`${kind}:${member}`);
+      return next;
+    });
+    void fetch("/api/coach/snoozes", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ company: companyId, member, kind, until }),
+    }).catch(() => {});
+  };
+
+  // Every few minutes (and on coming back to the tab), the overview reloads quietly; new check-ins get a pill.
+  const [fresh, setFresh] = React.useState(0);
+  const seenWaiting = React.useRef<Set<string> | null>(null);
+  React.useEffect(() => {
+    if (!overview) return;
+    const now = new Set(summaries.filter((m) => m.flags.includes("reply")).map((m) => m.data.userId));
+    const before = seenWaiting.current;
+    if (before) {
+      const added = [...now].filter((id) => !before.has(id)).length;
+      if (added > 0) setFresh((n) => n + added);
+    }
+    seenWaiting.current = now;
+  }, [overview, summaries]);
+  React.useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      void load(true);
+      if (view === "today" || view === "inbox") void loadWaiting();
+    };
+    const timer = window.setInterval(tick, AUTO_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastLoad.current > 60_000) tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load, loadWaiting, view]);
+
   // Today and the Inbox both show which check-ins are 1-click ready.
   React.useEffect(() => {
     if (view === "inbox" || view === "today") void loadWaiting();
@@ -551,6 +617,20 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         )}
 
         <main className="min-w-0 space-y-5">
+          {fresh > 0 && overview ? (
+            <div role="status" className="flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+              <span className="min-w-0 flex-1">
+                {fresh} new check-in{fresh === 1 ? "" : "s"} since you opened the dashboard
+              </span>
+              <button type="button" onClick={() => openInbox()} className="text-xs font-semibold text-primary underline-offset-2 hover:underline">
+                Open inbox
+              </button>
+              <button type="button" onClick={() => setFresh(0)} aria-label="Dismiss" className="rounded-full p-1 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
           {error ? (
             <Card className="border-destructive/40">
               <CardContent className="flex gap-3 p-5">
@@ -654,6 +734,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               routineCount={routineItems.length}
               onRoutine={() => setInboxMode("routine")}
               entries={entries}
+              tags={tagsData}
               onMessagesRead={() => void chats.refresh()}
               openId={inboxId}
               onOpenId={setInboxId}
@@ -680,6 +761,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               </div>
               {summaries.length > 0 || chats.unread > 0 ? (
                 <ActionQueue
+                  today={today}
+                  snoozes={snoozes}
+                  onSnooze={snooze}
                   members={summaries}
                   threads={chats.threads}
                   names={people}
@@ -2072,6 +2156,71 @@ function inboxEntries(summaries: MemberSummary[], threads: ChatThread[], names: 
   });
 }
 
+function Kbd({ children }: { children: React.ReactNode }) {
+  return <kbd className="rounded border border-border bg-muted/40 px-1 font-sans text-[11px]">{children}</kbd>;
+}
+
+/** The Inbox's context card: your notes, their tags and the last change you made for them. */
+function InboxContext({ companyId, memberId, tags, sharing }: { companyId: string; memberId: string; tags: TagsData | null; sharing: boolean }) {
+  const [note, setNote] = React.useState<string | null>(null);
+  const [change, setChange] = React.useState<CoachChange | null | undefined>(undefined);
+  const [all, setAll] = React.useState(false);
+  React.useEffect(() => {
+    let live = true;
+    const qs = `company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}`;
+    const get = <T,>(path: string) =>
+      fetch(path, { credentials: "same-origin", headers: { accept: "application/json" } }).then((r) => (r.ok ? (r.json() as Promise<T>) : null));
+    get<{ note: string }>(`/api/coach/notes?${qs}`)
+      .then((b) => live && setNote(b?.note ?? ""))
+      .catch(() => live && setNote(""));
+    if (sharing) {
+      get<{ changes: CoachChange[] }>(`/api/coach/member-changes?${qs}`)
+        .then((b) => live && setChange([...(b?.changes ?? [])].sort((a, z) => z.date.localeCompare(a.date))[0] ?? null))
+        .catch(() => live && setChange(null));
+    } else setChange(null);
+    return () => {
+      live = false;
+    };
+  }, [companyId, memberId, sharing]);
+  const ids = tags?.members[memberId] ?? [];
+  const long = (note ?? "").length > 220 || (note ?? "").split("\n").length > 4;
+  return (
+    <section aria-label="Your notes and their context" className="space-y-2 rounded-[1.25rem] border border-primary/15 bg-card p-3">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <StickyNote className="h-3.5 w-3.5" aria-hidden />
+        Your notes
+      </p>
+      {note === null ? (
+        <div className="h-10 animate-pulse rounded-lg bg-muted/30" aria-busy="true" />
+      ) : note.trim() ? (
+        <>
+          <p className={cn("whitespace-pre-wrap text-[13px] leading-relaxed", !all && "line-clamp-4")}>{note}</p>
+          {long ? (
+            <button type="button" onClick={() => setAll((v) => !v)} className="text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
+              {all ? "Less" : "All of it"}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p className="text-[12px] text-muted-foreground">No notes yet. Add them from Open profile.</p>
+      )}
+      {tags && ids.length > 0 ? <TagChips tags={tags.tags} ids={ids} /> : null}
+      {sharing ? (
+        <p className="text-[12px] text-muted-foreground">
+          Last change you made:{" "}
+          {change === undefined ? "…" : change ? (
+            <span className="text-foreground">
+              {formatShort(change.date)} · {change.title}
+            </span>
+          ) : (
+            "none yet"
+          )}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function sentAgoShort(iso: string | null, now: number): string {
   if (!iso) return "";
   const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
@@ -2089,6 +2238,7 @@ function sentAgoShort(iso: string | null, now: number): string {
  */
 function CoachInbox({
   entries,
+  tags,
   openId,
   onOpenId,
   companyId,
@@ -2101,6 +2251,7 @@ function CoachInbox({
   onRoutine,
 }: {
   entries: InboxEntry[];
+  tags: TagsData | null;
   /** Per member: 1-click ready, or what needs the coach. */
   triage: ReadonlyMap<string, { ready: boolean; reasons: string[] }>;
   routineCount: number;
@@ -2127,8 +2278,15 @@ function CoachInbox({
   const needs = (e: InboxEntry) => (e.checkin && !ready(e)) || (e.thread !== null && e.thread.unread > 0 && !e.thread.last.fromCoach);
   const match = (e: InboxEntry, f: InboxFilter) =>
     f === "all" ? true : f === "checkins" ? e.checkin : f === "messages" ? e.thread !== null : f === "needs" ? needs(e) : ready(e);
-  const list = entries.filter((e) => match(e, show));
-  const waiting = entries.filter((e) => e.waitingSince !== null);
+  // The order they were in when you opened the Inbox, so reading a chat (or replying) doesn't
+  // move people around under you; anyone new goes at the end. It re-sorts next time you open it.
+  const order = React.useRef<string[]>([]);
+  const ids = new Set(entries.map((e) => e.id));
+  order.current = [...order.current.filter((id) => ids.has(id)), ...entries.map((e) => e.id).filter((id) => !order.current.includes(id))];
+  const rank = new Map(order.current.map((id, i) => [id, i]));
+  const steady = [...entries].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  const list = steady.filter((e) => match(e, show));
+  const waiting = steady.filter((e) => e.waitingSince !== null);
   // On a computer the longest waiting opens by itself; on a phone the list shows first.
   const current = entries.find((e) => e.id === openId) ?? (wide ? (list[0] ?? null) : null);
   const nextAfter = (id: string) => {
@@ -2144,6 +2302,65 @@ function CoachInbox({
   ];
   const checkins = entries.filter((e) => e.checkin).length;
   const unread = entries.reduce((n, e) => n + (e.thread?.unread ?? 0), 0);
+
+  // Keyboard: J / K next and previous, R reply, U mark their message unread (Ctrl+Enter sends, in the reply box).
+  const detail = React.useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = React.useState<string | null>(null);
+  const markUnread = async (id: string) => {
+    const other = list.find((e) => e.id !== id) ?? entries.find((e) => e.id !== id);
+    // Their chat reads it again while it's open, so it needs someone else to move to.
+    if (!other) return setFlash("Open another conversation first: theirs would be read again straight away.");
+    try {
+      const res = await fetch("/api/coach/messages/unread", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ company: companyId, member: id }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(body?.error ?? "Couldn't mark it unread.");
+      onOpenId(other.id);
+      onMessagesRead();
+      setFlash("Marked unread.");
+    } catch (e) {
+      setFlash(e instanceof Error ? e.message : "Couldn't mark it unread.");
+    }
+  };
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      const key = e.key.toLowerCase();
+      const i = list.findIndex((x) => x.id === current?.id);
+      if (key === "j" || key === "k") {
+        const next = list[key === "j" ? Math.min(list.length - 1, i + 1) : Math.max(0, i - 1)];
+        if (next) {
+          e.preventDefault();
+          onOpenId(next.id);
+        }
+      } else if (key === "r" && current) {
+        const box =
+          (current.checkin ? detail.current?.querySelector<HTMLTextAreaElement>("textarea[id^='reply-']") : null) ??
+          detail.current?.querySelector<HTMLTextAreaElement>(".inbox-chat textarea");
+        if (box) {
+          e.preventDefault();
+          box.scrollIntoView({ block: "center", behavior: "smooth" });
+          box.focus({ preventScroll: true });
+        }
+      } else if (key === "u" && current?.thread) {
+        e.preventDefault();
+        void markUnread(current.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  React.useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [flash]);
 
   return (
     <div className="space-y-4">
@@ -2178,6 +2395,13 @@ function CoachInbox({
           </button>
         ))}
       </div>
+      <p className="text-[12px] text-muted-foreground max-lg:hidden" aria-live="polite">
+        {flash ?? (
+          <>
+            Keys: <Kbd>J</Kbd> / <Kbd>K</Kbd> next and previous · <Kbd>R</Kbd> reply · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> send · <Kbd>U</Kbd> mark unread
+          </>
+        )}
+      </p>
 
       {entries.length === 0 ? (
         <EmptyNote>
@@ -2238,7 +2462,7 @@ function CoachInbox({
           </ul>
 
           {current ? (
-            <div className="min-w-0 space-y-4">
+            <div ref={detail} className="min-w-0 space-y-4">
               <Button variant="ghost" size="sm" className="h-8 px-2 lg:hidden" onClick={() => onOpenId(null)}>
                 <ArrowLeft />
                 Inbox
@@ -2309,14 +2533,11 @@ function CoachInbox({
                     }}
                   />
                 ) : null}
-                <CoachChatPanel
-                  key={`chat-${current.id}`}
-                  className="xl:sticky xl:top-20"
-                  companyId={companyId}
-                  memberId={current.id}
-                  memberName={current.name}
-                  onRead={onMessagesRead}
-                />
+                <div className="inbox-chat min-w-0 space-y-4 xl:sticky xl:top-20">
+                  {/* What you know about them, while you reply. */}
+                  <InboxContext key={`ctx-${current.id}`} companyId={companyId} memberId={current.id} tags={tags} sharing={current.summary !== null} />
+                  <CoachChatPanel key={`chat-${current.id}`} companyId={companyId} memberId={current.id} memberName={current.name} onRead={onMessagesRead} />
+                </div>
               </div>
             </div>
           ) : (

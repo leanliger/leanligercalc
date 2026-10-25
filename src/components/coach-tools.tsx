@@ -483,6 +483,13 @@ export function MemberCheckinsCard({
                           id={`reply-${c.weekStart}`}
                           value={reply}
                           onChange={(e) => setReply(e.target.value)}
+                          onKeyDown={(e) => {
+                            // Ctrl+Enter (⌘+Enter on a Mac) sends: in the Inbox, it's "Send & next".
+                            if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && reply.trim() && !sending) {
+                              e.preventDefault();
+                              void send(c.weekStart);
+                            }
+                          }}
                           maxLength={CHECKIN_REPLY_MAX}
                           rows={drafted ? 9 : 4}
                           placeholder="Great week. Keep steps at 10k and add 10 g protein at breakfast…"

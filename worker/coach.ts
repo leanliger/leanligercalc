@@ -135,7 +135,8 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals] = await env.DB.batch([
+    const numbered = chunk.map((_, i) => `?${i + 2}`).join(",");
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -163,7 +164,20 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       env.DB.prepare(
         `SELECT user_id, id, exercise_id, name, bodyweight, kind, target, start_value, deadline, created_on, set_by_coach, achieved_on FROM lift_goals WHERE user_id IN (${marks})`,
       ).bind(...chunk),
+      // When a coach last reached out: a message, a check-in reply or a reminder (Today's "Quiet" rows).
+      // Numbered parameters (?1 the whop, then the members), so the ids are bound once: D1 allows 100 a query.
+      env.DB.prepare(
+        `SELECT user_id, MAX(at) AS at FROM (
+           SELECT member_id AS user_id, created_at AS at FROM coach_messages WHERE company_id = ?1 AND from_coach = 1 AND pending = 0 AND member_id IN (${numbered})
+           UNION ALL SELECT user_id, replied_at AS at FROM checkins WHERE replied_at IS NOT NULL AND user_id IN (${numbered})
+           UNION ALL SELECT member_id AS user_id, sent_at AS at FROM coach_reminders WHERE company_id = ?1 AND member_id IN (${numbered})
+         ) GROUP BY user_id`,
+      ).bind(companyId, ...chunk),
     ]);
+    for (const r of (contact?.results ?? []) as { user_id: string; at: string | null }[]) {
+      const m = members.get(r.user_id);
+      if (m && r.at) m.lastCoachContact = r.at;
+    }
     // Lift goals: Hold goals now under their number (a flag), and goals hit lately (Wins).
     const goalsBy = new Map<string, LiftGoal[]>();
     for (const r of (goals?.results ?? []) as (Parameters<typeof rowToGoal>[0] & { user_id: string })[]) {

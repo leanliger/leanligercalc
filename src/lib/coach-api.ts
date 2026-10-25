@@ -63,6 +63,8 @@ export interface CoachMemberData {
   milestones?: Milestone[];
   /** Hold lift goals now under their number (src/lib/lift-goals.ts), for the "Lift goal slipping" flag. */
   goalsSlipping?: string[];
+  /** When a coach of this whop last messaged them, replied to a check-in or sent a reminder (ISO time). */
+  lastCoachContact?: string | null;
   /** Build lift goals hit in the last CELEBRATE_DAYS, for Wins. */
   goalHits?: { name: string; target: number; bodyweight: boolean; reachedOn: string }[];
 }

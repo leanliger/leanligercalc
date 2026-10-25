@@ -17,18 +17,19 @@
  */
 
 import { decodeProtectedHeader, importJWK, jwtVerify, type JWK } from "jose";
+import { secretValue } from "./secrets";
 
 export const USER_TOKEN_HEADER = "x-whop-user-token";
 
 /**
- * The page's own copy of the token. The Whop iPhone app attaches
+ * The page's own copy of the sign-in. The Whop iPhone app attaches
  * x-whop-user-token to the page load but not to the page's own fetch() calls,
  * so without this the API sees a signed-out member there and everything they
- * log stays on the phone. servePageWithToken() puts the verified token in the
- * page (a <meta name="app-user-token">); src/lib/whop-token.ts sends it back on
- * /api/ calls in this header. It is the same Whop-signed JWT, verified the same
- * way, so it grants nothing a request through Whop's proxy doesn't; when both
- * headers are present the proxy's wins.
+ * log stays on the phone. servePageWithToken() verifies Whop's token and puts
+ * a session for the same user in the page (a <meta name="app-user-token">; see
+ * appSessionToken); src/lib/whop-token.ts sends it back on /api/ calls in this
+ * header. It grants nothing a request through Whop's proxy doesn't, only for
+ * longer; when both headers are present the proxy's wins.
  */
 export const FORWARDED_TOKEN_HEADER = "x-app-user-token";
 export const PAGE_TOKEN_META = "app-user-token";
@@ -149,6 +150,60 @@ export interface AuthEnv {
    * so even if it leaked into production config it could not be used.
    */
   DEV_USER_ID?: string;
+  /** Signs the page's own session (appSessionToken); without it the page gets Whop's token as before. */
+  WHOP_API_KEY?: string;
+}
+
+/* ------------------------------ page sessions ------------------------------ */
+
+/**
+ * The page's own session. Whop's token lasts minutes, and on the iPhone the
+ * page only ever gets the one it loaded with, so a workout longer than that
+ * couldn't save once it ran out: Finish stayed on the phone ("waiting to
+ * upload") and the "Finished your workout?" reminders kept coming until the
+ * app was opened again. So when a page is served with a verified Whop token,
+ * it gets this instead: the same user and app, signed by this Worker (an HMAC
+ * keyed from the app's Whop API key, which only the Worker holds), valid for
+ * SESSION_HOURS. A page open longer than that is refreshed by opening the app
+ * again, as before.
+ */
+const SESSION_PREFIX = "app1.";
+export const SESSION_HOURS = 12;
+
+const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromB64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+
+async function sessionKey(env: AuthEnv): Promise<CryptoKey | null> {
+  const secret = secretValue(env.WHOP_API_KEY, "WHOP_API_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${secret}|app-session-v1`));
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+export async function appSessionToken(env: AuthEnv, user: VerifiedUser, now = new Date()): Promise<string | null> {
+  const key = await sessionKey(env);
+  if (!key) return null;
+  const payload = b64url(new TextEncoder().encode(JSON.stringify({ sub: user.userId, aud: user.appId, exp: Math.floor(now.getTime() / 1000) + SESSION_HOURS * 3600 })));
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(SESSION_PREFIX + payload)));
+  return `${SESSION_PREFIX}${payload}.${b64url(sig)}`;
+}
+
+export async function verifyAppSession(token: string, env: AuthEnv, now = new Date()): Promise<VerifiedUser | null> {
+  if (!token.startsWith(SESSION_PREFIX) || !env.WHOP_APP_ID) return null;
+  const [payload, sig] = token.slice(SESSION_PREFIX.length).split(".");
+  if (!payload || !sig) return null;
+  const key = await sessionKey(env);
+  if (!key) return null;
+  try {
+    const ok = await crypto.subtle.verify("HMAC", key, fromB64url(sig), new TextEncoder().encode(SESSION_PREFIX + payload));
+    if (!ok) return null;
+    const p = JSON.parse(new TextDecoder().decode(fromB64url(payload))) as { sub?: unknown; aud?: unknown; exp?: unknown };
+    if (typeof p.sub !== "string" || !p.sub || p.aud !== env.WHOP_APP_ID || typeof p.exp !== "number") return null;
+    if (p.exp * 1000 <= now.getTime()) return null;
+    return { userId: p.sub, appId: p.aud };
+  } catch {
+    return null;
+  }
 }
 
 function isLocalRequest(request: Request): boolean {
@@ -163,6 +218,8 @@ export async function authenticate(request: Request, env: AuthEnv): Promise<Veri
   }
   const token = request.headers.get(USER_TOKEN_HEADER) || request.headers.get(FORWARDED_TOKEN_HEADER);
   if (!token || !env.WHOP_APP_ID) return null;
+  // The page's own session (from servePageWithToken), else a Whop token.
+  if (token.startsWith(SESSION_PREFIX)) return verifyAppSession(token, env);
   return verifyWhopToken(token, env.WHOP_APP_ID, await loadWhopKeys());
 }
 
@@ -181,7 +238,9 @@ const escapeAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;
 export async function servePageWithToken(request: Request, env: AuthEnv, assets: Fetcher, pageUrl: URL): Promise<Response> {
   const token = request.headers.get(USER_TOKEN_HEADER);
   const verified = token && env.WHOP_APP_ID ? await verifyWhopToken(token, env.WHOP_APP_ID, await loadWhopKeys()) : null;
-  const handoff = verified ? token : env.DEV_USER_ID && isLocalRequest(request) ? "dev-token" : null;
+  // A 12-hour session of our own when we can sign one (see appSessionToken), else Whop's token as it came.
+  const session = verified ? await appSessionToken(env, verified) : null;
+  const handoff = verified ? (session ?? token) : env.DEV_USER_ID && isLocalRequest(request) ? "dev-token" : null;
   if (!handoff) return assets.fetch(new Request(pageUrl, request));
 
   const page = await assets.fetch(new Request(pageUrl, { headers: { accept: "text/html" } }));

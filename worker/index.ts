@@ -87,6 +87,7 @@
  *   GET    /api/workouts           all of my workouts, oldest first
  *   GET/POST /api/lift-goals, PUT/DELETE /api/lift-goals/:id         my lift goals (worker/lift-goals.ts)
  *   GET/POST /api/coach/lift-goals, PUT/DELETE /api/coach/lift-goals/:id   a member's lift goals, as their coach
+ *   GET/POST /api/coach/snoozes, POST /api/coach/messages/unread   Today's hidden rows; mark a message unread (worker/coach-queue.ts)
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
  *   DELETE /api/me                 delete everything stored about me
@@ -146,6 +147,7 @@ import { deleteSavedReply, getSavedReplies, saveSavedReply } from "./saved-repli
 import { getNotifications, markNotificationsSeen } from "./notifications";
 import { getDigest, listDigests, previewDigest, saveDigest, sendCoachDigests, sendDigestNow } from "./digest";
 import { focusCheck, sendFocusNudges } from "./focus-nudges";
+import { getSnoozes, markUnread, setSnooze } from "./coach-queue";
 import { checkGoalHits, coachGoals, coachRemoveGoal, coachSaveGoal, myGoals, removeMyGoal, saveMyGoal } from "./lift-goals";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
@@ -1064,6 +1066,20 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return send(await getMyMacros(env, userId));
   }
 
+  if (path === "/api/coach/snoozes") {
+    if (method === "GET") return send(await getSnoozes(env, userId, q("company"), q("today")));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await setSnooze(env, userId, body.value));
+  }
+  if (path === "/api/coach/messages/unread") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await markUnread(env, userId, body.value));
+  }
+
   if (path === "/api/coach/lift-goals") {
     if (method === "GET") return send(await coachGoals(env, userId, q("company"), q("member")));
     if (method !== "POST") return error(405, "Method not allowed.");
@@ -1523,6 +1539,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM notification_seen WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM lift_goals WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM coach_snoozes WHERE coach_id = ? OR member_id = ?").bind(userId, userId),
       env.DB.prepare("DELETE FROM coach_digest_log WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
