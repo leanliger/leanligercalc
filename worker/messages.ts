@@ -167,7 +167,7 @@ async function recentlyNotified(env: Env, companyId: string, memberId: string, f
 }
 
 /** The member's name on Whop, for the coach's notification. */
-async function memberName(env: Env, userId: string): Promise<string> {
+export async function memberName(env: Env, userId: string): Promise<string> {
   const res = await whopGet(env, `/api/v1/users/${encodeURIComponent(userId)}`).catch(() => null);
   const u = (res?.status === 200 ? res.body : null) as { name?: string | null; username?: string | null } | null;
   return u?.name?.trim() || (u?.username ? `@${u.username}` : "A member");

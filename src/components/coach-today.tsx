@@ -6,6 +6,7 @@ import { addDays, daysBetween } from "@/lib/dates";
 import { FLAG_LABELS, type Flag, type MemberSummary } from "@/lib/coach";
 import { kudosMessage, messagePreview, type ChatThread } from "@/lib/messages";
 import { goalLabel } from "@/lib/lift-goals";
+import { needsHelp, noAnswer } from "@/lib/accountability";
 import { milestoneLabel } from "@/lib/milestones";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -205,7 +206,7 @@ const newestWin = (m: MemberSummary) => winsOf(m, "lb")[0]?.date ?? "";
 
 /* ================================ action queue ================================ */
 
-type QueueKind = "safety" | "drop-off" | "checkin" | "message" | "muscle" | "risk" | "quiet" | "win";
+type QueueKind = "safety" | "help" | "drop-off" | "checkin" | "message" | "noanswer" | "muscle" | "risk" | "quiet" | "win";
 type QueueFilter = "all" | "checkins" | "messages" | "risk" | "quiet" | "wins";
 
 /** Days without a message, check-in reply or reminder from a coach before a member shows as Quiet. */
@@ -214,6 +215,8 @@ export const QUIET_DAYS = 14;
 /** Most urgent first: safety, then quitting, then people waiting on a reply, then drifting, then wins. */
 const KIND: Record<QueueKind, { rank: number; label: string; stripe: string; chip: string; filter: QueueFilter }> = {
   safety: { rank: 0, label: "Safety", stripe: "border-l-destructive", chip: "bg-destructive/15 text-destructive", filter: "risk" },
+  help: { rank: 0.5, label: "Asked for help", stripe: "border-l-destructive", chip: "bg-destructive/15 text-destructive", filter: "risk" },
+  noanswer: { rank: 3.5, label: "No answer to check", stripe: "border-l-warning", chip: "bg-warning/15 text-warning", filter: "risk" },
   "drop-off": { rank: 1, label: "May quit", stripe: "border-l-destructive", chip: "bg-destructive/15 text-destructive", filter: "risk" },
   checkin: { rank: 2, label: "Check-in", stripe: "border-l-primary", chip: "bg-primary/15 text-primary", filter: "checkins" },
   message: { rank: 3, label: "Message", stripe: "border-l-primary", chip: "bg-primary/15 text-primary", filter: "messages" },
@@ -308,8 +311,18 @@ export function ActionQueue({
       ...(f.includes("drop-off") ? m.risk.reasons.map((r) => r.text) : []),
       ...f.filter((x) => x !== "reply" && x !== "drop-off").map((x) => flagReason(m, x)),
     ];
+    const check = m.data.accountability;
     if (f.includes("too-fast") || f.includes("under-floor")) {
       row = { kind: "safety", reason: f.filter((x) => x === "too-fast" || x === "under-floor").map((x) => FLAG_LABELS[x]).join(" · ") };
+    } else if (check && needsHelp(check, m.data.lastCoachContact)) {
+      // Their accountability check came back "Struggling" or "Need help".
+      row = {
+        kind: "help",
+        reason: [check.answer === "help" ? "Asked for help" : "Struggling this week", check.note ? `“${check.note}”` : null, check.triggers.length ? `because: ${check.triggers.join(", ")}` : null]
+          .filter(Boolean)
+          .join(" · "),
+        order: check.answeredAt ?? "",
+      };
     } else if (f.includes("drop-off")) {
       row = { kind: "drop-off", reason: m.risk.reasons[0]?.text ?? FLAG_LABELS["drop-off"] };
     } else if (waitingReply && !t?.ready) {
@@ -320,6 +333,8 @@ export function ActionQueue({
       };
     } else if (thread) {
       row = { kind: "message", reason: `“${messagePreview(thread.last)}”`, order: thread.last.at };
+    } else if (check && noAnswer(check, m.data.lastCoachContact, now)) {
+      row = { kind: "noanswer", reason: `Sent ${sentAgo(check.sentAt ?? undefined, now).replace(/^Sent /, "")}, no answer${check.triggers.length ? ` · because: ${check.triggers.join(", ")}` : ""}`, order: check.sentAt ?? "" };
     } else if (f.includes("muscle-loss")) {
       row = { kind: "muscle", reason: flagReason(m, f.includes("slipping") ? "slipping" : "muscle-loss") };
     } else if (isAtRisk(m)) {
@@ -443,7 +458,9 @@ export function ActionQueue({
             const k = KIND[r.kind];
             const replyKind = r.kind === "checkin" || r.kind === "message";
             const openRow = () =>
-              replyKind || !r.summary || r.kind === "quiet" ? onInbox(r.id) : onOpen(r.id, r.kind === "muscle" ? "training" : openTab(r.summary));
+              replyKind || !r.summary || r.kind === "quiet" || r.kind === "help" || r.kind === "noanswer"
+                ? onInbox(r.id)
+                : onOpen(r.id, r.kind === "muscle" ? "training" : openTab(r.summary));
             const isHidden = hidden(r);
             const expanded = open.has(r.key);
             return (

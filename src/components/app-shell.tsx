@@ -62,7 +62,7 @@ import { experienceIdFromPath, sortedMeals, type FastingSettings } from "@/lib/f
 import { remindersRequest, type ReminderPrefs } from "@/lib/reminders";
 import type { Measurement } from "@/lib/measurements";
 import type { WeeklyReview } from "@/lib/reviews";
-import { endPause, type PausePeriod } from "@/lib/pause";
+import { addPause, endPause, type PausePeriod } from "@/lib/pause";
 import type { MySharing } from "@/lib/sharing";
 import type { SavedMeal } from "@/lib/saved-meals";
 import { loadSharing, saveSharing } from "@/components/coach-access";
@@ -1718,6 +1718,13 @@ export function AppShell() {
                   measurements={measurements}
                   pauses={state.tracking.pauses}
                   onResume={() => updatePauses(endPause(state.tracking.pauses, today))}
+                  onStartPause={(days) => {
+                    // From the accountability check's busy week: the app's own pause, from today.
+                    const r = addPause(state.tracking.pauses, { from: today, to: addDays(today, days - 1), reason: "other" }, today);
+                    if (!r.ok) return r.error;
+                    updatePauses(r.value);
+                    return null;
+                  }}
                   coachSharing={coachSharing}
                   onCoachSharing={changeCoachSharing}
                   assignments={assignments}

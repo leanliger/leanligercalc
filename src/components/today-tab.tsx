@@ -53,6 +53,7 @@ import { planToday } from "@/lib/program-schedule";
 import type { MySharing } from "@/lib/sharing";
 import { CoachRequestCard } from "@/components/coach-access";
 import { AssignmentCards } from "@/components/assignment-cards";
+import { AccountabilityCard } from "@/components/accountability-card";
 import { CoachFocusCard } from "@/components/coach-focus-card";
 import type { MemberAssignment } from "@/lib/assignments";
 import { addDays, formatShort } from "@/lib/dates";
@@ -108,6 +109,8 @@ interface TodayTabProps {
   onResume: () => void;
   /** Coach access: shows the prompt when a coach has asked. */
   coachSharing: MySharing | null;
+  /** A week's pause from the coach's accountability check: null when it started, else why not. */
+  onStartPause?: (days: number) => string | null;
   onCoachSharing: (shared: boolean) => Promise<void>;
   /** Programs and habit sets from the coach, waiting for an answer. */
   assignments: MemberAssignment[];
@@ -578,6 +581,9 @@ export function TodayTab(props: TodayTabProps) {
           {allDone ? "All done. Nice work." : `${doneCount} of ${tasks.length} done`}
         </span>
       </header>
+
+      {/* Signed in through Whop: "How's this week going?" when their coach's accountability check is waiting. */}
+      {props.coachSharing && props.onStartPause ? <AccountabilityCard onPause={props.onStartPause} /> : null}
 
       <AssignmentCards assignments={props.assignments} onUse={props.onUseAssignment} onDecline={props.onDeclineAssignment} />
 

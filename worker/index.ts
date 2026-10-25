@@ -88,6 +88,7 @@
  *   GET/POST /api/lift-goals, PUT/DELETE /api/lift-goals/:id         my lift goals (worker/lift-goals.ts)
  *   GET/POST /api/coach/lift-goals, PUT/DELETE /api/coach/lift-goals/:id   a member's lift goals, as their coach
  *   GET/POST /api/coach/snoozes, POST /api/coach/messages/unread   Today's hidden rows; mark a message unread (worker/coach-queue.ts)
+ *   /api/accountability, /api/coach/accountability…   accountability checks (worker/accountability.ts)
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
  *   DELETE /api/workouts/:id       remove one workout
  *   DELETE /api/me                 delete everything stored about me
@@ -148,6 +149,7 @@ import { getNotifications, markNotificationsSeen } from "./notifications";
 import { getDigest, listDigests, previewDigest, saveDigest, sendCoachDigests, sendDigestNow } from "./digest";
 import { focusCheck, sendFocusNudges } from "./focus-nudges";
 import { getSnoozes, markUnread, setSnooze } from "./coach-queue";
+import { answerCheck, approveAccountability, coachAccountability, myCheck, previewAccountability, runAccountability, saveAccountability, sendAccountabilityNow } from "./accountability";
 import { checkGoalHits, coachGoals, coachRemoveGoal, coachSaveGoal, myGoals, removeMyGoal, saveMyGoal } from "./lift-goals";
 import { checkMilestones } from "./milestones";
 import { draftCheckinReply } from "./checkin-drafts";
@@ -1066,6 +1068,35 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return send(await getMyMacros(env, userId));
   }
 
+  if (path === "/api/coach/accountability") {
+    if (method === "GET") return send(await coachAccountability(env, userId, q("company")));
+    if (method !== "PUT") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveAccountability(env, userId, body.value));
+  }
+  if (path === "/api/coach/accountability/preview") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await previewAccountability(env, userId, q("company")));
+  }
+  if (path === "/api/coach/accountability/send" || path === "/api/coach/accountability/approve") {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(path.endsWith("/send") ? await sendAccountabilityNow(env, userId, body.value) : await approveAccountability(env, userId, body.value));
+  }
+  if (path === "/api/accountability") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await myCheck(env, userId));
+  }
+  const checkMatch = /^\/api\/accountability\/([^/]+)$/.exec(path);
+  if (checkMatch) {
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await answerCheck(env, userId, checkMatch[1]!, body.value));
+  }
+
   if (path === "/api/coach/snoozes") {
     if (method === "GET") return send(await getSnoozes(env, userId, q("company"), q("today")));
     if (method !== "POST") return error(405, "Method not allowed.");
@@ -1540,6 +1571,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM coach_digests WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM lift_goals WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_snoozes WHERE coach_id = ? OR member_id = ?").bind(userId, userId),
+      env.DB.prepare("DELETE FROM accountability_checks WHERE member_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digest_log WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),
@@ -1651,6 +1683,16 @@ export default {
               if (r.due > 0) console.log("focus nudges", r);
             })
             .catch((e) => console.error("focus nudges crashed", e)),
+        );
+      }
+      // Accountability checks: once an hour (on the hour), during each whop's coach's daytime.
+      if (when.getUTCMinutes() === 0) {
+        ctx.waitUntil(
+          runAccountability(env, when)
+            .then((r) => {
+              if (r.queued > 0 || r.sent > 0) console.log("accountability checks", r);
+            })
+            .catch((e) => console.error("accountability checks crashed", e)),
         );
       }
       // Coaches' daily digest: 8am their time.

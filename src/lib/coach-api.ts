@@ -7,6 +7,7 @@
 import type { HabitEntries } from "./habits";
 import type { Measurement } from "./measurements";
 import type { Milestone } from "./milestones";
+import type { AccountabilityCheck } from "./accountability";
 import type { PhotoMeta } from "./photos";
 import type { MemberSharing } from "./sharing";
 import type { WeighIn } from "./tracking";
@@ -63,6 +64,8 @@ export interface CoachMemberData {
   milestones?: Milestone[];
   /** Hold lift goals now under their number (src/lib/lift-goals.ts), for the "Lift goal slipping" flag. */
   goalsSlipping?: string[];
+  /** Their latest accountability check here in the last two weeks (src/lib/accountability.ts). */
+  accountability?: AccountabilityCheck | null;
   /** When a coach of this whop last messaged them, replied to a check-in or sent a reminder (ISO time). */
   lastCoachContact?: string | null;
   /** Build lift goals hit in the last CELEBRATE_DAYS, for Wins. */

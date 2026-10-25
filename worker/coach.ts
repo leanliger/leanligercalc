@@ -24,6 +24,7 @@ import { TREND_WEEKS, strengthTrends } from "../src/lib/strength-trends";
 import type { Workout } from "../src/lib/training";
 import { celebrateSince, recentMilestones } from "./milestones";
 import { rowToGoal } from "./lift-goals";
+import { rowToCheck } from "./accountability";
 import { slippingGoals, type LiftGoal } from "../src/lib/lift-goals";
 import { addDays, toISODate } from "../src/lib/dates";
 import type { HabitEntries } from "../src/lib/habits";
@@ -136,7 +137,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
     const numbered = chunk.map((_, i) => `?${i + 2}`).join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact, checks] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -173,7 +174,16 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
            UNION ALL SELECT member_id AS user_id, sent_at AS at FROM coach_reminders WHERE company_id = ?1 AND member_id IN (${numbered})
          ) GROUP BY user_id`,
       ).bind(companyId, ...chunk),
+      // Their latest accountability check in this whop, from the last two weeks.
+      env.DB.prepare(
+        `SELECT id, member_id, status, triggers, created_at, sent_at, answer, note, choice, answered_at FROM accountability_checks
+         WHERE company_id = ?1 AND member_id IN (${numbered}) AND created_at >= ?${chunk.length + 2} ORDER BY created_at DESC`,
+      ).bind(companyId, ...chunk, addDays(today, -14)),
     ]);
+    for (const r of (checks?.results ?? []) as Parameters<typeof rowToCheck>[0][]) {
+      const m = members.get(r.member_id);
+      if (m && !m.accountability) m.accountability = rowToCheck(r);
+    }
     for (const r of (contact?.results ?? []) as { user_id: string; at: string | null }[]) {
       const m = members.get(r.user_id);
       if (m && r.at) m.lastCoachContact = r.at;
