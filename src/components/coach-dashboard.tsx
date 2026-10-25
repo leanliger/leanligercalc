@@ -539,6 +539,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         { id: `ci-${id}`, group: "Members", label: `Check-ins: ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "checkins") },
         { id: `mac-${id}`, group: "Members", label: `Set macros for ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "food") },
         { id: `prog-${id}`, group: "Members", label: `Assign a program to ${name}`, hint, keywords: kw, searchOnly: true, run: () => assignTo([id]) },
+        { id: `ins-${id}`, group: "Members", label: `Insights: ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "insights") },
         { id: `hist-${id}`, group: "Members", label: `History: ${name}`, hint, keywords: kw, searchOnly: true, run: () => openMember(id, "timeline") },
       ];
     }),
@@ -1526,7 +1527,7 @@ function pausedLabel(p: PausePeriod): string {
 
 /* ================================= detail ================================= */
 
-type DetailTab = "overview" | "body" | "food" | "training" | "checkins" | "timeline";
+type DetailTab = "overview" | "insights" | "body" | "food" | "training" | "checkins" | "timeline";
 
 type TrainingView = "progress" | "log" | "muscles" | "program";
 
@@ -1537,9 +1538,10 @@ const TRAINING_VIEWS: { value: TrainingView; label: string }[] = [
   { value: "program", label: "Program & calendar" },
 ];
 
-/** Overview first (with the key insights), then the numbers, then the check-ins and everything that happened. */
+/** Overview first (with the key insights), then every insight, the numbers, the check-ins and everything that happened. */
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "insights", label: "Insights" },
   { id: "body", label: "Progress" },
   { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
@@ -1588,8 +1590,6 @@ function MemberDetail({
   // Their workouts, food, check-ins and macros: loaded once for the key insights, History and the client file.
   const loaded = useInsightsData(companyId, m, unit, today);
   const muscle = React.useMemo(() => (loaded.input ? muscleCheck(loaded.input) : null), [loaded.input]);
-  // Overview → "See all insights".
-  const [allInsights, setAllInsights] = React.useState(false);
   // The chat beside the notes: open by itself when they've written and you haven't read it.
   const [chatOpen, setChatOpen] = React.useState(unreadMessages > 0);
   React.useEffect(() => {
@@ -1839,18 +1839,7 @@ function MemberDetail({
       <div role="tabpanel" id="member-tabpanel" aria-labelledby={`member-tab-${tab}`} className="space-y-5">
         {tab === "overview" ? (
           <>
-            <KeyInsights summary={m} loaded={loaded} unit={unit} today={today} allOpen={allInsights} onSeeAll={() => setAllInsights((v) => !v)} />
-            {allInsights ? (
-              <div className="space-y-2 rounded-[1.25rem] border border-primary/15 p-3">
-                <div className="flex items-center">
-                  <h3 className="text-sm font-semibold">All insights</h3>
-                  <Button size="sm" variant="ghost" className="ml-auto h-8" onClick={() => setAllInsights(false)}>
-                    Hide
-                  </Button>
-                </div>
-                <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} loaded={loaded} />
-              </div>
-            ) : null}
+            <KeyInsights summary={m} loaded={loaded} unit={unit} today={today} onSeeAll={() => onTab("insights")} />
             {m.health ? (
               <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                 <HealthPill health={m.health} large />
@@ -1936,6 +1925,8 @@ function MemberDetail({
               This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
             </p>
           </>
+        ) : tab === "insights" ? (
+          <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} loaded={loaded} />
         ) : tab === "timeline" ? (
           <>
             <NeedleCard effects={loaded.needle.effects} loading={loaded.needle.loading} unit={unit} />

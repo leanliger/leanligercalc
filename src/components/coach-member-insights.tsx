@@ -126,21 +126,19 @@ export function useInsightsData(companyId: string, summary: MemberSummary, unit:
   return { data, input, error, needle };
 }
 
-/** Overview → Key insights: the four that matter most, each one line; "See all insights" opens the rest. */
+/** Overview → Key insights: the four that matter most, each one line; "See all insights" opens the Insights tab. */
 export function KeyInsights({
   summary,
   loaded,
   unit,
   today,
-  allOpen,
   onSeeAll,
 }: {
   summary: MemberSummary;
   loaded: InsightsData;
   unit: WeightUnit;
   today: string;
-  /** Every insight is showing below. */
-  allOpen: boolean;
+  /** Open the Insights tab. */
   onSeeAll: () => void;
 }) {
   const { input, needle } = loaded;
@@ -187,8 +185,8 @@ export function KeyInsights({
     <section aria-label="Key insights" className="space-y-2">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold">Key insights</h3>
-        <button type="button" onClick={onSeeAll} aria-expanded={allOpen} className="ml-auto text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
-          {allOpen ? "Hide all insights" : "See all insights"}
+        <button type="button" onClick={onSeeAll} className="ml-auto text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
+          See all insights
         </button>
       </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border xl:grid-cols-4">
