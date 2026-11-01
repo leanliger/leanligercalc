@@ -74,17 +74,32 @@ export interface CoachNavItem {
   note?: number;
   /** A shorter label for the bottom bar on phones. */
   short?: string;
+  /** The menu heading it sits under (Daily, Members, Setup); shown when it changes. */
+  group?: string;
+  /** A red dot, with this as its spoken label, when something here needs a look. */
+  alert?: string | null;
   active: boolean;
   onSelect: () => void;
 }
 
-/** A column on wide screens; a row of pills that scrolls sideways on phones. */
+/** A red dot for a menu item that needs a look (System health). */
+function AlertDot({ label }: { label: string }) {
+  return <span role="img" aria-label={label} title={label} className="h-2 w-2 shrink-0 rounded-full bg-destructive" />;
+}
+
+/** A column on wide screens, under group headings; a row of pills that scrolls sideways on phones. */
 export function CoachNav({ items, footer, className }: { items: CoachNavItem[]; footer?: React.ReactNode; className?: string }) {
   return (
     <nav aria-label="Coach sections" className={cn("space-y-4 lg:sticky lg:top-20", className)}>
       <ul className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0">
-        {items.map((it) => (
-          <li key={it.id} className="shrink-0">
+        {items.map((it, i) => (
+          <React.Fragment key={it.id}>
+          {it.group && it.group !== items[i - 1]?.group ? (
+            <li aria-hidden className={cn("hidden px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 lg:block", i > 0 && "pt-4")}>
+              {it.group}
+            </li>
+          ) : null}
+          <li className="shrink-0">
             <button
               type="button"
               onClick={it.onSelect}
@@ -106,8 +121,10 @@ export function CoachNav({ items, footer, className }: { items: CoachNavItem[]; 
                   <span className="sr-only"> waiting</span>
                 </span>
               ) : null}
+              {it.alert ? <AlertDot label={it.alert} /> : null}
             </button>
           </li>
+          </React.Fragment>
         ))}
       </ul>
       {footer ? <div className="lg:rounded-lg lg:border lg:border-border lg:p-3">{footer}</div> : null}
@@ -632,6 +649,7 @@ export function CoachBottomNav({ items, main = 3 }: { items: CoachNavItem[]; mai
             label: "More",
             icon: <MoreHorizontal />,
             count: rest.reduce((n, it) => n + (it.count ?? 0), 0),
+            alert: rest.find((it) => it.alert)?.alert ?? null,
             active: more || rest.some((it) => it.active),
             onSelect: () => setMore((v) => !v),
           },
@@ -647,8 +665,14 @@ export function CoachBottomNav({ items, main = 3 }: { items: CoachNavItem[]; mai
             className="absolute inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] space-y-1 rounded-2xl border border-border bg-card p-2 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {rest.map((it) => (
-              <li key={it.id}>
+            {rest.map((it, i) => (
+              <React.Fragment key={it.id}>
+              {it.group && it.group !== rest[i - 1]?.group ? (
+                <li aria-hidden className={cn("px-3 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80", i > 0 ? "pt-2" : "pt-1")}>
+                  {it.group}
+                </li>
+              ) : null}
+              <li>
                 <button
                   type="button"
                   onClick={() => {
@@ -664,8 +688,10 @@ export function CoachBottomNav({ items, main = 3 }: { items: CoachNavItem[]; mai
                   {it.icon}
                   <span className="flex-1 text-left">{it.label}</span>
                   {it.count ? <span className="tabular rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">{it.count}</span> : null}
+                  {it.alert ? <AlertDot label={it.alert} /> : null}
                 </button>
               </li>
+              </React.Fragment>
             ))}
           </ul>
         </div>
@@ -687,6 +713,11 @@ export function CoachBottomNav({ items, main = 3 }: { items: CoachNavItem[]; mai
           )}
         >
           {it.icon}
+          {it.alert ? (
+            <span className="absolute right-[calc(50%-1rem)] top-1.5">
+              <AlertDot label={it.alert} />
+            </span>
+          ) : null}
           <span className="max-w-full truncate px-0.5">
             {it.short ?? it.label}
             {it.count ? ` ${it.count}` : ""}

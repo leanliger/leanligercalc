@@ -23,6 +23,7 @@ import {
   StickyNote,
   Sun,
   TrendingUp,
+  FileText,
   LifeBuoy,
   Sprout,
   HeartPulse,
@@ -52,6 +53,7 @@ import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/compo
 import { CoachAccountability } from "@/components/coach-accountability";
 import { CoachFirstDays } from "@/components/coach-first-days";
 import { CoachSystemHealth } from "@/components/coach-system-health";
+import { healthIssues, type SystemHealth } from "@/lib/system-health";
 import { FIRST_DAYS, firstDays } from "@/lib/first-days";
 import { EffortResultsChart } from "@/components/combined-charts";
 import { needsHelp, noAnswer } from "@/lib/accountability";
@@ -570,18 +572,43 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const accountabilityNeeds = summaries.filter(
     (m) => needsHelp(m.data.accountability, m.data.lastCoachContact) || noAnswer(m.data.accountability, m.data.lastCoachContact, Date.now()),
   ).length;
+  // System health's red dot (src/lib/system-health.ts): checked on load and every 3 minutes while the dashboard shows.
+  const [healthIssueList, setHealthIssueList] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/coach/health?company=${encodeURIComponent(companyId)}`, { credentials: "same-origin", headers: { accept: "application/json" } });
+        if (!res.ok) return;
+        const h = (await res.json()) as SystemHealth;
+        if (live) setHealthIssueList(healthIssues(h, Date.now()));
+      } catch {
+        /* keep the last answer */
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 180_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [companyId]);
+  const members = overview?.members ?? [];
+  const healthAlertList = [...healthIssueList, ...(members.length > 0 && !members.some((m) => m.joinedAt) ? ["Whop isn't sending join dates"] : [])];
+  const healthAlert = healthAlertList.length ? `System health: ${healthAlertList.join(" · ")}` : null;
   // New members past a first step's day (src/lib/first-days.ts).
   const newStuck = firstDaysRows.filter((r) => r.status === "stuck").length;
   const navItems: CoachNavItem[] = [
-    { id: "today", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
-    { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview + chats.unread, active: view === "inbox", onSelect: () => openInbox() },
-    { id: "members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
-    { id: "accountability", label: "Accountability", icon: <LifeBuoy />, count: accountabilityNeeds, active: view === "accountability", onSelect: () => go("accountability") },
-    { id: "first-days", label: `First ${FIRST_DAYS} days`, icon: <Sprout />, count: newStuck, active: view === "first-days", onSelect: () => go("first-days") },
-    { id: "programs", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
-    { id: "automations", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
-    { id: "growth", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
-    { id: "health", label: "System health", icon: <HeartPulse />, active: view === "health", onSelect: () => go("health") },
+    { id: "today", group: "Daily", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
+    { id: "inbox", group: "Daily", label: "Inbox", icon: <Inbox />, count: counts.toReview + chats.unread, active: view === "inbox", onSelect: () => openInbox() },
+    { id: "members", group: "Members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
+    { id: "accountability", group: "Members", label: "Accountability", icon: <LifeBuoy />, count: accountabilityNeeds, active: view === "accountability", onSelect: () => go("accountability") },
+    { id: "first-days", group: "Members", label: `First ${FIRST_DAYS} days`, icon: <Sprout />, count: newStuck, active: view === "first-days", onSelect: () => go("first-days") },
+    { id: "programs", group: "Setup", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
+    { id: "automations", group: "Setup", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
+    { id: "growth", group: "Setup", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
+    { id: "health", group: "Setup", label: "System health", icon: <HeartPulse />, alert: healthAlert, active: view === "health", onSelect: () => go("health") },
   ];
 
   return (
@@ -1673,6 +1700,26 @@ function MemberDetail({
       chat?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
     });
   };
+  // The sticky bar: shown once their header card has scrolled up under the page header.
+  const headCard = React.useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = React.useState(false);
+  // Room for labelled buttons and Remind (the column narrows beside the notes): icons only when not.
+  const [barRoomy, setBarRoomy] = React.useState(true);
+  React.useEffect(() => {
+    const el = headCard.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setStuck(!!e && !e.isIntersecting && e.boundingClientRect.top < 64), { rootMargin: "-64px 0px 0px 0px" });
+    io.observe(el);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => setBarRoomy(el.clientWidth >= 540));
+    ro?.observe(el);
+    return () => {
+      io.disconnect();
+      ro?.disconnect();
+    };
+  }, []);
+  // The bar's Report button: open the progress report on Overview and scroll to it.
+  const [reportWanted, setReportWanted] = React.useState(false);
+  const reportOpened = React.useCallback(() => setReportWanted(false), []);
   // Bumped when the physique focus card sends an edit, so the program card shows it.
   const [programVersion, setProgramVersion] = React.useState(0);
   // Training: lift progress first, then the log, sets per muscle, and the program with its calendar.
@@ -1770,7 +1817,56 @@ function MemberDetail({
       <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5 lg:items-start", !notesHidden && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
       <div className="min-w-0 space-y-4">
 
-      <div className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
+      {/* Their name and the main actions, kept in view while you scroll (takes no space: the next card keeps its place). */}
+      <div className="sticky top-16 z-30 h-0 [&+*]:!mt-0">
+        {stuck ? (
+          <div className="absolute inset-x-0 top-2 flex items-center gap-2.5 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/85">
+            <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-8 w-8" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{m.displayName}</p>
+              <p className="tabular truncate text-[11px] text-muted-foreground">
+                {m.health ? `Health ${m.health.score} · ` : ""}
+                {DETAIL_TABS.find((t) => t.id === tab)?.label}
+              </p>
+            </div>
+            <Button
+              size={barRoomy ? "sm" : "icon"}
+              className={cn(!barRoomy && "h-9 w-9 shrink-0")}
+              variant={unreadMessages > 0 ? "default" : "outline"}
+              onClick={openChat}
+              aria-label={barRoomy ? undefined : `Message ${m.displayName}`}
+            >
+              <MessageCircle />
+              {barRoomy ? "Message" : null}
+            </Button>
+            {barRoomy ? (
+              <RemindMenu
+                variant="button"
+                companyId={companyId}
+                members={[{ id: m.data.userId, name: m.displayName }]}
+                suggested={suggestedReminders(m)}
+                recent={reminders}
+                onSent={onReminders}
+              />
+            ) : null}
+            <Button
+              size={barRoomy ? "sm" : "icon"}
+              className={cn(!barRoomy && "h-9 w-9 shrink-0")}
+              variant="outline"
+              aria-label={barRoomy ? undefined : "Open their progress report"}
+              onClick={() => {
+                onTab("overview");
+                setReportWanted(true);
+              }}
+            >
+              <FileText />
+              {barRoomy ? "Report" : null}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <div ref={headCard} className="space-y-3 molten-card rounded-[1.25rem] border border-primary/15 bg-card p-4">
         <div className="flex items-center gap-3">
           <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-12 w-12" />
           <div className="min-w-0 flex-1">
@@ -1905,7 +2001,14 @@ function MemberDetail({
                 </div>
               </div>
             ) : null}
-            <CoachReportPanel companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
+            <CoachReportPanel
+              companyId={companyId}
+              memberId={m.data.userId}
+              memberName={m.displayName}
+              unit={unit}
+              openNow={reportWanted}
+              onOpened={reportOpened}
+            />
 
             <Card>
               <CardHeader className="space-y-2 pb-3">

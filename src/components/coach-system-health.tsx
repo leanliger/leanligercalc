@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CoachMemberData } from "@/lib/coach-api";
 import { formatShort } from "@/lib/dates";
-import { JOBS, NOTIFY_DAYS, jobStatus, resultText, type JobStatus, type SystemHealth } from "@/lib/system-health";
+import { JOBS, NOTIFY_DAYS, healthIssues, jobStatus, resultText, type JobStatus, type SystemHealth } from "@/lib/system-health";
 import { cn } from "@/lib/utils";
 
 /**
@@ -59,7 +59,6 @@ export function CoachSystemHealth({ companyId, members }: { companyId: string; m
   const statuses = JOBS.map((j) => ({ job: j, run: runs.get(j.id), status: jobStatus(j, runs.get(j.id), now) }));
   const sent = data?.notifications.days.reduce((n, d) => n + d.sent, 0) ?? 0;
   const failed = data?.notifications.days.reduce((n, d) => n + d.failed, 0) ?? 0;
-  const digestFailed = (data?.digests ?? []).filter((d) => d.status.startsWith("failed")).length;
 
   // What Whop sends about members, from the overview already loaded.
   const total = members.length;
@@ -67,8 +66,9 @@ export function CoachSystemHealth({ companyId, members }: { companyId: string; m
   const withOpened = members.filter((m) => m.lastAccessedAt).length;
   const sharing = members.filter((m) => m.sharing.state === "shared").length;
 
-  const problems =
-    statuses.filter((s) => s.status === "failed" || s.status === "late").length + (failed > 0 ? 1 : 0) + (digestFailed > 0 ? 1 : 0) + (total > 0 && withJoin === 0 ? 1 : 0);
+  // The same rule as the menu's red dot, plus Whop not sending join dates.
+  const issues = [...(data ? healthIssues(data, now) : []), ...(total > 0 && withJoin === 0 ? ["Whop isn't sending join dates"] : [])];
+  const problems = issues.length;
 
   return (
     <div className="space-y-5">
@@ -92,8 +92,8 @@ export function CoachSystemHealth({ companyId, members }: { companyId: string; m
       {data ? (
         <div className={cn("flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium", problems ? "border-warning/40 bg-warning/5" : "border-success/40 bg-success/5")}>
           {problems ? <TriangleAlert className="h-4 w-4 text-warning" /> : <Check className="h-4 w-4 text-success" />}
-          {problems ? `${problems} thing${problems === 1 ? "" : "s"} to look at below.` : "Everything's working."}
-          <span className="ml-auto text-[12px] font-normal text-muted-foreground">Checked {ago(data.generatedAt, Date.now())}</span>
+          <span className="min-w-0">{problems ? `${issues.join(" · ")}.` : "Everything's working."}</span>
+          <span className="ml-auto shrink-0 text-[12px] font-normal text-muted-foreground">Checked {ago(data.generatedAt, Date.now())}</span>
         </div>
       ) : !error ? (
         <div className="h-12 animate-pulse rounded-lg bg-muted/30" aria-busy="true" />

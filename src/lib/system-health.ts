@@ -87,3 +87,26 @@ export interface SystemHealth {
 
 export const NOTIFY_DAYS = 7;
 export const NOTIFY_KEEP_DAYS = 14;
+
+/** Refusals and failed digests count as a problem for this long (the page still lists the whole week). */
+export const RECENT_HOURS = 24;
+
+/**
+ * What needs a look now, in words: a job failed or late, Whop refusing
+ * notifications in the last day, or a digest failing today or yesterday.
+ * Drives the red dot on the menu and the banner on the page.
+ */
+export function healthIssues(h: SystemHealth, now: number): string[] {
+  const issues: string[] = [];
+  const runs = new Map(h.jobs.map((j) => [j.id, j]));
+  for (const job of JOBS) {
+    const s = jobStatus(job, runs.get(job.id), now);
+    if (s === "failed") issues.push(`${job.label} failed`);
+    else if (s === "late") issues.push(`${job.label} is late`);
+  }
+  const refused = h.notifications.failures.some((f) => now - Date.parse(f.lastAt) < RECENT_HOURS * 3_600_000);
+  if (refused) issues.push("Whop refused notifications in the last day");
+  const yesterday = new Date(now - 86_400_000).toISOString().slice(0, 10);
+  if (h.digests.some((d) => d.status.startsWith("failed") && d.date >= yesterday)) issues.push("A daily digest failed");
+  return issues;
+}

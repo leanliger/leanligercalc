@@ -7,14 +7,36 @@ import { ProgressReportLoader } from "@/components/progress-report";
 import type { WeightUnit } from "@/lib/types";
 
 /** Coach dashboard → a member: open their progress report and send it to them. */
-export function CoachReportPanel({ companyId, memberId, memberName, unit }: { companyId: string; memberId: string; memberName: string; unit: WeightUnit }) {
+export function CoachReportPanel({
+  companyId,
+  memberId,
+  memberName,
+  unit,
+  openNow = false,
+  onOpened,
+}: {
+  companyId: string;
+  memberId: string;
+  memberName: string;
+  unit: WeightUnit;
+  /** Open it and scroll to it (the member page's sticky bar); onOpened clears the request. */
+  openNow?: boolean;
+  onOpened?: () => void;
+}) {
   const [open, setOpen] = React.useState(false);
+  const box = React.useRef<HTMLDivElement>(null);
   const [state, setState] = React.useState<{ busy: boolean; text: string | null; ok: boolean }>({ busy: false, text: null, ok: true });
   const first = memberName.split(" ")[0] || memberName;
   React.useEffect(() => {
     setOpen(false);
     setState({ busy: false, text: null, ok: true });
   }, [memberId]);
+  React.useEffect(() => {
+    if (!openNow) return;
+    setOpen(true);
+    onOpened?.();
+    requestAnimationFrame(() => box.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [openNow, onOpened]);
   const qs = `company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(memberId)}`;
 
   const share = async () => {
@@ -36,13 +58,16 @@ export function CoachReportPanel({ companyId, memberId, memberName, unit }: { co
 
   if (!open) {
     return (
-      <Button variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
-        <FileText />
-        Progress report
-      </Button>
+      <div ref={box} className="scroll-mt-32">
+        <Button variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+          <FileText />
+          Progress report
+        </Button>
+      </div>
     );
   }
   return (
+    <div ref={box} className="scroll-mt-32">
     <ProgressReportLoader
       url={`/api/coach/report?${qs}`}
       name={memberName}
@@ -70,5 +95,6 @@ export function CoachReportPanel({ companyId, memberId, memberName, unit }: { co
         </div>
       }
     />
+    </div>
   );
 }
