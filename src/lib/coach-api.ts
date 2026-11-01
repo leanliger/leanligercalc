@@ -11,6 +11,8 @@ import type { AccountabilityCheck } from "./accountability";
 import type { PhotoMeta } from "./photos";
 import type { MemberSharing } from "./sharing";
 import type { WeighIn } from "./tracking";
+import type { CoachMacros } from "./coach-macros";
+import type { MealId } from "./food";
 
 export const COMPANY_ID_PATTERN = /^biz_[A-Za-z0-9]{1,40}$/;
 /** Members who haven't logged anything for this many days are flagged. */
@@ -32,7 +34,27 @@ export interface FoodDay {
   protein: number;
   carbs: number;
   fat: number;
+  /** Calories per meal (breakfast, lunch, dinner, snacks): totals only, never the foods. */
+  meals?: Partial<Record<MealId, number>>;
 }
+
+/** A day's food log as totals, per meal included (the coach never sees the foods). */
+export function foodDayOf(date: string, entries: readonly { meal?: unknown; kcal?: unknown; protein?: unknown; carbs?: unknown; fat?: unknown }[]): FoodDay {
+  const day: FoodDay = { date, kcal: 0, protein: 0, carbs: 0, fat: 0, meals: {} };
+  for (const e of entries) {
+    const kcal = Number(e.kcal) || 0;
+    day.kcal += kcal;
+    day.protein += Number(e.protein) || 0;
+    day.carbs += Number(e.carbs) || 0;
+    day.fat += Number(e.fat) || 0;
+    const meal = typeof e.meal === "string" && (MEAL_IDS as readonly string[]).includes(e.meal) ? (e.meal as MealId) : "snacks";
+    day.meals![meal] = (day.meals![meal] ?? 0) + kcal;
+  }
+  for (const k of ["kcal", "protein", "carbs", "fat"] as const) day[k] = Math.round(day[k]);
+  for (const m of Object.keys(day.meals!) as MealId[]) day.meals![m] = Math.round(day.meals![m]!);
+  return day;
+}
+const MEAL_IDS = ["breakfast", "lunch", "dinner", "snacks"] as const;
 
 export interface CoachMemberData {
   userId: string;
@@ -68,6 +90,10 @@ export interface CoachMemberData {
   accountability?: AccountabilityCheck | null;
   /** When a coach of this whop last messaged them, replied to a check-in or sent a reminder (ISO time). */
   lastCoachContact?: string | null;
+  /** Macros a coach of this whop set for them, which override their plan's every day (src/lib/coach-macros.ts). */
+  coachMacros?: CoachMacros | null;
+  /** The program they last accepted from this whop, if any (Members → Program column). */
+  program?: string | null;
   /** Build lift goals hit in the last CELEBRATE_DAYS, for Wins. */
   goalHits?: { name: string; target: number; bodyweight: boolean; reachedOn: string }[];
 }

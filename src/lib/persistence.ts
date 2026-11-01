@@ -40,6 +40,7 @@ import { DEFAULT_REMINDERS, sanitizeReminderPrefs, type ReminderPrefs } from "./
 import { DEFAULT_TRAINING, sanitizeTraining, type TrainingSettings } from "./training";
 import { sanitizePauses, type PausePeriod } from "./pause";
 import { sanitizeSavedMeals, type SavedMeal } from "./saved-meals";
+import { sanitizeRecipes, type Recipe } from "./recipes";
 import { STEP_LIMITS, TRAINING_DAY_LIMITS } from "./activity";
 import { REVERSE_STEP_LIMITS } from "./reverse-diet";
 
@@ -71,6 +72,8 @@ export interface TrackingState {
   pauses: PausePeriod[];
   /** Saved meals, logged in one tap (Food → Food log). */
   savedMeals: SavedMeal[];
+  /** Recipes, logged a serving at a time (Nutrition → Meal prep). */
+  recipes: Recipe[];
 }
 
 export interface AppState {
@@ -88,7 +91,7 @@ export const DEFAULT_APP_STATE: AppState = {
   profile: DEFAULT_PROFILE,
   fatLoss: DEFAULT_FAT_LOSS_INPUTS,
   carbs: DEFAULT_CARB_INPUTS,
-  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [], savedMeals: [] },
+  tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [], savedMeals: [], recipes: [] },
 };
 
 /* --------------------------- sanitisation --------------------------- */
@@ -235,6 +238,7 @@ export function sanitizeAppState(raw: unknown): AppState {
       training: sanitizeTraining(obj(parsed.tracking).training),
       pauses: sanitizePauses(obj(parsed.tracking).pauses),
       savedMeals: sanitizeSavedMeals(obj(parsed.tracking).savedMeals),
+      recipes: sanitizeRecipes(obj(parsed.tracking).recipes),
     },
   };
 }
@@ -383,7 +387,7 @@ export function decodeStateFromQuery(search: string): AppState | null {
     profile: sanitizeProfile(profileRaw),
     fatLoss: sanitizeFatLoss(fatLossRaw),
     carbs: sanitizeCarbs(carbsRaw),
-    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [], savedMeals: [] },
+    tracking: { adjustments: [], habits: DEFAULT_HABITS, fasting: DEFAULT_FASTING, reminders: DEFAULT_REMINDERS, training: DEFAULT_TRAINING, pauses: [], savedMeals: [], recipes: [] },
   };
 }
 

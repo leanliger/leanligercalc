@@ -65,6 +65,7 @@ import type { WeeklyReview } from "@/lib/reviews";
 import { addPause, endPause, type PausePeriod } from "@/lib/pause";
 import type { MySharing } from "@/lib/sharing";
 import type { SavedMeal } from "@/lib/saved-meals";
+import type { Recipe } from "@/lib/recipes";
 import { loadSharing, saveSharing } from "@/components/coach-access";
 import { answerAssignment, loadAssignments, loadMyMacros, loadProgramEdits, markProgramEditApplied } from "@/components/assignment-cards";
 import { CoachMacrosBanner } from "@/components/coach-macros-banner";
@@ -1426,6 +1427,10 @@ export function AppShell() {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, savedMeals } }));
   }, []);
 
+  const updateRecipes = React.useCallback((recipes: Recipe[]) => {
+    setState((prev) => ({ ...prev, tracking: { ...prev.tracking, recipes } }));
+  }, []);
+
   const updatePauses = React.useCallback((pauses: PausePeriod[]) => {
     setState((prev) => ({ ...prev, tracking: { ...prev.tracking, pauses } }));
   }, []);
@@ -1861,6 +1866,8 @@ export function AppShell() {
                   unit={state.unit}
                   savedMeals={state.tracking.savedMeals}
                   onSavedMealsChange={updateSavedMeals}
+                  recipes={state.tracking.recipes}
+                  onRecipesChange={updateRecipes}
                   trainingToday={trainingToday}
                 />
               </TabsContent>

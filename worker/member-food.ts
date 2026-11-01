@@ -4,13 +4,13 @@
  *
  * The overview only carries two weeks of food (it loads everyone at once);
  * this loads COACH_FOOD_DAYS for the one member open on the dashboard.
- * Totals only, never the foods themselves. Same checks as the other member
+ * Totals (per day and per meal) only, never the foods themselves. Same checks as the other member
  * routes: the viewer is an admin of the company, the member belongs to it
  * and shares their progress.
  */
 
 import { addDays } from "../src/lib/dates";
-import type { FoodDay } from "../src/lib/coach-api";
+import { foodDayOf, type FoodDay } from "../src/lib/coach-api";
 import { coachCheck, isSharingProgress, type SharingEnv } from "./sharing";
 
 export const COACH_FOOD_DAYS = 182;
@@ -30,10 +30,9 @@ export async function coachMemberFood(env: SharingEnv, viewerId: string, company
   const days: FoodDay[] = [];
   for (const r of results) {
     try {
-      const entries = JSON.parse(r.entries) as { kcal?: unknown; protein?: unknown; carbs?: unknown; fat?: unknown }[];
+      const entries = JSON.parse(r.entries) as Parameters<typeof foodDayOf>[1];
       if (!Array.isArray(entries) || entries.length === 0) continue;
-      const sum = (k: "kcal" | "protein" | "carbs" | "fat") => Math.round(entries.reduce((s, e) => s + (Number(e[k]) || 0), 0));
-      days.push({ date: r.date, kcal: sum("kcal"), protein: sum("protein"), carbs: sum("carbs"), fat: sum("fat") });
+      days.push(foodDayOf(r.date, entries));
     } catch {
       /* skip a corrupt row */
     }

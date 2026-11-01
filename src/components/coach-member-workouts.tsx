@@ -18,8 +18,10 @@ import {
   formatSetEffort,
   formatWork,
   summarizeWorkout,
+  type Program,
   type Workout,
 } from "@/lib/training";
+import { TrainingVolumeCard, WorkoutAdherenceCard } from "@/components/training-load-card";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +49,7 @@ export function MemberWorkoutsCard({
   unit: WeightUnit;
   view?: "progress" | "log" | "muscles";
 }) {
-  const [data, setData] = React.useState<{ workouts: Workout[]; customExercises: Exercise[] } | null>(null);
+  const [data, setData] = React.useState<{ workouts: Workout[]; customExercises: Exercise[]; program: Program | null } | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [exerciseId, setExerciseId] = React.useState<string | null>(null);
   const first = memberName.split(" ")[0] || memberName;
@@ -64,9 +66,9 @@ export function MemberWorkoutsCard({
       headers: { accept: "application/json" },
     })
       .then(async (res) => {
-        const body = (await res.json().catch(() => null)) as { workouts?: Workout[]; customExercises?: Exercise[]; error?: string } | null;
+        const body = (await res.json().catch(() => null)) as { workouts?: Workout[]; customExercises?: Exercise[]; program?: Program | null; error?: string } | null;
         if (!res.ok || !body?.workouts) throw new Error(body?.error ?? "Couldn't load their workouts.");
-        if (live) setData({ workouts: body.workouts, customExercises: body.customExercises ?? [] });
+        if (live) setData({ workouts: body.workouts, customExercises: body.customExercises ?? [], program: body.program ?? null });
       })
       .catch((e: unknown) => {
         if (live) setLoadError(e instanceof Error ? e.message : "Couldn't load their workouts.");
@@ -109,6 +111,10 @@ export function MemberWorkoutsCard({
       {view === "progress" ? (
         <>
           <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} custom={data.customExercises} onOpen={setExerciseId} who={first} />
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 xl:items-start">
+            <WorkoutAdherenceCard workouts={data.workouts} program={data.program} today={todayISO()} who={first} />
+            <TrainingVolumeCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} />
+          </div>
         </>
       ) : view === "muscles" ? (
         <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />

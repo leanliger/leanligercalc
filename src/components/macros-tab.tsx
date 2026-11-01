@@ -81,6 +81,9 @@ import { cn } from "@/lib/utils";
 import { bottlesOn, liters, ounces, tapBottle, withBottles, WATER_GOAL_BOTTLES } from "@/lib/water";
 import { TrainingCarbsPanel, trainingChipLabel } from "@/components/training-carbs-card";
 import type { TrainingToday } from "@/lib/training-carbs";
+import { GroceryListCard, NutritionReportCard, RecipesCard } from "@/components/nutrition-tools";
+import { foodDayOf } from "@/lib/coach-api";
+import type { Recipe } from "@/lib/recipes";
 
 const DAY_PILL: Record<DayType, string> = {
   high: "bg-roadmap-high text-roadmap-high-foreground",
@@ -126,11 +129,14 @@ interface MacrosTabProps {
   /** "My usual breakfast": groups of foods logged in one tap. */
   savedMeals: SavedMeal[];
   onSavedMealsChange: (meals: SavedMeal[]) => void;
+  /** Recipes, logged a serving at a time (Meal prep). */
+  recipes: Recipe[];
+  onRecipesChange: (recipes: Recipe[]) => void;
   /** Today's workout, planned, in progress or done, for the training-day carb split. */
   trainingToday: TrainingToday;
 }
 
-export type NutritionSection = "food" | "water" | "fasting";
+export type NutritionSection = "food" | "report" | "prep" | "water" | "fasting";
 
 export function MacrosTab({
   coachMacros,
@@ -158,6 +164,8 @@ export function MacrosTab({
   unit,
   savedMeals,
   onSavedMealsChange,
+  recipes,
+  onRecipesChange,
   trainingToday,
 }: MacrosTabProps) {
   const [date, setDate] = React.useState(today);
@@ -204,6 +212,8 @@ export function MacrosTab({
   const totals = sumMacros(entries);
   const target = targetFor(date);
   const recents = React.useMemo(() => recentFoods(foodLogs), [foodLogs]);
+  // Daily and per-meal totals, for the weekly report.
+  const reportDays = React.useMemo(() => foodLogs.filter((l) => l.entries.length > 0).map((l) => foodDayOf(l.date, l.entries)), [foodLogs]);
   const yesterday = logFor(addDays(date, -1));
 
   const leftAfter = React.useCallback(
@@ -354,12 +364,42 @@ export function MacrosTab({
       onValueChange={setSection}
       options={[
         { value: "food" as const, label: "Food log" },
+        { value: "report" as const, label: "Report" },
+        { value: "prep" as const, label: "Meal prep" },
         { value: "water" as const, label: "Water" },
         { value: "fasting" as const, label: "Fasting" },
       ]}
-      className="max-w-sm"
+      className="max-w-lg"
     />
   );
+
+  if (section === "report") {
+    return (
+      <div className="space-y-5">
+        {nav}
+        <div className="lg:max-w-2xl">
+          <NutritionReportCard foodDays={reportDays} targetFor={targetFor} today={today} onWeek={onEnsureLoaded} />
+        </div>
+      </div>
+    );
+  }
+
+  if (section === "prep") {
+    return (
+      <div className="space-y-5">
+        {nav}
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2 lg:items-start">
+          <GroceryListCard targetFor={targetFor} today={today} metric={unit === "kg"} />
+          <RecipesCard
+            recipes={recipes}
+            onChange={onRecipesChange}
+            recents={recents}
+            onLog={(entry) => onSaveFoodDay(today, [...logFor(today), entry])}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (section === "water") {
     return (

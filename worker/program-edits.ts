@@ -129,7 +129,9 @@ export async function coachMemberWorkouts(env: SharingEnv, viewerId: string, com
       /* skip a corrupt row */
     }
   }
-  return { ok: true, body: { workouts, customExercises: training.customExercises } };
+  // Their active program, for workout adherence (planned against done).
+  const program = training.programs.find((p) => p.id === training.activeProgramId) ?? null;
+  return { ok: true, body: { workouts, customExercises: training.customExercises, program } };
 }
 
 export async function saveMemberProgram(env: SharingEnv, viewerId: string, raw: unknown): Promise<ProgramEditResult> {

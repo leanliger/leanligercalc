@@ -8,6 +8,9 @@ import {
   ClipboardList,
   Lock,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  Columns3,
   EyeOff,
   Flame,
   Inbox,
@@ -53,7 +56,20 @@ import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/compo
 import { CoachAccountability } from "@/components/coach-accountability";
 import { CoachFirstDays } from "@/components/coach-first-days";
 import { CoachSystemHealth } from "@/components/coach-system-health";
+import { CoachCalorieAdherence, adherenceRows } from "@/components/coach-calorie-adherence";
 import { healthIssues, type SystemHealth } from "@/lib/system-health";
+import {
+  COLUMNS,
+  DEFAULT_EXTRA,
+  OPTIONAL_COLUMNS,
+  goalDate,
+  parseColumns,
+  sortMembers,
+  weightTrend,
+  type ColumnDef,
+  type ColumnKey,
+  type SortDir,
+} from "@/lib/member-columns";
 import { FIRST_DAYS, firstDays } from "@/lib/first-days";
 import { EffortResultsChart } from "@/components/combined-charts";
 import { needsHelp, noAnswer } from "@/lib/accountability";
@@ -79,7 +95,7 @@ import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/
 import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
 import { ActionQueue, Avatar, CoachBottomNav, CoachNav, PhotoStorageMeter, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
-import { CoachIntakeChart } from "@/components/coach-member-food";
+import { CoachIntakeChart, CoachNutritionReport } from "@/components/coach-member-food";
 import { MemberTimelineCard } from "@/components/coach-member-timeline";
 import { SegmentedControl } from "@/components/ui/segmented";
 import {
@@ -162,7 +178,7 @@ const BUILT_IN_VIEWS: SavedView[] = [
 const AUTO_REFRESH_MS = 3 * 60_000;
 
 /** The dashboard's sections. */
-type View = "today" | "inbox" | "members" | "accountability" | "first-days" | "programs" | "automations" | "growth" | "health";
+type View = "today" | "inbox" | "members" | "accountability" | "first-days" | "calories" | "programs" | "automations" | "growth" | "health";
 
 /** The page's width: a little wider than `container`, for the menu, list and detail side by side. */
 const WRAP = "mx-auto w-full max-w-[1440px] px-4";
@@ -201,6 +217,33 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   // List order: most urgent first, lowest health score first, or by name.
   const [sort, setSort] = React.useState<MemberSort>("attention");
+  // A column heading's sort (src/lib/member-columns.ts), over the sort buttons until one of them is picked again.
+  const [colSort, setColSort] = React.useState<{ key: ColumnKey; dir: SortDir } | null>(null);
+  const chooseSort = (v: MemberSort) => {
+    setSort(v);
+    setColSort(null);
+  };
+  const sortByColumn = (key: ColumnKey) =>
+    setColSort((c) => (c?.key === key ? { key, dir: c.dir === 1 ? -1 : 1 } : { key, dir: COLUMNS.find((x) => x.key === key)!.firstDir }));
+  // The optional columns picked, remembered on this device.
+  const [extraCols, setExtraCols] = React.useState<ColumnKey[]>(DEFAULT_EXTRA);
+  React.useEffect(() => {
+    try {
+      setExtraCols(parseColumns(localStorage.getItem(COLUMNS_KEY)));
+    } catch {
+      /* no storage: the default */
+    }
+  }, []);
+  const toggleColumn = (key: ColumnKey, on: boolean) => {
+    const next = OPTIONAL_COLUMNS.filter((k) => (k === key ? on : extraCols.includes(k)));
+    setExtraCols(next);
+    if (!on && colSort?.key === key) setColSort(null);
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
+    } catch {
+      /* not remembered */
+    }
+  };
   // Members as the table, or on the Effort vs results chart.
   const [membersAs, setMembersAs] = React.useState<"list" | "chart">("list");
   const [query, setQuery] = React.useState("");
@@ -345,12 +388,26 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     [overview],
   );
   const nameOf = React.useMemo(() => new Map([...people].map(([id, p]) => [id, p.name])), [people]);
-  const shown =
-    sort === "health"
+  const tagNames = (id: string) =>
+    (tagsData?.members[id] ?? [])
+      .map((t) => tagsData?.tags.find((x) => x.id === t)?.name)
+      .filter(Boolean)
+      .join(", ");
+  const shown = colSort
+    ? sortMembers(filtered, colSort.key, colSort.dir, { today, tagNames })
+    : sort === "health"
       ? [...filtered].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
       : sort === "name"
         ? [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName))
         : filtered;
+  // The list's columns on a computer: the fixed ones and the picks, in the picker's order.
+  const visibleCols = COLUMNS.filter((c) => c.fixed || extraCols.includes(c.key));
+  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 12rem for the name, every column and its gap.
+  const listMinRem = 5.75 + 12 + 1 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0);
+  const gridStyle = {
+    "--member-cols": `minmax(12rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
+    "--member-min": `${listMinRem}rem`,
+  } as React.CSSProperties;
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
   const hasPlan = React.useCallback((id: string) => summaries.some((m) => m.data.userId === id && m.hasPlan), [summaries]);
   const currentNotSharing = current ? null : (notSharing.find((m) => m.userId === selected) ?? null);
@@ -530,6 +587,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     { id: "go-inbox", group: "Go to", label: "Inbox", hint: counts.toReview + chats.unread > 0 ? `${counts.toReview + chats.unread} waiting` : undefined, keywords: "check-ins messages chat", run: () => openInbox() },
     { id: "go-members", group: "Go to", label: "Members", run: () => showMembers("all") },
     { id: "go-accountability", group: "Go to", label: "Accountability checks", keywords: "slipping help check", run: () => go("accountability") },
+    { id: "go-calories", group: "Go to", label: "Calorie adherence", keywords: "nutrition calories under over food", run: () => go("calories") },
     { id: "go-health", group: "Go to", label: "System health", keywords: "jobs notifications digest status errors", run: () => go("health") },
     { id: "go-first-days", group: "Go to", label: `First ${FIRST_DAYS} days`, keywords: "new members onboarding stuck", run: () => go("first-days") },
     { id: "go-programs", group: "Go to", label: "Programs & habits", keywords: "assign", run: () => { setProgramsTab("programs"); go("programs"); } },
@@ -597,6 +655,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const members = overview?.members ?? [];
   const healthAlertList = [...healthIssueList, ...(members.length > 0 && !members.some((m) => m.joinedAt) ? ["Whop isn't sending join dates"] : [])];
   const healthAlert = healthAlertList.length ? `System health: ${healthAlertList.join(" · ")}` : null;
+  // Calorie adherence over the last two weeks (src/lib/nutrition-report.ts): off target counts on the menu.
+  const calorieRows = React.useMemo(() => adherenceRows(summaries, today), [summaries, today]);
+  const calorieOff = calorieRows.rows.filter((r) => r.a.verdict !== "on-track").length;
   // New members past a first step's day (src/lib/first-days.ts).
   const newStuck = firstDaysRows.filter((r) => r.status === "stuck").length;
   const navItems: CoachNavItem[] = [
@@ -605,6 +666,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     { id: "members", group: "Members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
     { id: "accountability", group: "Members", label: "Accountability", icon: <LifeBuoy />, count: accountabilityNeeds, active: view === "accountability", onSelect: () => go("accountability") },
     { id: "first-days", group: "Members", label: `First ${FIRST_DAYS} days`, icon: <Sprout />, count: newStuck, active: view === "first-days", onSelect: () => go("first-days") },
+    { id: "calories", group: "Members", label: "Calorie adherence", icon: <Scale />, count: calorieOff, active: view === "calories", onSelect: () => go("calories") },
     { id: "programs", group: "Setup", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
     { id: "automations", group: "Setup", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
     { id: "growth", group: "Setup", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
@@ -708,6 +770,13 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             </div>
           ) : view === "accountability" ? (
             <CoachAccountability companyId={companyId} summaries={summaries} names={people} onMessage={(id) => openInbox(id)} />
+          ) : view === "calories" ? (
+            <CoachCalorieAdherence
+              rows={calorieRows.rows}
+              noTargets={calorieRows.noTargets}
+              onMessage={(id) => openInbox(id)}
+              onOpen={(id) => openMember(id, "food")}
+            />
           ) : view === "health" ? (
             <CoachSystemHealth companyId={companyId} members={overview?.members ?? []} />
           ) : view === "first-days" ? (
@@ -955,7 +1024,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   onApply={(v) => {
                     setFilter(v.filter);
                     setTagFilter(v.tag);
-                    setSort(v.sort);
+                    chooseSort(v.sort);
                     setQuery(v.query);
                   }}
                 />
@@ -1022,14 +1091,29 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   ariaLabel="Sort members"
                   size="sm"
                   value={sort}
-                  onValueChange={setSort}
+                  onValueChange={chooseSort}
                   options={[
                     { value: "attention" as const, label: "Most urgent" },
                     { value: "health" as const, label: "Health score" },
                     { value: "name" as const, label: "Name" },
                   ]}
-                  className="w-auto"
+                  className={cn("w-auto", colSort && "opacity-60")}
                 />
+                {/* Phones have no headings to tap: every column's sort from a menu. */}
+                <select
+                  aria-label="Sort by a column"
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs sm:hidden"
+                  value={colSort?.key ?? ""}
+                  onChange={(e) => (e.target.value ? sortByColumn(e.target.value as ColumnKey) : setColSort(null))}
+                >
+                  <option value="">More sorts…</option>
+                  {visibleCols.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <ColumnPicker extra={extraCols} onToggle={toggleColumn} />
                 {tagsData && tagsData.tags.length > 0 ? (
                   <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[12px] text-muted-foreground">Tags:</span>
@@ -1056,6 +1140,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 ) : null}
               </div>
 
+              {colSort && membersAs === "list" ? (
+                <p className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
+                  Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()}, {colSort.dir === 1 ? "low to high" : "high to low"}.
+                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => sortByColumn(colSort.key)}>
+                    Reverse
+                  </button>
+                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => chooseSort("attention")}>
+                    Back to most urgent
+                  </button>
+                </p>
+              ) : null}
               {summaries.length === 0 ? (
                 <EmptyNote>
                   {overview.members.length === 0
@@ -1081,20 +1176,36 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   />
                   Select all {shown.length} shown, for bulk actions
                 </label>
-                <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card">
+                <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card sm:overflow-x-auto">
+                  {/* The card's width; wider (and scrolling) only when the columns on don't fit. */}
+                  <div className="sm:min-w-[var(--member-min)]" style={gridStyle}>
                   <div
-                    aria-hidden
                     className={cn(
                       "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent py-2 pl-[5.75rem] pr-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
                       ROW_GRID,
                     )}
+                    style={gridStyle}
                   >
                     <span>Member</span>
-                    <span className="text-center">Health</span>
-                    <span className="text-right">Week</span>
-                    <span className="text-right">Wt / wk</span>
-                    <span>Last log</span>
-                    <span>Check-in</span>
+                    {visibleCols.map((c) => {
+                      const on = colSort?.key === c.key;
+                      return (
+                        <button
+                          key={c.key}
+                          type="button"
+                          onClick={() => sortByColumn(c.key)}
+                          aria-label={`Sort by ${c.label}${on ? `, now ${colSort!.dir === 1 ? "low to high" : "high to low"}` : ""}`}
+                          className={cn(
+                            "flex items-center gap-0.5 whitespace-nowrap uppercase tracking-wide hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            ALIGN_HEAD[c.align],
+                            on && "text-foreground",
+                          )}
+                        >
+                          {c.label}
+                          {on ? colSort!.dir === 1 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden /> : null}
+                        </button>
+                      );
+                    })}
                   </div>
                   <ul className="divide-y divide-border">
                     {shown.map((m) => {
@@ -1127,12 +1238,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               selected={m.data.userId === selected}
                               onOpen={() => openMember(m.data.userId)}
                               tags={<TagChips tags={tagsData?.tags ?? []} ids={tagsData?.members[m.data.userId]} />}
+                              cols={visibleCols}
+                              gridStyle={gridStyle}
+                              today={today}
+                              tagNames={tagNames(m.data.userId)}
                             />
                           </div>
                         </li>
                       );
                     })}
                   </ul>
+                  </div>
                 </div>
                 </>
               )}
@@ -1297,7 +1413,93 @@ function SavedViews({
 }
 
 /** Member · health · week · weight per week · check-in; on phones the numbers move under the name. */
-const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:grid-cols-[minmax(0,1fr)_3rem_3.5rem_4.75rem_5.5rem_5.5rem]";
+// Phones: name and health; computers: the columns on (`--member-cols`, set where the list is drawn).
+const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:[grid-template-columns:var(--member-cols)]";
+/** The Members list's optional columns, on this device. */
+const COLUMNS_KEY = "prep-calculator:member-columns";
+const ALIGN_HEAD = { left: "justify-start", center: "justify-center", right: "justify-end" } as const;
+const ALIGN_CELL = { left: "text-left", center: "text-center", right: "text-right" } as const;
+
+/** The picker for the optional columns (computers only: phones show name and health). */
+function ColumnPicker({ extra, onToggle }: { extra: ColumnKey[]; onToggle: (key: ColumnKey, on: boolean) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const box = React.useRef<HTMLDivElement>(null);
+  // Closes on a click outside it or Escape.
+  React.useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <div ref={box} className="relative hidden sm:block">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="member-columns"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Columns3 className="h-3.5 w-3.5" aria-hidden />
+        Columns
+      </button>
+      {open ? (
+      <div id="member-columns" className="absolute left-0 z-30 mt-1 w-56 space-y-0.5 rounded-xl border border-border bg-card p-3 shadow-xl">
+        <p className="text-xs font-semibold">Columns</p>
+        <p className="pb-1 text-[11px] text-muted-foreground">Remembered on this device.</p>
+        {COLUMNS.map((c) => (
+          <label key={c.key} className={cn("flex items-center gap-2 py-0.5 text-sm", c.fixed ? "text-muted-foreground" : "cursor-pointer")}>
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[hsl(var(--primary))]"
+              checked={c.fixed || extra.includes(c.key)}
+              disabled={c.fixed}
+              onChange={(e) => onToggle(c.key, e.target.checked)}
+            />
+            {c.label}
+            {c.fixed ? <span className="ml-auto text-[11px]">always</span> : null}
+          </label>
+        ))}
+      </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Their last few weekly averages as a small line: green heading where their plan wants, red the other way, amber flat. */
+function TrendLine({ m, today, unit, compact }: { m: MemberSummary; today: string; unit: WeightUnit; compact?: boolean }) {
+  const { weeks, changeLb } = weightTrend(m.data.weighIns, today);
+  const known = weeks.map((w, i) => [i, w] as const).filter((p): p is readonly [number, number] => p[1] !== null);
+  if (changeLb === null || known.length < 2) return <span className="text-muted-foreground">—</span>;
+  const lo = Math.min(...known.map((p) => p[1]));
+  const hi = Math.max(...known.map((p) => p[1]));
+  const span = Math.max(hi - lo, 0.5);
+  const W = compact ? 40 : 44;
+  const pts = known.map(([i, v]) => `${(i / (weeks.length - 1)) * W},${1 + (1 - (v - lo) / span) * 12}`).join(" ");
+  // Their plan's direction (positive planned rate = losing); no plan: losing is the aim.
+  const planned = m.progress?.plannedRate ?? null;
+  const wantDown = planned === null || planned > 0.05;
+  const maintain = planned !== null && Math.abs(planned) <= 0.05;
+  const flat = Math.abs(changeLb) < 0.5;
+  const tone = maintain ? (flat ? "text-success" : "text-warning") : flat ? "text-warning" : changeLb < 0 === wantDown ? "text-success" : "text-destructive";
+  return (
+    <span className="tabular inline-flex items-center gap-1.5" title={`Weekly averages: ${weeks.map((w) => (w === null ? "—" : Math.round(fromLb(w, unit) * 10) / 10)).join(" → ")} ${unit}`}>
+      <svg width={W} height={14} viewBox={`-1 0 ${W + 2} 14`} className={tone} aria-hidden>
+        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <span>{signedWeight(changeLb, unit)}</span>
+    </span>
+  );
+}
 
 function checkinStatus(m: MemberSummary): { label: string; className: string } {
   if (m.flags.includes("reply")) return { label: "To review", className: "font-semibold text-primary" };
@@ -1311,6 +1513,10 @@ function MemberRow({
   selected,
   onOpen,
   tags,
+  cols,
+  gridStyle,
+  today,
+  tagNames,
 }: {
   m: MemberSummary;
   unit: WeightUnit;
@@ -1318,15 +1524,59 @@ function MemberRow({
   onOpen: () => void;
   /** Their tag chips. */
   tags?: React.ReactNode;
+  /** The columns on, on a computer, and the grid they make. */
+  cols: ColumnDef[];
+  gridStyle: React.CSSProperties;
+  today: string;
+  /** Their tags' names, for the Tags column. */
+  tagNames: string;
 }) {
   const week = m.week.percent === null ? "—" : `${m.week.percent}%`;
   const weekClass = m.week.zone ? ZONE_TEXT[m.week.zone] : "";
-  const change = m.weekChangeLb === null ? "—" : signedWeight(m.weekChangeLb, unit);
   const checkin = checkinStatus(m);
+  const cell = (c: ColumnDef): React.ReactNode => {
+    switch (c.key) {
+      case "health":
+        return (
+          <span className="flex justify-center">
+            <HealthPill health={m.health} />
+          </span>
+        );
+      case "week":
+        return <span className={cn("tabular font-semibold", weekClass)}>{week}</span>;
+      case "trend":
+        return <TrendLine m={m} today={today} unit={unit} />;
+      case "lastLog":
+        return <span className="text-muted-foreground">{describeDaysAgo(m.daysSinceLog)}</span>;
+      case "checkin":
+        return <span className={checkin.className}>{checkin.label}</span>;
+      case "risk":
+        return (
+          <span className={m.risk.level === "high" ? "font-semibold text-destructive" : m.risk.level === "medium" ? "text-warning" : "text-muted-foreground"}>
+            {m.risk.level === "high" ? `High · ${m.risk.score}` : m.risk.level === "medium" ? `Medium · ${m.risk.score}` : "Low"}
+          </span>
+        );
+      case "goal": {
+        const d = goalDate(m, today);
+        return <span className="tabular">{d ? formatShort(d) : "—"}</span>;
+      }
+      case "workouts":
+        return <span className="tabular">{m.workouts7}</span>;
+      case "protein":
+        return <span className="tabular">{m.food7 ? `${Math.round(m.food7.protein)} g` : "—"}</span>;
+      case "joined":
+        return <span className="tabular text-muted-foreground">{m.data.joinedAt ? formatShort(m.data.joinedAt.slice(0, 10)) : "—"}</span>;
+      case "tags":
+        return <span className="block truncate text-muted-foreground">{tagNames || "—"}</span>;
+      case "program":
+        return <span className="block truncate">{m.data.program ?? "—"}</span>;
+    }
+  };
   return (
     <button
       type="button"
       onClick={onOpen}
+      style={gridStyle}
       aria-current={selected ? "true" : undefined}
       className={cn(
         "grid w-full items-center gap-x-3 border-l-2 px-3 py-2.5 text-left transition-colors",
@@ -1357,7 +1607,7 @@ function MemberRow({
             <span>
               Week <span className={cn("font-semibold", weekClass)}>{week}</span>
             </span>
-            <span>{change} / wk</span>
+            <TrendLine m={m} today={today} unit={unit} compact />
             <span className={checkin.className}>Check-in: {checkin.label.toLowerCase()}</span>
           </span>
           {tags}
@@ -1377,25 +1627,13 @@ function MemberRow({
           ) : null}
         </span>
       </span>
-      <span className="flex justify-center">
-        <HealthPill health={m.health} />
-      </span>
-      <span className={cn("tabular hidden text-right text-sm font-semibold sm:block", weekClass)}>
-        <span className="sr-only">Week </span>
-        {week}
-      </span>
-      <span className="tabular hidden text-right text-sm sm:block">
-        {change}
-        <span className="sr-only"> a week</span>
-      </span>
-      <span className="hidden text-sm text-muted-foreground sm:block">
-        <span className="sr-only">Last log </span>
-        {describeDaysAgo(m.daysSinceLog)}
-      </span>
-      <span className={cn("hidden text-sm sm:block", checkin.className)}>
-        <span className="sr-only">Check-in: </span>
-        {checkin.label}
-      </span>
+      {/* Health on phones too; the rest from a computer up. */}
+      {cols.map((c) => (
+        <span key={c.key} className={cn("relative min-w-0 text-sm", ALIGN_CELL[c.align], c.key !== "health" && "hidden sm:block")}>
+          {c.key !== "health" ? <span className="sr-only">{c.label}: </span> : null}
+          {cell(c)}
+        </span>
+      ))}
     </button>
   );
 }
@@ -2092,6 +2330,7 @@ function MemberDetail({
         ) : tab === "food" ? (
           <>
             <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+            <CoachNutritionReport companyId={companyId} summary={m} today={today} />
             <CoachIntakeChart companyId={companyId} memberId={m.data.userId} weighIns={m.data.weighIns} unit={unit} today={today} />
             <Card>
               <CardHeader className="pb-3">

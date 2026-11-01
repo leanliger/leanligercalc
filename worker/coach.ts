@@ -18,7 +18,7 @@
  * member list (names and avatars) can be read.
  */
 
-import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, type CoachMemberData, type FoodDay } from "../src/lib/coach-api";
+import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, foodDayOf, type CoachMemberData } from "../src/lib/coach-api";
 import { CELEBRATE_DAYS } from "../src/lib/milestones";
 import { TREND_WEEKS, strengthTrends } from "../src/lib/strength-trends";
 import type { Workout } from "../src/lib/training";
@@ -137,7 +137,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
     const numbered = chunk.map((_, i) => `?${i + 2}`).join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact, checks] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact, checks, programs, macros] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -179,7 +179,27 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
         `SELECT id, member_id, status, triggers, created_at, sent_at, answer, note, choice, answered_at FROM accountability_checks
          WHERE company_id = ?1 AND member_id IN (${numbered}) AND created_at >= ?${chunk.length + 2} ORDER BY created_at DESC`,
       ).bind(companyId, ...chunk, addDays(today, -14)),
+      // The program each one last accepted from this whop (Members → Program column).
+      env.DB.prepare(
+        `SELECT t.user_id, a.title, MAX(COALESCE(t.responded_at, a.created_at)) AS at
+           FROM assignments a JOIN assignment_targets t ON t.assignment_id = a.id
+          WHERE a.company_id = ?1 AND a.kind = 'program' AND a.cancelled_at IS NULL AND t.status = 'accepted' AND t.user_id IN (${numbered})
+          GROUP BY t.user_id`,
+      ).bind(companyId, ...chunk),
+      // Macros a coach of this whop set (they override the plan's targets).
+      env.DB.prepare(`SELECT user_id, kcal, protein, carbs, fat, note, set_at FROM coach_macros WHERE company_id = ?1 AND user_id IN (${numbered})`).bind(
+        companyId,
+        ...chunk,
+      ),
     ]);
+    for (const r of (macros?.results ?? []) as { user_id: string; kcal: number; protein: number; carbs: number; fat: number; note: string; set_at: string }[]) {
+      const m = members.get(r.user_id);
+      if (m) m.coachMacros = { kcal: r.kcal, protein: r.protein, carbs: r.carbs, fat: r.fat, note: r.note, setAt: r.set_at };
+    }
+    for (const r of (programs?.results ?? []) as { user_id: string; title: string }[]) {
+      const m = members.get(r.user_id);
+      if (m) m.program = r.title;
+    }
     for (const r of (checks?.results ?? []) as Parameters<typeof rowToCheck>[0][]) {
       const m = members.get(r.member_id);
       if (m && !m.accountability) m.accountability = rowToCheck(r);
@@ -248,11 +268,12 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
       if (!m) continue;
       try {
         const plan = JSON.parse(r.state) as { tracking?: Record<string, unknown> } | null;
-        // Training (programs, own exercises) isn't part of the coach view, and
-        // can be the largest part of a plan: leave it out.
+        // Training (programs, own exercises), saved meals and recipes aren't part of the
+        // coach view, and can be the largest part of a plan: leave them out.
         if (plan?.tracking && typeof plan.tracking === "object") {
           delete plan.tracking.training;
           delete plan.tracking.savedMeals;
+          delete plan.tracking.recipes;
         }
         m.plan = plan;
       } catch {
@@ -271,22 +292,9 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     }
     for (const r of (food?.results ?? []) as { user_id: string; date: string; entries: string }[]) {
       try {
-        const entries = JSON.parse(r.entries) as { kcal?: number; protein?: number; carbs?: number; fat?: number }[];
-        const day: FoodDay = { date: r.date, kcal: 0, protein: 0, carbs: 0, fat: 0 };
-        for (const e of entries) {
-          day.kcal += Number(e.kcal) || 0;
-          day.protein += Number(e.protein) || 0;
-          day.carbs += Number(e.carbs) || 0;
-          day.fat += Number(e.fat) || 0;
-        }
-        // Daily totals only — the coach view doesn't need individual foods.
-        members.get(r.user_id)?.foodDays.push({
-          date: day.date,
-          kcal: Math.round(day.kcal),
-          protein: Math.round(day.protein),
-          carbs: Math.round(day.carbs),
-          fat: Math.round(day.fat),
-        });
+        const entries = JSON.parse(r.entries) as Parameters<typeof foodDayOf>[1];
+        // Daily and per-meal totals only — the coach view doesn't need individual foods.
+        if (Array.isArray(entries)) members.get(r.user_id)?.foodDays.push(foodDayOf(r.date, entries));
       } catch {
         /* skip a corrupt row */
       }
