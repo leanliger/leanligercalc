@@ -69,6 +69,8 @@ export interface MemberSummary {
   lastLog: string | null;
   daysSinceLog: number | null;
   week: { percent: number | null; zone: Zone | null };
+  /** The same habit score over the last 7 days (not the calendar week), for charts that shouldn't reset on Mondays. */
+  habits7: number | null;
   streak: number;
   progress: ProgressAnalysis | null;
   /** Their fat-loss timeline, for the plan line on the weight chart. */
@@ -257,6 +259,7 @@ export function summarizeMember(data: CoachMemberData, today: string): MemberSum
     lastLog,
     daysSinceLog,
     week: { percent: score.percent, zone: score.zone },
+    habits7: weeklyScore(habits, logMap, addDays(today, -6), today, firstHabit).percent,
     streak,
     progress,
     timeline,

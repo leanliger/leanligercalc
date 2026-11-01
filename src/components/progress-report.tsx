@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatMedium, formatShort } from "@/lib/dates";
 import { fromInches, lengthUnit } from "@/lib/measurements";
 import type { ProgressReport, ReportPhoto } from "@/lib/progress-report";
+import { MuscleKeptPlot } from "@/components/combined-charts";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,18 @@ export function ProgressReportView({
                 );
               })}
             </ul>
+          </section>
+        ) : null}
+
+        {/* ------------------------- weight vs strength ------------------------- */}
+        {r.muscleKept ? (
+          <section className="space-y-2">
+            <Heading icon={<Activity className="h-4 w-4" />}>Weight vs strength</Heading>
+            <p className="text-[12px] text-muted-foreground">
+              Trend weight against the main lifts (100 = where each started), week by week. Weight going down while strength holds means
+              the weight lost is fat, not muscle.
+            </p>
+            <MuscleKeptPlot series={r.muscleKept} unit={unit} />
           </section>
         ) : null}
 

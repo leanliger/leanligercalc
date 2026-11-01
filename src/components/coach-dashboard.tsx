@@ -24,6 +24,7 @@ import {
   Sun,
   TrendingUp,
   LifeBuoy,
+  Sprout,
   Users,
   Utensils,
   Workflow,
@@ -48,6 +49,8 @@ import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, useCoachThreads } from "@/components/chat";
 import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/components/coach-command-palette";
 import { CoachAccountability } from "@/components/coach-accountability";
+import { CoachFirstDays } from "@/components/coach-first-days";
+import { FIRST_DAYS, firstDays } from "@/lib/first-days";
 import { EffortResultsChart } from "@/components/combined-charts";
 import { needsHelp, noAnswer } from "@/lib/accountability";
 import { messagePreview, type ChatThread } from "@/lib/messages";
@@ -155,7 +158,7 @@ const BUILT_IN_VIEWS: SavedView[] = [
 const AUTO_REFRESH_MS = 3 * 60_000;
 
 /** The dashboard's sections. */
-type View = "today" | "inbox" | "members" | "accountability" | "programs" | "automations" | "growth";
+type View = "today" | "inbox" | "members" | "accountability" | "first-days" | "programs" | "automations" | "growth";
 
 /** The page's width: a little wider than `container`, for the menu, list and detail side by side. */
 const WRAP = "mx-auto w-full max-w-[1440px] px-4";
@@ -345,6 +348,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         ? [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName))
         : filtered;
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
+  const hasPlan = React.useCallback((id: string) => summaries.some((m) => m.data.userId === id && m.hasPlan), [summaries]);
   const currentNotSharing = current ? null : (notSharing.find((m) => m.userId === selected) ?? null);
   const shownNotSharing = notSharing.filter((m) => !q || `${m.name ?? ""} ${m.username ?? ""}`.toLowerCase().includes(q));
 
@@ -522,6 +526,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     { id: "go-inbox", group: "Go to", label: "Inbox", hint: counts.toReview + chats.unread > 0 ? `${counts.toReview + chats.unread} waiting` : undefined, keywords: "check-ins messages chat", run: () => openInbox() },
     { id: "go-members", group: "Go to", label: "Members", run: () => showMembers("all") },
     { id: "go-accountability", group: "Go to", label: "Accountability checks", keywords: "slipping help check", run: () => go("accountability") },
+    { id: "go-first-days", group: "Go to", label: `First ${FIRST_DAYS} days`, keywords: "new members onboarding stuck", run: () => go("first-days") },
     { id: "go-programs", group: "Go to", label: "Programs & habits", keywords: "assign", run: () => { setProgramsTab("programs"); go("programs"); } },
     { id: "go-results", group: "Go to", label: "Program results", run: () => { setProgramsTab("results"); go("programs"); } },
     { id: "go-nudges", group: "Go to", label: "Automatic nudges", keywords: "automations", run: () => go("automations") },
@@ -558,14 +563,18 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   // Accountability checks that need you: asked for help or struggling, or no answer (src/lib/accountability.ts).
+  const firstDaysRows = React.useMemo(() => firstDays(overview?.members ?? [], today, hasPlan), [overview, today, hasPlan]);
   const accountabilityNeeds = summaries.filter(
     (m) => needsHelp(m.data.accountability, m.data.lastCoachContact) || noAnswer(m.data.accountability, m.data.lastCoachContact, Date.now()),
   ).length;
+  // New members past a first step's day (src/lib/first-days.ts).
+  const newStuck = firstDaysRows.filter((r) => r.status === "stuck").length;
   const navItems: CoachNavItem[] = [
     { id: "today", label: "Today", icon: <Sun />, active: view === "today", onSelect: showToday },
     { id: "inbox", label: "Inbox", icon: <Inbox />, count: counts.toReview + chats.unread, active: view === "inbox", onSelect: () => openInbox() },
     { id: "members", label: "Members", icon: <Users />, note: summaries.length, active: view === "members", onSelect: () => showMembers("all") },
     { id: "accountability", label: "Accountability", icon: <LifeBuoy />, count: accountabilityNeeds, active: view === "accountability", onSelect: () => go("accountability") },
+    { id: "first-days", label: `First ${FIRST_DAYS} days`, icon: <Sprout />, count: newStuck, active: view === "first-days", onSelect: () => go("first-days") },
     { id: "programs", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
     { id: "automations", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
     { id: "growth", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
@@ -668,6 +677,15 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             </div>
           ) : view === "accountability" ? (
             <CoachAccountability companyId={companyId} summaries={summaries} names={people} onMessage={(id) => openInbox(id)} />
+          ) : view === "first-days" ? (
+            <CoachFirstDays
+              members={overview?.members ?? []}
+              today={today}
+              hasPlan={hasPlan}
+              names={people}
+              onMessage={(id) => openInbox(id)}
+              onOpen={(id) => openMember(id)}
+            />
           ) : view === "programs" ? (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3">

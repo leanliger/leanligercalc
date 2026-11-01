@@ -58,7 +58,34 @@ export function MuscleKeptChart({
   unit: WeightUnit;
   today: string;
 }) {
-  const { points, lifts, weightChangeLb, strengthChange } = React.useMemo(() => muscleKeptSeries(workouts, weighIns, today), [workouts, weighIns, today]);
+  const series = React.useMemo(() => muscleKeptSeries(workouts, weighIns, today), [workouts, weighIns, today]);
+  return (
+    <Card>
+      <CardHeader className="space-y-1 pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Dumbbell className="h-4 w-4 text-primary" />
+          Weight vs strength
+        </CardTitle>
+        <CardDescription>
+          Trend weight against a strength index of their main lifts (100 = where each lift started), over {MUSCLE_CHART_WEEKS} weeks.
+          {series.lifts.length ? ` Lifts: ${series.lifts.join(", ")}.` : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <MuscleKeptPlot series={series} unit={unit} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The weight and strength lines, their changes and a one-line verdict. */
+export function MuscleKeptPlot({
+  series: { points, weightChangeLb, strengthChange },
+  unit,
+}: {
+  series: Pick<ReturnType<typeof muscleKeptSeries>, "points" | "weightChangeLb" | "strengthChange">;
+  unit: WeightUnit;
+}) {
   const data = points.map((p) => ({ ...p, weight: p.weightLb === null ? null : r1(fromLb(p.weightLb, unit)) }));
   const weights = data.map((p) => p.weight).filter((v): v is number => v !== null);
   const strengths = data.map((p) => p.strength).filter((v): v is number => v !== null);
@@ -76,20 +103,11 @@ export function MuscleKeptChart({
           : strengthChange > 2
             ? { text: "Getting stronger.", tone: "text-success" }
             : { text: "Weight and strength steady.", tone: "text-muted-foreground" };
+  // About six date labels, however many weeks.
+  const tickEvery = Math.max(0, Math.ceil(data.length / 6) - 1);
 
   return (
-    <Card>
-      <CardHeader className="space-y-1 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Dumbbell className="h-4 w-4 text-primary" />
-          Weight vs strength
-        </CardTitle>
-        <CardDescription>
-          Trend weight against a strength index of their main lifts (100 = where each lift started), over {MUSCLE_CHART_WEEKS} weeks.
-          {lifts.length ? ` Lifts: ${lifts.join(", ")}.` : ""}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <>
         {!enough ? (
           <p className="text-sm text-muted-foreground">Needs a few weeks of weigh-ins and at least one lift logged twice to draw.</p>
         ) : (
@@ -98,7 +116,7 @@ export function MuscleKeptChart({
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={data} margin={{ top: 8, right: 4, bottom: 4, left: -8 }}>
                   <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={{ stroke: "hsl(var(--border))" }} tick={{ fontSize: 11 }} tickFormatter={(d: string) => formatShort(d)} interval={2} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={{ stroke: "hsl(var(--border))" }} tick={{ fontSize: 11 }} tickFormatter={(d: string) => formatShort(d)} interval={tickEvery} />
                   <YAxis
                     yAxisId="w"
                     domain={[Math.floor(Math.min(...weights) - wPad), Math.ceil(Math.max(...weights) + wPad)]}
@@ -149,8 +167,7 @@ export function MuscleKeptChart({
             {verdict ? <p className={cn("text-sm font-medium", verdict.tone)}>{verdict.text}</p> : null}
           </>
         )}
-      </CardContent>
-    </Card>
+    </>
   );
 }
 
@@ -172,7 +189,7 @@ export function EffortResultsChart({ members, onOpen }: { members: MemberSummary
           Effort vs results
         </CardTitle>
         <CardDescription>
-          Across: how consistent they are this week (days logged, and their habit score). Up: their weekly rate against their plan&apos;s (1× = exactly
+          Across: how consistent they've been over the last 7 days (days logged, and their habit score). Up: their weekly rate against their plan&apos;s (1× = exactly
           on plan). Colour: health score. Tap a dot to open them.
         </CardDescription>
       </CardHeader>

@@ -8,6 +8,7 @@ import { SITES, SITE_INFO, siteChange, type Measurement, type Site } from "./mea
 import { exerciseHistory, type Workout } from "./training";
 import { weekStartOf } from "./habits";
 import { daysBetween } from "./dates";
+import { muscleKeptSeries, type MusclePoint } from "./muscle-kept";
 
 export interface ReportPhoto {
   id: string;
@@ -38,9 +39,18 @@ export interface ProgressReport {
   checkins: number;
   /** Earliest and latest photo of the same pose, when there are two dates. */
   photos: { before: ReportPhoto; after: ReportPhoto } | null;
+  /**
+   * Trend weight against a strength index of their main lifts, week by week
+   * (src/lib/muscle-kept.ts), over the report's span (MUSCLE_REPORT_WEEKS
+   * at most); null until there are two weeks of each.
+   */
+  muscleKept?: { points: MusclePoint[]; lifts: string[]; weightChangeLb: number | null; strengthChange: number | null } | null;
 }
 
 const MAX_LIFTS = 6;
+/** The weight vs strength chart covers at least this many weeks, and at most MUSCLE_REPORT_WEEKS. */
+const MUSCLE_MIN_WEEKS = 4;
+export const MUSCLE_REPORT_WEEKS = 26;
 
 /** The big lifts lead, in this order; then the most trained. */
 export const MAIN_LIFTS = [
@@ -116,10 +126,18 @@ export function buildProgressReport(data: {
   const dates = [...weighIns.map((w) => w.date), ...finished.map((w) => w.date), ...data.measurements.map((m) => m.date)].sort();
   const from = dates[0] ?? null;
   const to = dates[dates.length - 1] ?? null;
+  const weeks = from && to ? Math.max(1, Math.round(daysBetween(from, to) / 7)) : 0;
+
+  let muscleKept: ProgressReport["muscleKept"] = null;
+  if (to) {
+    const m = muscleKeptSeries(finished, weighIns, to, Math.min(MUSCLE_REPORT_WEEKS, Math.max(MUSCLE_MIN_WEEKS, weeks + 1)));
+    const enough = (k: "weightLb" | "strength") => m.points.filter((p) => p[k] !== null).length >= 2;
+    if (enough("weightLb") && enough("strength")) muscleKept = m;
+  }
   return {
     from,
     to,
-    weeks: from && to ? Math.max(1, Math.round(daysBetween(from, to) / 7)) : 0,
+    weeks,
     weight,
     goalLb: data.goalLb,
     measurements,
@@ -128,5 +146,6 @@ export function buildProgressReport(data: {
     weighIns: weighIns.length,
     checkins: data.checkins,
     photos,
+    muscleKept,
   };
 }
