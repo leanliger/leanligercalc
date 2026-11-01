@@ -48,6 +48,7 @@ import { CoachProgramResults } from "@/components/coach-program-results";
 import { CoachChatPanel, useCoachThreads } from "@/components/chat";
 import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/components/coach-command-palette";
 import { CoachAccountability } from "@/components/coach-accountability";
+import { EffortResultsChart } from "@/components/combined-charts";
 import { needsHelp, noAnswer } from "@/lib/accountability";
 import { messagePreview, type ChatThread } from "@/lib/messages";
 import { CoachAnnouncements, CoachDigestToggle, DigestHistory } from "@/components/coach-announcements";
@@ -193,6 +194,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   // List order: most urgent first, lowest health score first, or by name.
   const [sort, setSort] = React.useState<MemberSort>("attention");
+  // Members as the table, or on the Effort vs results chart.
+  const [membersAs, setMembersAs] = React.useState<"list" | "chart">("list");
   const [query, setQuery] = React.useState("");
   // ?member=user_… opens straight onto one member (bookmarkable).
   const [selected, setSelected] = React.useState<string | null>(() =>
@@ -883,6 +886,17 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <h2 id="coach-members" className="text-base font-semibold">
                   Members
                 </h2>
+                <SegmentedControl
+                  ariaLabel="Show members as"
+                  size="sm"
+                  value={membersAs}
+                  onValueChange={setMembersAs}
+                  options={[
+                    { value: "list" as const, label: "List" },
+                    { value: "chart" as const, label: "Chart" },
+                  ]}
+                  className="w-auto"
+                />
                 <SavedViews
                   companyId={companyId}
                   current={{ filter, tag: tagFilter, sort, query }}
@@ -999,6 +1013,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 </EmptyNote>
               ) : shown.length === 0 ? (
                 <EmptyNote>Nobody matches this filter.</EmptyNote>
+              ) : membersAs === "chart" ? (
+                // Everyone shown (with the filter, tag and search above) on Effort vs results.
+                <EffortResultsChart members={shown} onOpen={(id) => openMember(id)} />
               ) : (
                 <>
                 <label className="flex w-fit cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">

@@ -25,6 +25,7 @@ import {
 } from "@/lib/member-insights";
 import { currentPlanWeek, effectiveCarbInputs } from "@/lib/plan-link";
 import { weightChangeOver } from "@/lib/muscle-check";
+import { MuscleKeptChart } from "@/components/combined-charts";
 import { ClientFile, ClientFileButton, DietBreakCard, NeedleCard, RiskCard, useNeedle } from "@/components/coach-coaching-cards";
 import type { Workout } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
@@ -228,6 +229,7 @@ export function MemberInsights({ companyId, summary, unit, today, loaded }: { co
       </div>
       <RiskCard summary={summary} companyId={companyId} />
       <MuscleCard input={input} />
+      <MuscleKeptChart workouts={input.workouts} weighIns={input.weighIns} unit={unit} today={today} />
       <PatternsCard input={input} companyId={companyId} memberId={memberId} first={first} />
       <DietBreakCard summary={summary} input={input} companyId={companyId} coachMacros={data.macros} today={today} />
       <ForecastCard summary={summary} today={today} unit={unit} companyId={companyId} memberId={memberId} first={first} coachMacros={data.macros} />
