@@ -50,6 +50,7 @@ import type { WeightUnit } from "../src/lib/types";
 import { NUDGE_IDLE_MIN, NUDGE_LOOKBACK_MIN, NUDGE_MAX, nudgeDue, nudgeMessage } from "../src/lib/workout-nudge";
 import { experiencesOf } from "./experiences";
 import { secretValue } from "./secrets";
+import { logNotification } from "./health";
 
 export interface ReminderEnv {
   DB: D1Database;
@@ -102,6 +103,14 @@ export async function sendWhopTeam(
 }
 
 async function postNotification(env: ReminderEnv, payload: Record<string, unknown>): Promise<{ ok: boolean; status: number; reason?: string }> {
+  const r = await postToWhop(env, payload);
+  // For System health (worker/health.ts): where it went (community or whop, never the member) and whether Whop took it.
+  const target = String(payload.experience_id ?? payload.account_id ?? "");
+  if (target) await logNotification(env, target, r).catch(() => undefined);
+  return r;
+}
+
+async function postToWhop(env: ReminderEnv, payload: Record<string, unknown>): Promise<{ ok: boolean; status: number; reason?: string }> {
   try {
     const res = await fetch(`${env.WHOP_API_BASE ?? WHOP_API}/api/v1/notifications`, {
       method: "POST",

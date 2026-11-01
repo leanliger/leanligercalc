@@ -87,6 +87,7 @@
  *   GET    /api/workouts           all of my workouts, oldest first
  *   GET/POST /api/lift-goals, PUT/DELETE /api/lift-goals/:id         my lift goals (worker/lift-goals.ts)
  *   GET/POST /api/coach/lift-goals, PUT/DELETE /api/coach/lift-goals/:id   a member's lift goals, as their coach
+ *   GET    /api/coach/health?company        System health: scheduled jobs, notifications, digests (worker/health.ts)
  *   GET/POST /api/coach/snoozes, POST /api/coach/messages/unread   Today's hidden rows; mark a message unread (worker/coach-queue.ts)
  *   /api/accountability, /api/coach/accountability…   accountability checks (worker/accountability.ts)
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
@@ -214,6 +215,7 @@ import { validateReminderRequest } from "../src/lib/fasting";
 import { validateRemindersRequest } from "../src/lib/reminders";
 import { coachOverview, coachPhoto, type CoachEnv } from "./coach";
 import { getMySharing, requestSharing, setMySharing, stopSharing } from "./sharing";
+import { getHealth, pruneHealth, trackJob } from "./health";
 import {
   ASSIGNMENT_ID_PATTERN,
   answerAssignment,
@@ -1097,6 +1099,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return send(await answerCheck(env, userId, checkMatch[1]!, body.value));
   }
 
+  if (path === "/api/coach/health") {
+    if (method !== "GET") return error(405, "Method not allowed.");
+    return send(await getHealth(env, userId, q("company")));
+  }
   if (path === "/api/coach/snoozes") {
     if (method === "GET") return send(await getSnoozes(env, userId, q("company"), q("today")));
     if (method !== "POST") return error(405, "Method not allowed.");
@@ -1619,7 +1625,7 @@ export default {
   // Every minute (wrangler.jsonc "triggers"): fasting, check-in and workout notifications.
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
-      sendDueReminders(env, new Date(controller.scheduledTime))
+      trackJob(env, "reminders", sendDueReminders(env, new Date(controller.scheduledTime)))
         .then((r) => {
           if (r.fasting.due > 0 || r.checkin.due > 0 || r.workout.due > 0) console.log("reminders", r);
         })
@@ -1628,7 +1634,7 @@ export default {
     const when = new Date(controller.scheduledTime);
     // Scheduled chat messages and announcements: every minute.
     ctx.waitUntil(
-      deliverScheduled(env, when)
+      trackJob(env, "scheduled", deliverScheduled(env, when))
         .then((r) => {
           if (r.messages > 0 || r.announcements > 0) console.log("scheduled delivered", r);
         })
@@ -1636,7 +1642,7 @@ export default {
     );
     // Hydration reminders: every minute, like the other timed reminders.
     ctx.waitUntil(
-      sendDueWaterReminders(env, when)
+      trackJob(env, "water", sendDueWaterReminders(env, when))
         .then((r) => {
           if (r.due > 0) console.log("water reminders", r);
         })
@@ -1645,7 +1651,7 @@ export default {
     // "Your monthly comparison is ready": every 15 minutes is plenty.
     if (when.getUTCMinutes() % 15 === 0) {
       ctx.waitUntil(
-        sendCompareNudges(env, when)
+        trackJob(env, "compare", sendCompareNudges(env, when))
           .then((r) => {
             if (r.due > 0) console.log("compare nudges", r);
           })
@@ -1653,7 +1659,7 @@ export default {
       );
       // "It's photo day": once a month, around 9am the member's time.
       ctx.waitUntil(
-        sendPhotoDayReminders(env, when)
+        trackJob(env, "photo-day", sendPhotoDayReminders(env, when))
           .then((r) => {
             if (r.due > 0) console.log("photo day reminders", r);
           })
@@ -1661,7 +1667,7 @@ export default {
       );
       // "Time to measure": the same, for tape measurements.
       ctx.waitUntil(
-        sendMeasureDayReminders(env, when)
+        trackJob(env, "measure-day", sendMeasureDayReminders(env, when))
           .then((r) => {
             if (r.due > 0) console.log("measure day reminders", r);
           })
@@ -1669,7 +1675,7 @@ export default {
       );
       // Milestones (5 lb lost, 1 in off the waist…) for anyone who just logged.
       ctx.waitUntil(
-        checkMilestones(env, when)
+        trackJob(env, "milestones", checkMilestones(env, when))
           .then((r) => {
             if (r.reached > 0) console.log("milestones", r);
           })
@@ -1678,7 +1684,7 @@ export default {
       // Mid-week checks on check-in focus items: 15:00–23:45 UTC.
       if (when.getUTCHours() >= 15) {
         ctx.waitUntil(
-          sendFocusNudges(env, when)
+          trackJob(env, "focus", sendFocusNudges(env, when))
             .then((r) => {
               if (r.due > 0) console.log("focus nudges", r);
             })
@@ -1688,16 +1694,20 @@ export default {
       // Accountability checks: once an hour (on the hour), during each whop's coach's daytime.
       if (when.getUTCMinutes() === 0) {
         ctx.waitUntil(
-          runAccountability(env, when)
+          trackJob(env, "accountability", runAccountability(env, when))
             .then((r) => {
               if (r.queued > 0 || r.sent > 0) console.log("accountability checks", r);
             })
             .catch((e) => console.error("accountability checks crashed", e)),
         );
       }
+      // System health: drop notification results past their 14 days, once a day.
+      if (when.getUTCHours() === 3 && when.getUTCMinutes() === 30) {
+        ctx.waitUntil(pruneHealth(env, when).catch((e) => console.error("health prune crashed", e)));
+      }
       // Coaches' daily digest: 8am their time.
       ctx.waitUntil(
-        sendCoachDigests(env, when)
+        trackJob(env, "digest", sendCoachDigests(env, when))
           .then((r) => {
             if (r.due > 0) console.log("coach digests", r);
           })
@@ -1707,7 +1717,7 @@ export default {
       const hour = when.getUTCHours();
       if (hour >= 17 && hour <= 19) {
         ctx.waitUntil(
-          sendCoachNudges(env, when)
+          trackJob(env, "nudges", sendCoachNudges(env, when))
             .then((r) => {
               if (r.sent > 0) console.log("coach nudges", r);
             })

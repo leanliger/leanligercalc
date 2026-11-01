@@ -25,6 +25,7 @@ import {
   TrendingUp,
   LifeBuoy,
   Sprout,
+  HeartPulse,
   Users,
   Utensils,
   Workflow,
@@ -50,6 +51,7 @@ import { CoachChatPanel, useCoachThreads } from "@/components/chat";
 import { CommandPalette, usePaletteShortcut, type PaletteCommand } from "@/components/coach-command-palette";
 import { CoachAccountability } from "@/components/coach-accountability";
 import { CoachFirstDays } from "@/components/coach-first-days";
+import { CoachSystemHealth } from "@/components/coach-system-health";
 import { FIRST_DAYS, firstDays } from "@/lib/first-days";
 import { EffortResultsChart } from "@/components/combined-charts";
 import { needsHelp, noAnswer } from "@/lib/accountability";
@@ -158,7 +160,7 @@ const BUILT_IN_VIEWS: SavedView[] = [
 const AUTO_REFRESH_MS = 3 * 60_000;
 
 /** The dashboard's sections. */
-type View = "today" | "inbox" | "members" | "accountability" | "first-days" | "programs" | "automations" | "growth";
+type View = "today" | "inbox" | "members" | "accountability" | "first-days" | "programs" | "automations" | "growth" | "health";
 
 /** The page's width: a little wider than `container`, for the menu, list and detail side by side. */
 const WRAP = "mx-auto w-full max-w-[1440px] px-4";
@@ -526,6 +528,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     { id: "go-inbox", group: "Go to", label: "Inbox", hint: counts.toReview + chats.unread > 0 ? `${counts.toReview + chats.unread} waiting` : undefined, keywords: "check-ins messages chat", run: () => openInbox() },
     { id: "go-members", group: "Go to", label: "Members", run: () => showMembers("all") },
     { id: "go-accountability", group: "Go to", label: "Accountability checks", keywords: "slipping help check", run: () => go("accountability") },
+    { id: "go-health", group: "Go to", label: "System health", keywords: "jobs notifications digest status errors", run: () => go("health") },
     { id: "go-first-days", group: "Go to", label: `First ${FIRST_DAYS} days`, keywords: "new members onboarding stuck", run: () => go("first-days") },
     { id: "go-programs", group: "Go to", label: "Programs & habits", keywords: "assign", run: () => { setProgramsTab("programs"); go("programs"); } },
     { id: "go-results", group: "Go to", label: "Program results", run: () => { setProgramsTab("results"); go("programs"); } },
@@ -578,6 +581,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     { id: "programs", label: "Programs", icon: <ClipboardList />, active: view === "programs", onSelect: () => go("programs") },
     { id: "automations", label: "Automations", icon: <Workflow />, active: view === "automations", onSelect: () => go("automations") },
     { id: "growth", label: "Growth", icon: <TrendingUp />, active: view === "growth", onSelect: () => go("growth") },
+    { id: "health", label: "System health", icon: <HeartPulse />, active: view === "health", onSelect: () => go("health") },
   ];
 
   return (
@@ -677,6 +681,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
             </div>
           ) : view === "accountability" ? (
             <CoachAccountability companyId={companyId} summaries={summaries} names={people} onMessage={(id) => openInbox(id)} />
+          ) : view === "health" ? (
+            <CoachSystemHealth companyId={companyId} members={overview?.members ?? []} />
           ) : view === "first-days" ? (
             <CoachFirstDays
               members={overview?.members ?? []}
