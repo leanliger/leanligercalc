@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { CalendarClock, Download, Dumbbell, Lightbulb, Loader2, PartyPopper, Scale, Send, TrendingDown } from "lucide-react";
+import { CalendarClock, Download, Dumbbell, Lightbulb, Loader2, MessageCircleQuestion, PartyPopper, Scale, Send, TrendingDown } from "lucide-react";
+import { MISS_REASON_DAYS, reasonLabel, tallyReasons } from "@/lib/miss-reasons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
@@ -230,6 +231,7 @@ export function MemberInsights({ companyId, summary, unit, today, loaded }: { co
       <RiskCard summary={summary} companyId={companyId} />
       <MuscleCard input={input} />
       <MuscleKeptChart workouts={input.workouts} weighIns={input.weighIns} unit={unit} today={today} />
+      <MissReasonsCard summary={summary} first={first} />
       <PatternsCard input={input} companyId={companyId} memberId={memberId} first={first} />
       <DietBreakCard summary={summary} input={input} companyId={companyId} coachMacros={data.macros} today={today} />
       <ForecastCard summary={summary} today={today} unit={unit} companyId={companyId} memberId={memberId} first={first} coachMacros={data.macros} />
@@ -685,5 +687,59 @@ export function ClientFileLauncher({ summary, loaded, companyId, unit, today }: 
         <ClientFile summary={summary} input={loaded.input} companyId={companyId} unit={unit} today={today} effects={loaded.needle.effects} onClose={() => setOpen(false)} />
       ) : null}
     </>
+  );
+}
+
+/** Why they missed calorie targets, in their words (src/lib/miss-reasons.ts): a tally and the latest answers. */
+function MissReasonsCard({ summary, first }: { summary: MemberSummary; first: string }) {
+  const rows = summary.data.missReasons ?? [];
+  const answered = rows.filter((r) => r.reason);
+  const tally = tallyReasons(rows);
+  const top = Math.max(1, ...tally.map((t) => t.count));
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageCircleQuestion className="h-4 w-4 text-primary" />
+          Why calorie targets were missed
+        </CardTitle>
+        <CardDescription>
+          The morning after a full day more than 10% off their calories, {first}&apos;s Today asks what made it difficult. Last {MISS_REASON_DAYS / 7} weeks:{" "}
+          {answered.length} answered{rows.length > answered.length ? `, ${rows.length - answered.length} skipped` : ""}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {answered.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {rows.length ? `${first} skipped the question each time so far.` : `No answers yet. They show here once ${first} misses a day and answers.`}
+          </p>
+        ) : (
+          <>
+            <ul className="space-y-1.5">
+              {tally.map((t) => (
+                <li key={t.id} className="flex items-center gap-3 text-sm">
+                  <span className="w-32 shrink-0">{t.label}</span>
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted/50" aria-hidden>
+                    <span className="block h-full rounded-full bg-primary" style={{ width: `${(t.count / top) * 100}%` }} />
+                  </span>
+                  <span className="tabular w-6 text-right">{t.count}</span>
+                </li>
+              ))}
+            </ul>
+            <ul className="space-y-1.5">
+              {answered.slice(0, 3).map((r) => (
+                <li key={r.date} className="rounded-md bg-muted/40 px-3 py-2 text-[13px]">
+                  <span className="tabular text-muted-foreground">
+                    {formatShort(r.date)} · {r.kcal > r.target ? "over" : "under"} by {Math.abs(r.kcal - r.target).toLocaleString()} kcal ·{" "}
+                  </span>
+                  <span className="font-medium">{reasonLabel(r.reason)}</span>
+                  {r.note ? <span className="block italic text-muted-foreground">“{r.note}”</span> : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

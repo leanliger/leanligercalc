@@ -69,6 +69,7 @@ import {
   type ColumnDef,
   type ColumnKey,
   type SortDir,
+  COLUMNS_KEY,
 } from "@/lib/member-columns";
 import { FIRST_DAYS, firstDays } from "@/lib/first-days";
 import { EffortResultsChart } from "@/components/combined-charts";
@@ -94,7 +95,22 @@ import { CoachReportPanel } from "@/components/coach-report";
 import { MemberTagsCard, TagChips, loadTags, type TagsData } from "@/components/member-tags";
 import { TAG_CLASS } from "@/lib/member-tags";
 import { CoachNotesCard, FLAG_VARIANT, MemberCheckinsCard, MemberMacrosCard } from "@/components/coach-tools";
-import { ActionQueue, Avatar, CoachBottomNav, CoachNav, PhotoStorageMeter, WeekStrip, isAtRisk, type CoachNavItem } from "@/components/coach-today";
+import {
+  ActionQueue,
+  Avatar,
+  CoachBottomNav,
+  CoachNav,
+  KudosButton,
+  PhotoStorageMeter,
+  WeekStrip,
+  isAtRisk,
+  newestWinLabel,
+  queueReason,
+  type CoachNavItem,
+  type QueueKind,
+} from "@/components/coach-today";
+import { reasonLabel, tallyReasons } from "@/lib/miss-reasons";
+import { STATUS_LABEL as ROSTER_STATUS, checkinLabel, rosterInfo, type CoachStatus, type RosterInfo } from "@/lib/roster";
 import { CoachIntakeChart, CoachNutritionReport } from "@/components/coach-member-food";
 import { MemberTimelineCard } from "@/components/coach-member-timeline";
 import { SegmentedControl } from "@/components/ui/segmented";
@@ -113,7 +129,7 @@ import {
   type HealthScore,
 } from "@/lib/coach";
 import type { MemberSharing } from "@/lib/sharing";
-import { formatShort, todayISO } from "@/lib/dates";
+import { addDays, daysBetween, formatShort, todayISO } from "@/lib/dates";
 import { ZONES, type Zone } from "@/lib/habits";
 import { PAUSE_REASON_LABELS, type PausePeriod } from "@/lib/pause";
 import type { WeightUnit } from "@/lib/types";
@@ -218,7 +234,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   // List order: most urgent first, lowest health score first, or by name.
   const [sort, setSort] = React.useState<MemberSort>("attention");
   // A column heading's sort (src/lib/member-columns.ts), over the sort buttons until one of them is picked again.
-  const [colSort, setColSort] = React.useState<{ key: ColumnKey; dir: SortDir } | null>(null);
+  // Opens sorted by Status, needs attention first.
+  const [colSort, setColSort] = React.useState<{ key: ColumnKey; dir: SortDir } | null>({ key: "status", dir: -1 });
   const chooseSort = (v: MemberSort) => {
     setSort(v);
     setColSort(null);
@@ -393,8 +410,27 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
       .map((t) => tagsData?.tags.find((x) => x.id === t)?.name)
       .filter(Boolean)
       .join(", ");
+  // The roster's worked-out columns (src/lib/roster.ts), once per overview.
+  const roster = React.useMemo(() => new Map(summaries.map((m) => [m.data.userId, rosterInfo(m, today)])), [summaries, today]);
+  const rosterOf = (id: string) => roster.get(id)!;
+  // Next action: the member's Today row (queueReason), else a win to celebrate.
+  const unreadThreads = new Map(chats.threads.filter((t) => t.unread > 0 && !t.last.fromCoach).map((t) => [t.memberId, t]));
+  const nextOf = (m: MemberSummary): NextAction => {
+    const r = queueReason(m, { thread: unreadThreads.get(m.data.userId), triage: triaged.get(m.data.userId), now: Date.now(), today });
+    // When their calorie misses share a reason (2+ in the last two weeks), say so on the rows it explains.
+    const why = tallyReasons((m.data.missReasons ?? []).filter((x) => x.date >= addDays(today, -14)))[0];
+    const they = why && why.count >= 2 ? ` · they say: ${why.label.toLowerCase()} (${why.count}×)` : "";
+    if (r) return { kind: r.kind, reason: r.kind === "risk" || r.kind === "drop-off" || r.kind === "quiet" ? r.reason + they : r.reason };
+    const win = newestWinLabel(m, unit);
+    return win ? { kind: "win", reason: win } : null;
+  };
+  const nextRank = (id: string) => {
+    const m = summaries.find((s) => s.data.userId === id);
+    const n = m ? nextOf(m) : null;
+    return n ? 10 - NEXT_RANK[n.kind] : -1;
+  };
   const shown = colSort
-    ? sortMembers(filtered, colSort.key, colSort.dir, { today, tagNames })
+    ? sortMembers(filtered, colSort.key, colSort.dir, { today, tagNames, roster: rosterOf, next: nextRank })
     : sort === "health"
       ? [...filtered].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
       : sort === "name"
@@ -402,8 +438,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         : filtered;
   // The list's columns on a computer: the fixed ones and the picks, in the picker's order.
   const visibleCols = COLUMNS.filter((c) => c.fixed || extraCols.includes(c.key));
-  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 12rem for the name, every column and its gap.
-  const listMinRem = 5.75 + 12 + 1 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0);
+  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 12rem for the client, every column and its gap, and Next action's button.
+  const nextOn = visibleCols.some((c) => c.key === "next");
+  const listMinRem = 5 + 12 + 1.5 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0) + (nextOn ? 6 : 0);
   const gridStyle = {
     "--member-cols": `minmax(12rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
     "--member-min": `${listMinRem}rem`,
@@ -1142,7 +1179,8 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
 
               {colSort && membersAs === "list" ? (
                 <p className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
-                  Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()}, {colSort.dir === 1 ? "low to high" : "high to low"}.
+                  Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()},{" "}
+                  {colSort.key === "status" ? (colSort.dir === -1 ? "needs attention first" : "on track first") : colSort.dir === 1 ? "low to high" : "high to low"}.
                   <button type="button" className="font-medium text-primary hover:underline" onClick={() => sortByColumn(colSort.key)}>
                     Reverse
                   </button>
@@ -1179,14 +1217,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card sm:overflow-x-auto">
                   {/* The card's width; wider (and scrolling) only when the columns on don't fit. */}
                   <div className="sm:min-w-[var(--member-min)]" style={gridStyle}>
-                  <div
-                    className={cn(
-                      "hidden gap-x-3 border-b border-l-2 border-b-border border-l-transparent py-2 pl-[5.75rem] pr-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid",
-                      ROW_GRID,
-                    )}
-                    style={gridStyle}
-                  >
-                    <span>Member</span>
+                  <div className="hidden border-b border-b-border text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:flex">
+                  {/* Pinned: the select and remind boxes, then Client, stay put while the columns scroll. */}
+                  <div className="sticky left-0 z-20 w-20 shrink-0 bg-card" />
+                  <div className={cn("grid flex-1 gap-x-3 border-l-2 border-l-transparent px-3 py-2", ROW_GRID)} style={gridStyle}>
+                    <span className="sticky left-20 z-20 -ml-3 bg-card pl-3">Client</span>
                     {visibleCols.map((c) => {
                       const on = colSort?.key === c.key;
                       return (
@@ -1207,11 +1242,15 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                       );
                     })}
                   </div>
+                  {nextOn ? <div className="w-24 shrink-0" /> : null}
+                  </div>
                   <ul className="divide-y divide-border">
                     {shown.map((m) => {
                       const ticked = picked.includes(m.data.userId);
+                      const next = nextOf(m);
                       return (
-                        <li key={m.data.userId} className={cn("flex items-stretch", ticked && "bg-primary/[0.06]")}>
+                        <li key={m.data.userId} className={cn("flex items-stretch", ticked && TICKED)}>
+                          <div className={cn("flex w-20 shrink-0 items-stretch sm:sticky sm:left-0 sm:z-10 sm:bg-card", ticked && TICKED)}>
                           <label className="flex w-10 shrink-0 cursor-pointer items-center justify-center" title={`Select ${m.displayName}`}>
                             <input
                               type="checkbox"
@@ -1222,7 +1261,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                             />
                           </label>
                           {/* Reminders, on demand: suggested ones (from their flags) show as a count. */}
-                          <div className="flex shrink-0 items-center pr-1">
+                          <div className="flex w-10 shrink-0 items-center justify-center">
                             <RemindMenu
                               companyId={companyId}
                               members={[{ id: m.data.userId, name: m.displayName }]}
@@ -1230,6 +1269,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               recent={reminderState.reminders}
                               onSent={reminderState.setReminders}
                             />
+                          </div>
                           </div>
                           <div className="min-w-0 flex-1">
                             <MemberRow
@@ -1242,8 +1282,26 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               gridStyle={gridStyle}
                               today={today}
                               tagNames={tagNames(m.data.userId)}
+                              roster={rosterOf(m.data.userId)}
+                              next={next}
+                              ticked={ticked}
                             />
                           </div>
+                          {nextOn ? (
+                            <div className="hidden w-24 shrink-0 items-center pr-3 sm:flex">
+                              {next?.kind === "win" ? (
+                                <KudosButton m={m} unit={unit} onKudos={sendKudos} />
+                              ) : next ? (
+                                <Button size="sm" variant={NEXT_BUTTON[next.kind].primary ? "default" : "outline"} className="h-7 px-2.5 text-xs" onClick={() => openInbox(m.data.userId)}>
+                                  {NEXT_BUTTON[next.kind].label}
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs" onClick={() => openMember(m.data.userId)}>
+                                  Open
+                                </Button>
+                              )}
+                            </div>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -1415,9 +1473,61 @@ function SavedViews({
 /** Member · health · week · weight per week · check-in; on phones the numbers move under the name. */
 // Phones: name and health; computers: the columns on (`--member-cols`, set where the list is drawn).
 const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:[grid-template-columns:var(--member-cols)]";
-/** The Members list's optional columns, on this device. */
-const COLUMNS_KEY = "prep-calculator:member-columns";
 const ALIGN_HEAD = { left: "justify-start", center: "justify-center", right: "justify-end" } as const;
+/** How long they've been coached: "day 3", "wk 8". */
+const coachingLength = (start: string, today: string) => {
+  const d = Math.max(0, daysBetween(start, today));
+  return d < 7 ? `day ${d + 1}` : `wk ${Math.floor(d / 7) + 1}`;
+};
+/** A ticked row's tint, painted over the pinned cells' solid background too. */
+const TICKED = "shadow-[inset_0_0_0_999px_hsl(var(--primary)/0.06)]";
+
+/** Members → Next action: the member's Today row, or a win. */
+type NextAction = { kind: QueueKind; reason: string } | null;
+const NEXT_RANK: Record<QueueKind, number> = { safety: 0, help: 0.5, "drop-off": 1, checkin: 2, message: 3, noanswer: 3.5, muscle: 4, risk: 5, quiet: 6, win: 7 };
+const NEXT_LABEL: Record<QueueKind, string> = {
+  safety: "Safety",
+  help: "Asked for help",
+  "drop-off": "May quit",
+  checkin: "Check-in",
+  message: "Message",
+  noanswer: "No answer",
+  muscle: "Losing muscle",
+  risk: "Drifting",
+  quiet: "Quiet",
+  win: "Win",
+};
+const NEXT_BUTTON: Record<QueueKind, { label: string; primary?: boolean }> = {
+  safety: { label: "Message", primary: true },
+  help: { label: "Reply", primary: true },
+  "drop-off": { label: "Message", primary: true },
+  checkin: { label: "Reply", primary: true },
+  message: { label: "Reply", primary: true },
+  noanswer: { label: "Message" },
+  muscle: { label: "Message" },
+  risk: { label: "Message" },
+  quiet: { label: "Message" },
+  win: { label: "Kudos" },
+};
+const STATUS_CHIP: Record<CoachStatus, string> = {
+  attention: "bg-destructive/15 text-destructive",
+  monitor: "bg-warning/15 text-warning",
+  "on-track": "bg-success/15 text-success",
+};
+
+/** A percentage with a small bar: green 80+, amber 60–79, red under. */
+function PctCell({ value, title }: { value: number | null; title?: string }) {
+  if (value === null) return <span className="text-muted-foreground" title={title}>—</span>;
+  const tone = value >= 80 ? "bg-success text-success" : value >= 60 ? "bg-warning text-warning" : "bg-destructive text-destructive";
+  return (
+    <span className="tabular inline-flex items-center gap-1.5" title={title}>
+      <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted/50" aria-hidden>
+        <span className={cn("block h-full rounded-full", tone.split(" ")[0])} style={{ width: `${value}%` }} />
+      </span>
+      <span className={tone.split(" ")[1]}>{value}%</span>
+    </span>
+  );
+}
 const ALIGN_CELL = { left: "text-left", center: "text-center", right: "text-right" } as const;
 
 /** The picker for the optional columns (computers only: phones show name and health). */
@@ -1517,6 +1627,9 @@ function MemberRow({
   gridStyle,
   today,
   tagNames,
+  roster,
+  next,
+  ticked,
 }: {
   m: MemberSummary;
   unit: WeightUnit;
@@ -1530,12 +1643,82 @@ function MemberRow({
   today: string;
   /** Their tags' names, for the Tags column. */
   tagNames: string;
+  roster: RosterInfo;
+  next: NextAction;
+  ticked: boolean;
 }) {
   const week = m.week.percent === null ? "—" : `${m.week.percent}%`;
+  const r = roster;
+  const ci = checkinLabel(r.checkin, today);
+  const ciTone =
+    r.checkin.kind === "overdue" ? "font-semibold text-destructive" : r.checkin.kind === "review" ? "font-semibold text-primary" : r.checkin.kind === "submitted" ? "text-success" : "text-muted-foreground";
+  const activeDays = r.lastActive ? Math.max(0, daysBetween(r.lastActive, today)) : null;
   const weekClass = m.week.zone ? ZONE_TEXT[m.week.zone] : "";
   const checkin = checkinStatus(m);
   const cell = (c: ColumnDef): React.ReactNode => {
     switch (c.key) {
+      case "goalType":
+        return <span className={r.goal === "No plan" ? "text-muted-foreground" : ""}>{r.goal}</span>;
+      case "start":
+        return r.start ? (
+          <span className="tabular">
+            {formatShort(r.start)} <span className="text-muted-foreground">· {coachingLength(r.start, today)}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      case "weight": {
+        const lb = m.progress?.trendWeight ?? m.latestWeightLb;
+        return <span className="tabular">{lb === null ? "—" : weight(lb, unit)}</span>;
+      }
+      case "progress":
+        return r.progress ? (
+          <span className="tabular inline-flex items-center gap-1.5" title={`${r.progress.doneLb} of ${r.progress.totalLb} lb`}>
+            <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted/50" aria-hidden>
+              <span className="block h-full rounded-full bg-primary" style={{ width: `${r.progress.pct}%` }} />
+            </span>
+            {r.progress.pct}%
+            <span className="truncate text-[11px] text-muted-foreground">
+              {Math.round(fromLb(r.progress.doneLb, unit) * 10) / 10} of {Math.round(fromLb(r.progress.totalLb, unit) * 10) / 10}
+            </span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">{r.goal === "Recomp" || r.goal === "Maintenance" ? "No weight goal" : "—"}</span>
+        );
+      case "nutrition": {
+        // Their latest answer to "what made it difficult?" (src/lib/miss-reasons.ts).
+        const why = m.data.missReasons?.find((x) => x.reason);
+        return (
+          <span className="block">
+            <PctCell value={r.nutrition} title="Days on their calorie target, last 14" />
+            {why ? (
+              <span className="block truncate text-[11px] text-muted-foreground" title={why.note || undefined}>
+                {reasonLabel(why.reason)} · {formatShort(why.date)}
+              </span>
+            ) : null}
+          </span>
+        );
+      }
+      case "workoutPct":
+        return <PctCell value={r.workouts?.pct ?? null} title={r.workouts ? `${r.workouts.done} of ${r.workouts.planned} planned workouts, last 14 days` : "No active program"} />;
+      case "habits":
+        return <PctCell value={r.habits} title="Habit score, last 14 days" />;
+      case "active":
+        return (
+          <span className={cn("tabular", activeDays !== null && activeDays >= 3 ? "font-semibold text-destructive" : "")}>
+            {activeDays === null ? "—" : activeDays === 0 ? "Today" : activeDays === 1 ? "Yesterday" : `${activeDays} days ago`}
+          </span>
+        );
+      case "status":
+        return <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>;
+      case "next":
+        return next ? (
+          <span className="block truncate" title={next.reason}>
+            <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Nothing needed: keep going</span>
+        );
       case "health":
         return (
           <span className="flex justify-center">
@@ -1549,7 +1732,7 @@ function MemberRow({
       case "lastLog":
         return <span className="text-muted-foreground">{describeDaysAgo(m.daysSinceLog)}</span>;
       case "checkin":
-        return <span className={checkin.className}>{checkin.label}</span>;
+        return <span className={ciTone}>{ci}</span>;
       case "risk":
         return (
           <span className={m.risk.level === "high" ? "font-semibold text-destructive" : m.risk.level === "medium" ? "text-warning" : "text-muted-foreground"}>
@@ -1585,7 +1768,13 @@ function MemberRow({
         selected ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-muted/40",
       )}
     >
-      <span className="flex min-w-0 items-center gap-3">
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-3 sm:sticky sm:left-20 sm:z-10 sm:-my-2.5 sm:-ml-3 sm:self-stretch sm:bg-card sm:py-2.5 sm:pl-3",
+          ticked && TICKED,
+          selected && "sm:shadow-[inset_0_0_0_999px_hsl(var(--primary)/0.05)]",
+        )}
+      >
         <Avatar name={m.displayName} url={m.data.avatarUrl} />
         <span className="min-w-0 flex-1 space-y-1">
           <span className="flex items-baseline gap-1.5">
@@ -1603,13 +1792,16 @@ function MemberRow({
             <span className="sm:hidden">last log {describeDaysAgo(m.daysSinceLog)}</span>
             {m.data.username && m.data.name ? <span className="hidden sm:inline">@{m.data.username}</span> : null}
           </span>
-          <span className="tabular flex flex-wrap gap-x-3 text-xs text-muted-foreground sm:hidden">
-            <span>
-              Week <span className={cn("font-semibold", weekClass)}>{week}</span>
-            </span>
+          <span className="tabular flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:hidden">
+            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
             <TrendLine m={m} today={today} unit={unit} compact />
-            <span className={checkin.className}>Check-in: {checkin.label.toLowerCase()}</span>
+            <span className={ciTone}>Check-in: {ci.toLowerCase()}</span>
           </span>
+          {next ? (
+            <span className="block truncate text-xs sm:hidden">
+              <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
+            </span>
+          ) : null}
           {tags}
           {m.flags.length > 0 || m.paused ? (
             <span className="flex flex-wrap gap-1">
@@ -1627,10 +1819,13 @@ function MemberRow({
           ) : null}
         </span>
       </span>
-      {/* Health on phones too; the rest from a computer up. */}
+      {/* Phones: the health score beside the name; computers: the columns on. */}
+      <span className="flex justify-center sm:hidden">
+        <HealthPill health={m.health} />
+      </span>
       {cols.map((c) => (
-        <span key={c.key} className={cn("relative min-w-0 text-sm", ALIGN_CELL[c.align], c.key !== "health" && "hidden sm:block")}>
-          {c.key !== "health" ? <span className="sr-only">{c.label}: </span> : null}
+        <span key={c.key} className={cn("relative hidden min-w-0 text-sm sm:block", ALIGN_CELL[c.align])}>
+          <span className="sr-only">{c.label}: </span>
           {cell(c)}
         </span>
       ))}

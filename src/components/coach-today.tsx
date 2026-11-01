@@ -151,7 +151,7 @@ const winsOf = (m: MemberSummary, unit: WeightUnit) =>
   ].sort((a, b) => b.date.localeCompare(a.date));
 
 /** A member's newest win, in words ("Down 10 lb since starting", "Hit the Deadlift 365 lb goal"). */
-const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => winsOf(m, unit)[0]?.label ?? null;
+export const newestWinLabel = (m: MemberSummary, unit: WeightUnit) => winsOf(m, unit)[0]?.label ?? null;
 
 /**
  * Kudos on the Celebrate list: one tap sends a congratulation as a chat
@@ -223,11 +223,66 @@ const newestWin = (m: MemberSummary) => winsOf(m, "lb")[0]?.date ?? "";
 
 /* ================================ action queue ================================ */
 
-type QueueKind = "safety" | "help" | "drop-off" | "checkin" | "message" | "noanswer" | "muscle" | "risk" | "quiet" | "win";
+export type QueueKind = "safety" | "help" | "drop-off" | "checkin" | "message" | "noanswer" | "muscle" | "risk" | "quiet" | "win";
 type QueueFilter = "all" | "checkins" | "messages" | "risk" | "quiet" | "wins";
 
 /** Days without a message, check-in reply or reminder from a coach before a member shows as Quiet. */
 export const QUIET_DAYS = 14;
+
+/**
+ * A member's most urgent reason to need you, or null when nothing does: the
+ * Today queue's row for them, and Members → Next action.
+ */
+export function queueReason(
+  m: MemberSummary,
+  ctx: { thread: ChatThread | undefined; triage: { ready: boolean; reasons: string[] } | undefined; now: number; today: string },
+): { kind: QueueKind; reason: string; order?: string } | null {
+  const { thread, triage: t, now, today } = ctx;
+  const f = m.flags;
+  const waitingReply = f.includes("reply");
+  const check = m.data.accountability;
+  if (f.includes("too-fast") || f.includes("under-floor")) {
+    return { kind: "safety", reason: f.filter((x) => x === "too-fast" || x === "under-floor").map((x) => FLAG_LABELS[x]).join(" · ") };
+  }
+  if (check && needsHelp(check, m.data.lastCoachContact)) {
+    // Their accountability check came back "Struggling" or "Need help".
+    return {
+      kind: "help",
+      reason: [check.answer === "help" ? "Asked for help" : "Struggling this week", check.note ? `“${check.note}”` : null, check.triggers.length ? `because: ${check.triggers.join(", ")}` : null]
+        .filter(Boolean)
+        .join(" · "),
+      order: check.answeredAt ?? "",
+    };
+  }
+  if (f.includes("drop-off")) return { kind: "drop-off", reason: m.risk.reasons[0]?.text ?? FLAG_LABELS["drop-off"] };
+  if (waitingReply && !t?.ready) {
+    return {
+      kind: "checkin",
+      reason: [sentAgo(m.lastCheckin?.submittedAt, now), t && t.reasons.length ? `needs you: ${t.reasons.join(", ")}` : null].filter(Boolean).join(" · "),
+      order: m.lastCheckin?.submittedAt ?? "",
+    };
+  }
+  if (thread) return { kind: "message", reason: `“${messagePreview(thread.last)}”`, order: thread.last.at };
+  if (check && noAnswer(check, m.data.lastCoachContact, now)) {
+    return { kind: "noanswer", reason: `Sent ${sentAgo(check.sentAt ?? undefined, now).replace(/^Sent /, "")}, no answer${check.triggers.length ? ` · because: ${check.triggers.join(", ")}` : ""}`, order: check.sentAt ?? "" };
+  }
+  if (f.includes("muscle-loss")) return { kind: "muscle", reason: flagReason(m, f.includes("slipping") ? "slipping" : "muscle-loss") };
+  if (isAtRisk(m)) return { kind: "risk", reason: f.filter((x) => x !== "reply").map((x) => flagReason(m, x)).join(" · ") };
+  // Nothing wrong, but you haven't been in touch for a while (counted from when they started sharing).
+  const last = m.data.lastCoachContact ? m.data.lastCoachContact.slice(0, 10) : null;
+  const since = m.data.sharing.since?.slice(0, 10) ?? null;
+  const from = last ?? since;
+  if (from && daysBetween(from, today) >= QUIET_DAYS && !waitingReply) {
+    return {
+      kind: "quiet",
+      reason: last
+        ? `No message, check-in reply or reminder from you in ${daysBetween(last, today)} days`
+        : `You haven't reached out since they started sharing (${daysBetween(since!, today)} days ago)`,
+      order: from,
+    };
+  }
+  return null;
+}
 
 /** Most urgent first: safety, then quitting, then people waiting on a reply, then drifting, then wins. */
 const KIND: Record<QueueKind, { rank: number; label: string; stripe: string; chip: string; filter: QueueFilter }> = {
@@ -320,7 +375,7 @@ export function ActionQueue({
     const t = triage.get(id);
     const waitingReply = f.includes("reply");
     const base = { id, name: m.displayName, avatarUrl: m.data.avatarUrl, summary: m, order: String(i).padStart(5, "0") };
-    let row: { kind: QueueKind; reason: string; order?: string } | null = null;
+    const row = queueReason(m, { thread, triage: t, now, today });
     // Everything that's true of them, for "+N more" (the row's own reason is dropped below).
     const reasons = [
       ...(waitingReply ? [t?.ready ? "Check-in 1-click ready" : `Check-in waiting (${sentAgo(m.lastCheckin?.submittedAt, now).replace(/^Sent /, "sent ")})`] : []),
@@ -328,49 +383,6 @@ export function ActionQueue({
       ...(f.includes("drop-off") ? m.risk.reasons.map((r) => r.text) : []),
       ...f.filter((x) => x !== "reply" && x !== "drop-off").map((x) => flagReason(m, x)),
     ];
-    const check = m.data.accountability;
-    if (f.includes("too-fast") || f.includes("under-floor")) {
-      row = { kind: "safety", reason: f.filter((x) => x === "too-fast" || x === "under-floor").map((x) => FLAG_LABELS[x]).join(" · ") };
-    } else if (check && needsHelp(check, m.data.lastCoachContact)) {
-      // Their accountability check came back "Struggling" or "Need help".
-      row = {
-        kind: "help",
-        reason: [check.answer === "help" ? "Asked for help" : "Struggling this week", check.note ? `“${check.note}”` : null, check.triggers.length ? `because: ${check.triggers.join(", ")}` : null]
-          .filter(Boolean)
-          .join(" · "),
-        order: check.answeredAt ?? "",
-      };
-    } else if (f.includes("drop-off")) {
-      row = { kind: "drop-off", reason: m.risk.reasons[0]?.text ?? FLAG_LABELS["drop-off"] };
-    } else if (waitingReply && !t?.ready) {
-      row = {
-        kind: "checkin",
-        reason: [sentAgo(m.lastCheckin?.submittedAt, now), t && t.reasons.length ? `needs you: ${t.reasons.join(", ")}` : null].filter(Boolean).join(" · "),
-        order: m.lastCheckin?.submittedAt ?? "",
-      };
-    } else if (thread) {
-      row = { kind: "message", reason: `“${messagePreview(thread.last)}”`, order: thread.last.at };
-    } else if (check && noAnswer(check, m.data.lastCoachContact, now)) {
-      row = { kind: "noanswer", reason: `Sent ${sentAgo(check.sentAt ?? undefined, now).replace(/^Sent /, "")}, no answer${check.triggers.length ? ` · because: ${check.triggers.join(", ")}` : ""}`, order: check.sentAt ?? "" };
-    } else if (f.includes("muscle-loss")) {
-      row = { kind: "muscle", reason: flagReason(m, f.includes("slipping") ? "slipping" : "muscle-loss") };
-    } else if (isAtRisk(m)) {
-      row = { kind: "risk", reason: f.filter((x) => x !== "reply").map((x) => flagReason(m, x)).join(" · ") };
-    } else {
-      // Nothing wrong, but you haven't been in touch for a while (counted from when they started sharing).
-      const last = m.data.lastCoachContact ? m.data.lastCoachContact.slice(0, 10) : null;
-      const since = m.data.sharing.since?.slice(0, 10) ?? null;
-      const from = last ?? since;
-      if (from && daysBetween(from, today) >= QUIET_DAYS && !waitingReply) {
-        row = {
-          kind: "quiet",
-          reason: last
-            ? `No message, check-in reply or reminder from you in ${daysBetween(last, today)} days`
-            : `You haven't reached out since they started sharing (${daysBetween(since!, today)} days ago)`,
-          order: from,
-        };
-      }
-    }
     if (row) {
       const also = [
         row.kind !== "message" && thread ? `${thread.unread} unread` : null,

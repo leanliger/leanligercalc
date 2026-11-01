@@ -13,6 +13,7 @@ import type { MemberSharing } from "./sharing";
 import type { WeighIn } from "./tracking";
 import type { CoachMacros } from "./coach-macros";
 import type { MealId } from "./food";
+import type { MissReason } from "./miss-reasons";
 
 export const COMPANY_ID_PATTERN = /^biz_[A-Za-z0-9]{1,40}$/;
 /** Members who haven't logged anything for this many days are flagged. */
@@ -92,6 +93,10 @@ export interface CoachMemberData {
   lastCoachContact?: string | null;
   /** Macros a coach of this whop set for them, which override their plan's every day (src/lib/coach-macros.ts). */
   coachMacros?: CoachMacros | null;
+  /** Why they missed calorie targets lately, newest first; a null reason is a skip (src/lib/miss-reasons.ts). */
+  missReasons?: MissReason[];
+  /** Their active program's days a week and calendar, for workout adherence (not the program itself). */
+  activeProgram?: { name: string; daysPerWeek: number; schedule: { startDate: string; weekdays: number[]; weeks: number } | null } | null;
   /** The program they last accepted from this whop, if any (Members → Program column). */
   program?: string | null;
   /** Build lift goals hit in the last CELEBRATE_DAYS, for Wins. */

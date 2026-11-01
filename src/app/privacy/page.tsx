@@ -82,6 +82,11 @@ export default function PrivacyPage() {
               second copy of the photos.
             </li>
             <li>Calorie adjustments you accept from check-ins.</li>
+            <li>
+              <strong>Why a calorie target was missed — only if you answer:</strong> the reason you pick, any note, and that
+              day&apos;s calories and target, shown to your coach while you share your progress (or that you skipped, so it isn&apos;t asked again).
+            </li>
+            <li>Your recipes: their names, servings and ingredients.</li>
             <li>Daily habits you tick, any daily step counts you enter, rest days, and your weekly self-audit notes.</li>
             <li>
               Food logs: the foods you add, amounts, calories and macros, meal, and date, plus any foods you save to

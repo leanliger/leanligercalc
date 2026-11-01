@@ -54,6 +54,7 @@ import type { MySharing } from "@/lib/sharing";
 import { CoachRequestCard } from "@/components/coach-access";
 import { AssignmentCards } from "@/components/assignment-cards";
 import { AccountabilityCard } from "@/components/accountability-card";
+import { MissReasonCard } from "@/components/miss-reason-card";
 import { CoachFocusCard } from "@/components/coach-focus-card";
 import type { MemberAssignment } from "@/lib/assignments";
 import { addDays, formatShort } from "@/lib/dates";
@@ -584,6 +585,9 @@ export function TodayTab(props: TodayTabProps) {
 
       {/* Signed in through Whop: "How's this week going?" when their coach's accountability check is waiting. */}
       {props.coachSharing && props.onStartPause ? <AccountabilityCard onPause={props.onStartPause} /> : null}
+
+      {/* Shared with their coach: "What made yesterday's calorie target difficult?" after a full day off target. */}
+      {props.coachSharing ? <MissReasonCard foodLogs={foodLogs} targetFor={targetFor} today={today} /> : null}
 
       <AssignmentCards assignments={props.assignments} onUse={props.onUseAssignment} onDecline={props.onDeclineAssignment} />
 

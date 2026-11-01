@@ -1,16 +1,28 @@
 /**
- * Coach dashboard → Members, the list's columns: the five always shown, the
- * optional ones a coach picks (remembered on the device), and how each sorts.
- * A heading sorts by its column the first time with the problems on top
- * (`firstDir`), the opposite way the second time.
+ * Coach dashboard → Members, the client roster's columns: the roster set on
+ * by default, more a coach can add, all picked under Columns (remembered on
+ * the device), and how each sorts. A heading sorts by its column the first
+ * time with the problems on top (`firstDir`), the opposite way the second
+ * time. The roster's worked-out values come from src/lib/roster.ts.
  */
 
 import type { MemberSummary } from "./coach";
 import { addDays, daysBetween } from "./dates";
 import { forecast } from "./member-insights";
 import { weightChangeOver } from "./muscle-check";
+import { STATUS_RANK, checkinRank, type RosterInfo } from "./roster";
 
 export type ColumnKey =
+  | "goalType"
+  | "start"
+  | "weight"
+  | "progress"
+  | "nutrition"
+  | "workoutPct"
+  | "habits"
+  | "active"
+  | "status"
+  | "next"
   | "health"
   | "week"
   | "trend"
@@ -39,14 +51,26 @@ export interface ColumnDef {
 }
 
 export const COLUMNS: ColumnDef[] = [
-  { key: "health", label: "Health", fixed: true, firstDir: 1, width: "3rem", align: "center" },
-  { key: "week", label: "Week", fixed: true, firstDir: 1, width: "3.5rem", align: "right" },
-  { key: "trend", label: "4-wk trend", fixed: true, firstDir: -1, width: "6.75rem", align: "right" },
-  { key: "lastLog", label: "Last log", fixed: true, firstDir: -1, width: "5.5rem", align: "left" },
-  { key: "checkin", label: "Check-in", fixed: true, firstDir: 1, width: "5.5rem", align: "left" },
+  // The client roster, on by default.
+  { key: "goalType", label: "Goal", firstDir: 1, width: "6rem", align: "left" },
+  { key: "start", label: "Start", firstDir: -1, width: "6.5rem", align: "left" },
+  { key: "weight", label: "Weight", firstDir: -1, width: "4.75rem", align: "right" },
+  { key: "trend", label: "4-wk trend", firstDir: -1, width: "6.75rem", align: "right" },
+  { key: "progress", label: "Goal progress", firstDir: 1, width: "9.5rem", align: "left" },
+  { key: "nutrition", label: "Nutrition", firstDir: 1, width: "8.5rem", align: "left" },
+  { key: "workoutPct", label: "Workouts", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "habits", label: "Habits", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "checkin", label: "Check-in", firstDir: -1, width: "7rem", align: "left" },
+  { key: "active", label: "Last active", firstDir: -1, width: "6rem", align: "left" },
+  { key: "status", label: "Status", firstDir: -1, width: "8rem", align: "left" },
+  { key: "next", label: "Next action", firstDir: -1, width: "15rem", align: "left" },
+  // More to add.
+  { key: "health", label: "Health score", firstDir: 1, width: "4.5rem", align: "center" },
+  { key: "week", label: "Habits this week", firstDir: 1, width: "4.5rem", align: "right" },
+  { key: "lastLog", label: "Last log", firstDir: -1, width: "5.5rem", align: "left" },
   { key: "risk", label: "Quit risk", firstDir: -1, width: "5rem", align: "left" },
   { key: "goal", label: "Goal date", firstDir: -1, width: "5rem", align: "right" },
-  { key: "workouts", label: "Workouts", firstDir: 1, width: "4.5rem", align: "right" },
+  { key: "workouts", label: "Workouts this week", firstDir: 1, width: "5rem", align: "right" },
   { key: "protein", label: "Protein", firstDir: 1, width: "4.5rem", align: "right" },
   { key: "joined", label: "Joined", firstDir: -1, width: "4.5rem", align: "right" },
   { key: "tags", label: "Tags", firstDir: 1, width: "6.5rem", align: "left" },
@@ -54,8 +78,10 @@ export const COLUMNS: ColumnDef[] = [
 ];
 
 export const OPTIONAL_COLUMNS = COLUMNS.filter((c) => !c.fixed).map((c) => c.key);
-/** Quit risk is on until a coach changes the picks. */
-export const DEFAULT_EXTRA: ColumnKey[] = ["risk"];
+/** The client roster, on until a coach changes the picks. */
+export const DEFAULT_EXTRA: ColumnKey[] = ["goalType", "start", "weight", "trend", "progress", "nutrition", "workoutPct", "habits", "checkin", "active", "status", "next"];
+/** Where the picks are kept on the device (v2: the client roster's columns). */
+export const COLUMNS_KEY = "prep-calculator:member-columns-v2";
 
 /** Weeks in the trend line. */
 export const TREND_WEEKS = 4;
@@ -92,8 +118,34 @@ const RISK_RANK = { low: 0, medium: 1, high: 2 } as const;
  * The value a column sorts by; null sorts last either way. Check-in sorts
  * "to review" first, then none yet, then done.
  */
-export function sortValue(key: ColumnKey, m: MemberSummary, ctx: { today: string; tagNames: (id: string) => string }): number | string | null {
+export function sortValue(
+  key: ColumnKey,
+  m: MemberSummary,
+  ctx: { today: string; tagNames: (id: string) => string; roster: (id: string) => RosterInfo; next: (id: string) => number },
+): number | string | null {
+  const r = () => ctx.roster(m.data.userId);
   switch (key) {
+    case "goalType":
+      return r().goal;
+    case "start":
+      return r().start;
+    case "weight":
+      return m.progress?.trendWeight ?? m.latestWeightLb;
+    case "progress":
+      return r().progress?.pct ?? null;
+    case "nutrition":
+      return r().nutrition;
+    case "workoutPct":
+      return r().workouts?.pct ?? null;
+    case "habits":
+      return r().habits;
+    case "active":
+      // Longest ago first on the first click.
+      return r().lastActive ? -Date.parse(r().lastActive!) : null;
+    case "status":
+      return STATUS_RANK[r().status] * 1000 + (100 - (m.health?.score ?? 100));
+    case "next":
+      return ctx.next(m.data.userId);
     case "health":
       return m.health?.score ?? null;
     case "week":
@@ -104,7 +156,7 @@ export function sortValue(key: ColumnKey, m: MemberSummary, ctx: { today: string
     case "lastLog":
       return m.daysSinceLog;
     case "checkin":
-      return m.flags.includes("reply") ? 0 : m.checkedIn ? 2 : 1;
+      return checkinRank(r().checkin);
     case "risk":
       return RISK_RANK[m.risk.level] * 1000 + m.risk.score;
     case "goal": {

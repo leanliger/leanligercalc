@@ -21,7 +21,7 @@ import {
   type Program,
   type Workout,
 } from "@/lib/training";
-import { TrainingVolumeCard, WorkoutAdherenceCard } from "@/components/training-load-card";
+import { RecentRecordsCard, TrainingVolumeCard, WorkoutAdherenceCard } from "@/components/training-load-card";
 import type { WeightUnit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +114,7 @@ export function MemberWorkoutsCard({
           <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 xl:items-start">
             <WorkoutAdherenceCard workouts={data.workouts} program={data.program} today={todayISO()} who={first} />
             <TrainingVolumeCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} />
+            <RecentRecordsCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} onOpen={setExerciseId} />
           </div>
         </>
       ) : view === "muscles" ? (

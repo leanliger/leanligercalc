@@ -88,6 +88,7 @@
  *   GET/POST /api/lift-goals, PUT/DELETE /api/lift-goals/:id         my lift goals (worker/lift-goals.ts)
  *   GET/POST /api/coach/lift-goals, PUT/DELETE /api/coach/lift-goals/:id   a member's lift goals, as their coach
  *   GET    /api/coach/health?company        System health: scheduled jobs, notifications, digests (worker/health.ts)
+ *   GET/POST /api/miss-reasons                members: why a calorie target was missed (worker/miss-reasons.ts)
  *   GET/POST /api/coach/snoozes, POST /api/coach/messages/unread   Today's hidden rows; mark a message unread (worker/coach-queue.ts)
  *   /api/accountability, /api/coach/accountability…   accountability checks (worker/accountability.ts)
  *   PUT    /api/workouts/:id       save one workout (also while it's in progress)
@@ -216,6 +217,7 @@ import { validateRemindersRequest } from "../src/lib/reminders";
 import { coachOverview, coachPhoto, type CoachEnv } from "./coach";
 import { getMySharing, requestSharing, setMySharing, stopSharing } from "./sharing";
 import { getHealth, pruneHealth, trackJob } from "./health";
+import { myMissReasons, saveMissReason } from "./miss-reasons";
 import {
   ASSIGNMENT_ID_PATTERN,
   answerAssignment,
@@ -1087,6 +1089,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     if (!body.ok) return body.response;
     return send(path.endsWith("/send") ? await sendAccountabilityNow(env, userId, body.value) : await approveAccountability(env, userId, body.value));
   }
+  if (path === "/api/miss-reasons") {
+    if (method === "GET") return send(await myMissReasons(env, userId));
+    if (method !== "POST") return error(405, "Method not allowed.");
+    const body = await readJson(request);
+    if (!body.ok) return body.response;
+    return send(await saveMissReason(env, userId, body.value));
+  }
   if (path === "/api/accountability") {
     if (method !== "GET") return error(405, "Method not allowed.");
     return send(await myCheck(env, userId));
@@ -1578,6 +1587,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       env.DB.prepare("DELETE FROM lift_goals WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_snoozes WHERE coach_id = ? OR member_id = ?").bind(userId, userId),
       env.DB.prepare("DELETE FROM accountability_checks WHERE member_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM miss_reasons WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM coach_digest_log WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM habit_logs WHERE user_id = ?").bind(userId),
       env.DB.prepare("DELETE FROM weekly_reviews WHERE user_id = ?").bind(userId),

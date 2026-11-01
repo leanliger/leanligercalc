@@ -19,6 +19,8 @@
  */
 
 import { COMPANY_ID_PATTERN, OVERVIEW_DAYS, foodDayOf, type CoachMemberData } from "../src/lib/coach-api";
+import { MISS_REASON_DAYS } from "../src/lib/miss-reasons";
+import { rowToMiss, type MissRow } from "./miss-reasons";
 import { CELEBRATE_DAYS } from "../src/lib/milestones";
 import { TREND_WEEKS, strengthTrends } from "../src/lib/strength-trends";
 import type { Workout } from "../src/lib/training";
@@ -53,6 +55,22 @@ interface WhopMember {
   joined_at?: string | null;
   last_accessed_at?: string | null;
   user?: { id?: string; name?: string | null; username?: string | null; profile_picture?: { url?: string } | null } | null;
+}
+
+/** The active program's name, days a week and calendar, from a plan's training settings (Members → Workouts %). */
+function activeProgramOf(raw: unknown): CoachMemberData["activeProgram"] {
+  const t = raw as { programs?: unknown; activeProgramId?: unknown } | null;
+  if (!t || !Array.isArray(t.programs) || typeof t.activeProgramId !== "string") return null;
+  const p = t.programs.find((x) => (x as { id?: unknown })?.id === t.activeProgramId) as
+    | { name?: unknown; days?: unknown; schedule?: { startDate?: unknown; weekdays?: unknown; weeks?: unknown } }
+    | undefined;
+  if (!p || !Array.isArray(p.days) || p.days.length === 0) return null;
+  const sc = p.schedule;
+  const schedule =
+    sc && typeof sc.startDate === "string" && Array.isArray(sc.weekdays) && typeof sc.weeks === "number"
+      ? { startDate: sc.startDate, weekdays: sc.weekdays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6), weeks: sc.weeks }
+      : null;
+  return { name: typeof p.name === "string" ? p.name.slice(0, 80) : "Program", daysPerWeek: p.days.length, schedule };
 }
 
 export type Profile = Pick<CoachMemberData, "userId" | "name" | "username" | "avatarUrl" | "lastAccessedAt" | "joinedAt">;
@@ -137,7 +155,7 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
     const chunk = ids.slice(i, i + ID_CHUNK);
     const marks = chunk.map(() => "?").join(",");
     const numbered = chunk.map((_, i) => `?${i + 2}`).join(",");
-    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact, checks, programs, macros] = await env.DB.batch([
+    const [plans, weighIns, habits, food, measurements, sharing, photos, workouts, checkins, goals, contact, checks, programs, misses, macros] = await env.DB.batch([
       env.DB.prepare(`SELECT user_id, state FROM plans WHERE user_id IN (${marks})`).bind(...chunk),
       env.DB.prepare(
         `SELECT user_id, date, weight_lb, calories, note FROM weigh_ins WHERE user_id IN (${marks}) AND date >= ? ORDER BY date ASC`,
@@ -186,12 +204,20 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
           WHERE a.company_id = ?1 AND a.kind = 'program' AND a.cancelled_at IS NULL AND t.status = 'accepted' AND t.user_id IN (${numbered})
           GROUP BY t.user_id`,
       ).bind(companyId, ...chunk),
+      // Why they missed a calorie target, in their words (src/lib/miss-reasons.ts).
+      env.DB.prepare(
+        `SELECT user_id, date, kind, reason, note, kcal, target FROM miss_reasons WHERE user_id IN (${numbered}) AND date >= ?1 ORDER BY date DESC`,
+      ).bind(addDays(today, -MISS_REASON_DAYS), ...chunk),
       // Macros a coach of this whop set (they override the plan's targets).
       env.DB.prepare(`SELECT user_id, kcal, protein, carbs, fat, note, set_at FROM coach_macros WHERE company_id = ?1 AND user_id IN (${numbered})`).bind(
         companyId,
         ...chunk,
       ),
     ]);
+    for (const r of (misses?.results ?? []) as (MissRow & { user_id: string })[]) {
+      const m = members.get(r.user_id);
+      if (m) (m.missReasons ??= []).push(rowToMiss(r));
+    }
     for (const r of (macros?.results ?? []) as { user_id: string; kcal: number; protein: number; carbs: number; fat: number; note: string; set_at: string }[]) {
       const m = members.get(r.user_id);
       if (m) m.coachMacros = { kcal: r.kcal, protein: r.protein, carbs: r.carbs, fat: r.fat, note: r.note, setAt: r.set_at };
@@ -271,6 +297,8 @@ export async function coachOverview(env: CoachEnv, viewerId: string, companyId: 
         // Training (programs, own exercises), saved meals and recipes aren't part of the
         // coach view, and can be the largest part of a plan: leave them out.
         if (plan?.tracking && typeof plan.tracking === "object") {
+          // Just what workout adherence needs from it: the active program's days and calendar.
+          m.activeProgram = activeProgramOf(plan.tracking.training);
           delete plan.tracking.training;
           delete plan.tracking.savedMeals;
           delete plan.tracking.recipes;
