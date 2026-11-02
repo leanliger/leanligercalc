@@ -110,12 +110,13 @@ export function MemberWorkoutsCard({
     <div className="space-y-5">
       {view === "progress" ? (
         <>
-          <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} custom={data.customExercises} onOpen={setExerciseId} who={first} />
+          {/* The summary first: are they training, and what did they beat; the detail under it. */}
           <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2 xl:items-start">
             <WorkoutAdherenceCard workouts={data.workouts} program={data.program} today={todayISO()} who={first} />
-            <TrainingVolumeCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} />
             <RecentRecordsCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} onOpen={setExerciseId} />
           </div>
+          <TrainingVolumeCard workouts={data.workouts} unit={unit} today={todayISO()} who={first} />
+          <StrengthTrendsCard workouts={data.workouts} unit={unit} today={todayISO()} custom={data.customExercises} onOpen={setExerciseId} who={first} />
         </>
       ) : view === "muscles" ? (
         <MuscleVolumeCard workouts={data.workouts} customExercises={data.customExercises} today={todayISO()} name={first} />

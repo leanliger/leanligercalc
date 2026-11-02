@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented";
 import { PhotoImage } from "@/components/photos-card";
 import type { Checkin } from "@/lib/checkins";
-import type { MemberSummary } from "@/lib/coach";
+import { HEALTH_PARTS, type MemberSummary } from "@/lib/coach";
 import type { FoodDay } from "@/lib/coach-api";
 import type { CoachMacros } from "@/lib/coach-macros";
 import { formatShort } from "@/lib/dates";
@@ -128,81 +128,6 @@ export function useInsightsData(companyId: string, summary: MemberSummary, unit:
   return { data, input, error, needle };
 }
 
-/** Overview → Key insights: the four that matter most, each one line; "See all insights" opens the Insights tab. */
-export function KeyInsights({
-  summary,
-  loaded,
-  unit,
-  today,
-  onSeeAll,
-}: {
-  summary: MemberSummary;
-  loaded: InsightsData;
-  unit: WeightUnit;
-  today: string;
-  /** Open the Insights tab. */
-  onSeeAll: () => void;
-}) {
-  const { input, needle } = loaded;
-  const r = summary.risk;
-  const muscle = React.useMemo(() => (input ? muscleCheck(input) : null), [input]);
-  const p = summary.progress;
-  const plan = summary.state;
-  const goal = plan.fatLoss.goalType === "weight" ? plan.fatLoss.targetWeight : null;
-  const sixWeeks = weightChangeOver(summary.data.weighIns, today);
-  const rate = p?.observedRate ?? (sixWeeks === null ? null : -sixWeeks / 6);
-  const eta = forecast({ today, trendLb: p?.trendWeight ?? summary.latestWeightLb, rateLb: rate, goalLb: goal, kcalDelta: 0, stepsDelta: 0 });
-  const lastChange = needle.effects[0] ?? null;
-  const tiles: { label: string; value: string; text: string; tone: string }[] = [
-    {
-      label: "Drop-off risk",
-      value: `${r.level === "high" ? "High" : r.level === "medium" ? "Medium" : "Low"} · ${r.score}`,
-      text: r.level === "low" ? "No warning signs." : (r.reasons[0]?.text ?? r.action),
-      tone: r.level === "high" ? "text-destructive" : r.level === "medium" ? "text-warning" : "text-success",
-    },
-    {
-      label: "Muscle",
-      value: !muscle ? "…" : muscle.verdict === "losing" ? "Losing" : muscle.verdict === "kept" ? "Kept" : muscle.verdict === "slipping" ? "Lifts slipping" : muscle.verdict === "steady" ? "Steady" : "Not enough data",
-      text: muscle ? (muscle.down.length ? `Slipping: ${muscle.down.slice(0, 3).join(", ")}` : muscle.up.length ? `Up: ${muscle.up.slice(0, 3).join(", ")}` : "Lifts holding.") : "Loading their workouts…",
-      tone: muscle?.verdict === "losing" ? "text-destructive" : muscle?.verdict === "slipping" ? "text-warning" : muscle?.verdict === "kept" ? "text-success" : "text-foreground",
-    },
-    {
-      label: "Goal date",
-      value: eta.date ? formatShort(eta.date) : "—",
-      text: eta.date
-        ? `At ${eta.rate === null ? "their" : `${r1(fromLb(Math.abs(eta.rate), unit))} ${unit}`} a week, about ${Math.max(0, Math.round(eta.weeks ?? 0))} weeks.`
-        : goal === null
-          ? "No goal weight set."
-          : "Not heading toward the goal at this rate.",
-      tone: "text-foreground",
-    },
-    {
-      label: "Last change you made",
-      value: needle.loading ? "…" : lastChange ? (lastChange.verdict === "helped" ? "Helped" : lastChange.verdict === "hurt" ? "Hurt" : lastChange.verdict === "too-soon" ? "Too soon" : "No change") : "None yet",
-      text: lastChange ? `${formatShort(lastChange.date)}: ${lastChange.changes[0]!.title}` : "Macros, programs or focus items you set show here.",
-      tone: lastChange?.verdict === "helped" ? "text-success" : lastChange?.verdict === "hurt" ? "text-destructive" : "text-foreground",
-    },
-  ];
-  return (
-    <section aria-label="Key insights" className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold">Key insights</h3>
-        <button type="button" onClick={onSeeAll} className="ml-auto text-[12px] font-semibold text-primary underline-offset-2 hover:underline">
-          See all insights
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border xl:grid-cols-4">
-        {tiles.map((t) => (
-          <div key={t.label} className="min-w-0 space-y-0.5 bg-card px-3 py-2.5">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.label}</p>
-            <p className={cn("tabular text-base font-semibold", t.tone)}>{t.value}</p>
-            <p className="text-[12px] leading-snug text-muted-foreground">{t.text}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 /** Every insight about a member, from the data the page already loaded. */
 export function MemberInsights({ companyId, summary, unit, today, loaded }: { companyId: string; summary: MemberSummary; unit: WeightUnit; today: string; loaded: InsightsData }) {
@@ -228,16 +153,37 @@ export function MemberInsights({ companyId, summary, unit, today, loaded }: { co
           <ClientFileButton onOpen={() => setFileOpen(true)} />
         </span>
       </div>
-      <RiskCard summary={summary} companyId={companyId} />
-      <MuscleCard input={input} />
-      <MuscleKeptChart workouts={input.workouts} weighIns={input.weighIns} unit={unit} today={today} />
-      <MissReasonsCard summary={summary} first={first} />
-      <PatternsCard input={input} companyId={companyId} memberId={memberId} first={first} />
-      <DietBreakCard summary={summary} input={input} companyId={companyId} coachMacros={data.macros} today={today} />
-      <ForecastCard summary={summary} today={today} unit={unit} companyId={companyId} memberId={memberId} first={first} coachMacros={data.macros} />
-      <NeedleCard effects={needle.effects} loading={needle.loading} unit={unit} />
-      <JumpsCard input={input} />
-      <RecapCard input={input} summary={summary} companyId={companyId} memberId={memberId} first={first} unit={unit} today={today} />
+      {/* In groups, with a jump menu; what moved the needle is on the Changes tab. */}
+      <nav aria-label="Insight groups" className="flex flex-wrap gap-1.5">
+        {INSIGHT_GROUPS.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            onClick={() => document.getElementById(`insights-${g.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {g.label}
+          </button>
+        ))}
+      </nav>
+      <InsightGroup id="risk" label="Risk & adherence">
+        <HealthBreakdown summary={summary} />
+        <RiskCard summary={summary} companyId={companyId} />
+        <MissReasonsCard summary={summary} first={first} />
+        <PatternsCard input={input} companyId={companyId} memberId={memberId} first={first} />
+      </InsightGroup>
+      <InsightGroup id="body" label="Body">
+        <MuscleCard input={input} />
+        <MuscleKeptChart workouts={input.workouts} weighIns={input.weighIns} unit={unit} today={today} />
+        <JumpsCard input={input} />
+      </InsightGroup>
+      <InsightGroup id="plan" label="Plan">
+        <ForecastCard summary={summary} today={today} unit={unit} companyId={companyId} memberId={memberId} first={first} coachMacros={data.macros} />
+        <DietBreakCard summary={summary} input={input} companyId={companyId} coachMacros={data.macros} today={today} />
+      </InsightGroup>
+      <InsightGroup id="recap" label="Recap">
+        <RecapCard input={input} summary={summary} companyId={companyId} memberId={memberId} first={first} unit={unit} today={today} />
+      </InsightGroup>
       {fileOpen ? (
         <ClientFile summary={summary} input={input} companyId={companyId} unit={unit} today={today} effects={needle.effects} onClose={() => setFileOpen(false)} />
       ) : null}
@@ -741,5 +687,39 @@ function MissReasonsCard({ summary, first }: { summary: MemberSummary; first: st
         )}
       </CardContent>
     </Card>
+  );
+}
+
+const INSIGHT_GROUPS = [
+  { id: "risk", label: "Risk & adherence" },
+  { id: "body", label: "Body" },
+  { id: "plan", label: "Plan" },
+  { id: "recap", label: "Recap" },
+] as const;
+
+/** A labelled group of insight cards (a jump target). */
+function InsightGroup({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
+  return (
+    <section id={`insights-${id}`} aria-label={label} className="scroll-mt-32 space-y-4">
+      <h3 className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** The health score and what makes it up (moved here from Overview). */
+function HealthBreakdown({ summary: m }: { summary: MemberSummary }) {
+  if (!m.health) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border p-3 text-xs">
+      <span className="tabular text-2xl font-semibold">{m.health.score}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">Health score</p>
+        <p className="tabular text-muted-foreground">
+          Logging {m.health.logging}/{HEALTH_PARTS.logging} · Adherence {m.health.adherence}/{HEALTH_PARTS.adherence} · Trend {m.health.trend}/{HEALTH_PARTS.trend}
+        </p>
+        <p className="text-[12px] text-muted-foreground">Days logged this week, habit scorecard, and weight vs plan. Status on Members leans on it.</p>
+      </div>
+    </div>
   );
 }

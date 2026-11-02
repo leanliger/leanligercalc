@@ -8,6 +8,8 @@ import {
   ClipboardList,
   Lock,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Bookmark,
   ChevronDown,
   SlidersHorizontal,
@@ -82,7 +84,7 @@ import { needsHelp, noAnswer } from "@/lib/accountability";
 import { messagePreview, type ChatThread } from "@/lib/messages";
 import { CoachAnnouncements, CoachDigestToggle, DigestHistory } from "@/components/coach-announcements";
 import { BulkBar } from "@/components/coach-bulk";
-import { ClientFileLauncher, KeyInsights, MemberInsights, useInsightsData } from "@/components/coach-member-insights";
+import { ClientFileLauncher, MemberInsights, useInsightsData } from "@/components/coach-member-insights";
 import { NeedleCard } from "@/components/coach-coaching-cards";
 import type { CoachChange } from "@/lib/needle";
 import { muscleCheck } from "@/lib/member-insights";
@@ -351,15 +353,21 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   const [inboxId, setInboxId] = React.useState<string | null>(null);
   const [today] = React.useState(() => todayISO());
   // The open member's tab.
-  const [tab, setTab] = React.useState<DetailTab>("overview");
+  // From the address too (?tab=…), so a refresh or coming back keeps the tab.
+  const [tab, setTab] = React.useState<DetailTab>(() => {
+    const t = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+    return DETAIL_TABS.some((x) => x.id === t) ? (t as DetailTab) : "overview";
+  });
 
-  // Keep the open member in the address bar, so it can be bookmarked or shared with another admin.
+  // Keep the open member and tab in the address bar, so it can be bookmarked or shared with another admin.
   React.useEffect(() => {
     const url = new URL(window.location.href);
     if (selected) url.searchParams.set("member", selected);
     else url.searchParams.delete("member");
+    if (selected && tab !== "overview") url.searchParams.set("tab", tab);
+    else url.searchParams.delete("tab");
     window.history.replaceState(null, "", url.pathname + url.search);
-  }, [selected]);
+  }, [selected, tab]);
 
   // When the overview last loaded, for refreshing on coming back to the tab.
   const lastLoad = React.useRef(0);
@@ -474,6 +482,28 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     return n ? 10 - NEXT_RANK[n.kind] : -1;
   };
   const pool = statusFilter ? filtered.filter((m) => rosterOf(m.data.userId).status === statusFilter) : filtered;
+  // A member page's ‹ ›: the next and previous member in the list's order (filters and sort as they are; everyone when they're filtered out).
+  const memberNav = (id: string) => {
+    const order = (shown.some((m) => m.data.userId === id) ? shown : summaries).map((m) => m.data.userId);
+    const i = order.indexOf(id);
+    return {
+      index: i,
+      total: order.length,
+      prev: i > 0 ? () => openMember(order[i - 1]!, tab) : null,
+      next: i >= 0 && i < order.length - 1 ? () => openMember(order[i + 1]!, tab) : null,
+    };
+  };
+  // Next action's button, the same as on the list.
+  const nextButtonFor = (m: MemberSummary): React.ReactNode => {
+    const n = nextOf(m);
+    return n?.kind === "win" ? (
+      <KudosButton m={m} unit={unit} onKudos={sendKudos} />
+    ) : n ? (
+      <Button size="sm" variant={NEXT_BUTTON[n.kind].primary ? "default" : "outline"} className="h-7 px-2.5 text-xs" onClick={() => openInbox(m.data.userId)}>
+        {NEXT_BUTTON[n.kind].label}
+      </Button>
+    ) : null;
+  };
   const shown = colSort
     ? sortMembers(pool, colSort.key, colSort.dir, { today, tagNames, roster: rosterOf, next: nextRank })
     : sort === "health"
@@ -1067,6 +1097,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
           ) : current ? (
             <MemberDetail
               key={current.data.userId}
+              roster={rosterOf(current.data.userId)}
+              next={nextOf(current)}
+              nextButton={nextButtonFor(current)}
+              tagSummary={tagNames(current.data.userId)}
+              nav={memberNav(current.data.userId)}
               tags={<MemberTagsCard companyId={companyId} memberId={current.data.userId} data={tagsData} onChange={setTagsData} />}
               m={current}
               unit={unit}
@@ -2459,7 +2494,7 @@ const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "food", label: "Nutrition" },
   { id: "training", label: "Training" },
   { id: "checkins", label: "Check-ins" },
-  { id: "timeline", label: "History" },
+  { id: "timeline", label: "Changes" },
 ];
 
 const RISK_CHIP: Record<"high" | "medium", string> = {
@@ -2468,6 +2503,11 @@ const RISK_CHIP: Record<"high" | "medium", string> = {
 };
 
 function MemberDetail({
+  roster: r,
+  next,
+  nextButton,
+  tagSummary,
+  nav,
   m,
   unit,
   today,
@@ -2498,8 +2538,23 @@ function MemberDetail({
   onTab: (tab: DetailTab) => void;
   onBack: () => void;
   onStopped: (sharing: MemberSharing) => void;
+  /** As on the Members list: status, next action and its button. */
+  roster: RosterInfo;
+  next: NextAction;
+  nextButton: React.ReactNode;
+  /** Their tags' names, for the folded tags line. */
+  tagSummary: string;
+  /** ‹ › to the previous and next member in the list's order. */
+  nav: { index: number; total: number; prev: (() => void) | null; next: (() => void) | null };
 }) {
   const [stopError, setStopError] = React.useState<string | null>(null);
+  // The header's flags chip (only what the page doesn't already show, as on the list).
+  const extraFlags = m.flags.filter((f) => !SHOWN_IN_ROW.has(f));
+  const flagCount = extraFlags.length + (m.paused ? 1 : 0);
+  const [flagsOpen, setFlagsOpen] = React.useState(false);
+  // Notes and tags fold to a line each until opened (Add note opens notes).
+  const [notesOpen, setNotesOpen] = React.useState(false);
+  const [tagsOpen, setTagsOpen] = React.useState(false);
   // Their workouts, food, check-ins and macros: loaded once for the key insights, History and the client file.
   const loaded = useInsightsData(companyId, m, unit, today);
   const muscle = React.useMemo(() => (loaded.input ? muscleCheck(loaded.input) : null), [loaded.input]);
@@ -2628,6 +2683,7 @@ function MemberDetail({
           variant="outline"
           onClick={() => {
             showNotes(true);
+            setNotesOpen(true);
             requestAnimationFrame(() => {
               const notes = document.getElementById("member-notes");
               notes?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2655,12 +2711,12 @@ function MemberDetail({
       <div className="sticky top-16 z-30 h-0 [&+*]:!mt-0">
         {stuck ? (
           <div className="absolute inset-x-0 top-2 flex items-center gap-2.5 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/85">
+            <MemberNav nav={nav} />
             <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-8 w-8" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{m.displayName}</p>
               <p className="tabular truncate text-[11px] text-muted-foreground">
-                {m.health ? `Health ${m.health.score} · ` : ""}
-                {DETAIL_TABS.find((t) => t.id === tab)?.label}
+                {ROSTER_STATUS[r.status]} · {DETAIL_TABS.find((t) => t.id === tab)?.label}
               </p>
             </div>
             <Button
@@ -2716,42 +2772,41 @@ function MemberDetail({
                 .join(" · ")}
             </p>
           </div>
-          <HealthPill health={m.health} large />
+          <span className={cn("whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
         </div>
-        {/* The three numbers to know before anything else: health, how likely they are to quit, and whether they're keeping muscle. */}
-        <div className="flex flex-wrap gap-1.5">
-          {m.health ? (
-            <span className={cn("tabular rounded-full border px-2.5 py-0.5 text-[12px] font-semibold", ZONE_RING[healthZone(m.health.score)])}>Health {m.health.score}</span>
-          ) : null}
-          {m.risk.level !== "low" ? (
-            <span className={cn("tabular rounded-full border px-2.5 py-0.5 text-[12px] font-semibold", RISK_CHIP[m.risk.level])} title={m.risk.reasons.map((r) => r.text).join("\n")}>
-              Quit risk {m.risk.level} · {m.risk.score}
+        {/* ‹ › through the list, without going back to it. */}
+        {nav.total > 1 ? (
+          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+            <MemberNav nav={nav} />
+            <span className="tabular">
+              {nav.index + 1} of {nav.total}
             </span>
-          ) : (
-            <span className="rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 text-[12px] font-semibold text-success">Quit risk low</span>
-          )}
-          {muscle && muscle.verdict !== "unknown" ? (
-            <span
+          </div>
+        ) : null}
+        {/* What to do next, as on the list. */}
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+          <span className="font-medium">Next:</span>
+          <span className="min-w-0 flex-1 basis-48 text-muted-foreground">{next ? `${NEXT_LABEL[next.kind]}: ${next.reason}` : "Nothing needed: keep going"}</span>
+          {nextButton}
+          {flagCount > 0 ? (
+            <button
+              type="button"
+              aria-expanded={flagsOpen}
+              onClick={() => setFlagsOpen((v) => !v)}
               className={cn(
-                "rounded-full border px-2.5 py-0.5 text-[12px] font-semibold",
-                muscle.verdict === "losing"
-                  ? "border-destructive/40 bg-destructive/10 text-destructive"
-                  : muscle.verdict === "slipping"
-                    ? "border-warning/40 bg-warning/10 text-warning"
-                    : muscle.verdict === "kept"
-                      ? "border-success/40 bg-success/10 text-success"
-                      : "border-border text-muted-foreground",
+                "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                extraFlags.some((f) => FLAG_VARIANT[f] === "danger") ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground",
               )}
-              title={muscle.text}
             >
-              {muscle.verdict === "losing" ? "Losing muscle" : muscle.verdict === "slipping" ? "Lifts slipping" : muscle.verdict === "kept" ? "Muscle kept" : "Lifts steady"}
-            </span>
+              {flagCount} flag{flagCount === 1 ? "" : "s"}
+              <ChevronDown className={cn("h-3 w-3 transition-transform", flagsOpen && "rotate-180")} aria-hidden />
+            </button>
           ) : null}
         </div>
-        {m.flags.length > 0 || m.paused ? (
+        {flagsOpen && flagCount > 0 ? (
           <div className="flex flex-wrap gap-1">
             {m.paused ? <Badge variant="secondary">{pausedLabel(m.paused)}</Badge> : null}
-            {m.flags.map((f) => (
+            {extraFlags.map((f) => (
               <Badge key={f} variant={FLAG_VARIANT[f]}>
                 {FLAG_LABELS[f]}
                 {/* Which lifts, on the member's own page. */}
@@ -2821,20 +2876,7 @@ function MemberDetail({
       <div role="tabpanel" id="member-tabpanel" aria-labelledby={`member-tab-${tab}`} className="space-y-5">
         {tab === "overview" ? (
           <>
-            <KeyInsights summary={m} loaded={loaded} unit={unit} today={today} onSeeAll={() => onTab("insights")} />
-            {m.health ? (
-              <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                <HealthPill health={m.health} large />
-                <div className="min-w-0 text-xs">
-                  <p className="text-sm font-semibold">Health score</p>
-                  <p className="tabular text-muted-foreground">
-                    Logging {m.health.logging}/{HEALTH_PARTS.logging} · Adherence {m.health.adherence}/{HEALTH_PARTS.adherence} · Trend{" "}
-                    {m.health.trend}/{HEALTH_PARTS.trend}
-                  </p>
-                  <p className="text-[12px] text-muted-foreground">Days logged this week, habit scorecard, and weight vs plan.</p>
-                </div>
-              </div>
-            ) : null}
+            <OverviewSummary m={m} r={r} unit={unit} today={today} onTab={onTab} />
             <CoachReportPanel
               companyId={companyId}
               memberId={m.data.userId}
@@ -2884,6 +2926,12 @@ function MemberDetail({
               </CardContent>
             </Card>
 
+          </>
+        ) : tab === "insights" ? (
+          <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} loaded={loaded} />
+        ) : tab === "body" ? (
+          <>
+            {/* Habits and weigh-ins, moved here from Overview. */}
             <ConsistencyCard
               habits={m.state.tracking.habits}
               logs={[...m.data.habitLogs].sort((a, b) => (a.date < b.date ? -1 : 1))}
@@ -2910,12 +2958,9 @@ function MemberDetail({
               </Card>
             ) : null}
 
-            <p className="text-[12px] text-muted-foreground">
-              This week&apos;s scorecard: {m.week.percent === null ? "no habits logged yet" : `${m.week.percent}% (${ZONES[m.week.zone!].label})`}.
-            </p>
+            <MeasurementsCard measurements={m.data.measurements} weighIns={m.data.weighIns} unit={unit} today={today} readOnly />
+            <ProgressPhotos m={m} companyId={companyId} unit={unit} />
           </>
-        ) : tab === "insights" ? (
-          <MemberInsights companyId={companyId} summary={m} unit={unit} today={today} loaded={loaded} />
         ) : tab === "timeline" ? (
           <>
             <NeedleCard effects={loaded.needle.effects} loading={loaded.needle.loading} unit={unit} />
@@ -2925,9 +2970,9 @@ function MemberDetail({
           <MemberCheckinsCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} summary={m} />
         ) : tab === "food" ? (
           <>
-            <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
             <CoachNutritionReport companyId={companyId} summary={m} today={today} />
             <CoachIntakeChart companyId={companyId} memberId={m.data.userId} weighIns={m.data.weighIns} unit={unit} today={today} />
+            <MemberMacrosCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
@@ -3018,38 +3063,6 @@ function MemberDetail({
               />
             </div>
           </>
-        ) : tab === "body" ? (
-          <>
-            <MeasurementsCard measurements={m.data.measurements} weighIns={m.data.weighIns} unit={unit} today={today} readOnly />
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Camera className="h-4 w-4 text-primary" />
-                  Progress photos
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {m.data.photos === null ? (
-                  <p className="flex gap-2 text-sm text-muted-foreground">
-                    <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-                    Not shared. Photos are private unless the member turns on &ldquo;Share my photos with my coach&rdquo;.
-                  </p>
-                ) : m.data.photos.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sharing is on, but there are no photos yet.</p>
-                ) : (
-                  <PhotoGallery
-                    photos={m.data.photos}
-                    srcFor={(ph) =>
-                      `/api/coach/photo?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(m.data.userId)}&id=${encodeURIComponent(ph.id)}`
-                    }
-                  />
-                )}
-              </CardContent>
-            </Card>
-            {m.data.photos !== null ? (
-              <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} />
-            ) : null}
-          </>
         ) : null}
       </div>
       </div>
@@ -3076,11 +3089,147 @@ function MemberDetail({
             onClose={() => setChatOpen(false)}
           />
         ) : null}
-        <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
-        {tags}
+        <Fold label="Notes" summary="Private to you and your admins" open={notesOpen} onToggle={setNotesOpen}>
+          <CoachNotesCard companyId={companyId} memberId={m.data.userId} />
+        </Fold>
+        <Fold label="Tags" summary={tagSummary || "None yet"} open={tagsOpen} onToggle={setTagsOpen}>
+          {tags}
+        </Fold>
       </aside>
       </div>
     </div>
+  );
+}
+
+/** ‹ › to the previous and next member in the list. */
+function MemberNav({ nav }: { nav: { prev: (() => void) | null; next: (() => void) | null } }) {
+  if (!nav.prev && !nav.next) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <Button size="icon" variant="outline" className="h-7 w-7" aria-label="Previous member" disabled={!nav.prev} onClick={() => nav.prev?.()}>
+        <ChevronLeft />
+      </Button>
+      <Button size="icon" variant="outline" className="h-7 w-7" aria-label="Next member" disabled={!nav.next} onClick={() => nav.next?.()}>
+        <ChevronRight />
+      </Button>
+    </span>
+  );
+}
+
+/** A side-column card folded to one line until opened. */
+function Fold({ label, summary, open, onToggle, children }: { label: string; summary: string; open: boolean; onToggle: (open: boolean) => void; children: React.ReactNode }) {
+  if (open) {
+    return (
+      <div className="space-y-1">
+        <button type="button" onClick={() => onToggle(false)} className="flex w-full items-center justify-end gap-1 text-[12px] text-muted-foreground hover:text-foreground">
+          Fold {label.toLowerCase()}
+          <ChevronDown className="h-3 w-3 rotate-180" aria-hidden />
+        </button>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-expanded={false}
+      onClick={() => onToggle(true)}
+      className="flex w-full items-center gap-2 rounded-[1.25rem] border border-primary/15 bg-card px-4 py-3 text-left text-sm hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="font-semibold">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{summary}</span>
+      <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden />
+    </button>
+  );
+}
+
+/** Overview: the Members row for this person, as tiles, each leading to where the detail is. */
+function OverviewSummary({ m, r, unit, today, onTab }: { m: MemberSummary; r: RosterInfo; unit: WeightUnit; today: string; onTab: (t: DetailTab) => void }) {
+  const ci = checkinLabel(r.checkin, today);
+  const contactDays = m.data.lastCoachContact ? Math.max(0, daysBetween(m.data.lastCoachContact.slice(0, 10), today)) : null;
+  const tr = weightTrend(m.data.weighIns, today);
+  const lb = m.progress?.trendWeight ?? m.latestWeightLb;
+  const pct = (v: number | null) => (v === null ? "text-muted-foreground" : v >= 80 ? "text-success" : v >= 60 ? "text-warning" : "text-destructive");
+  const tile = (label: string, value: React.ReactNode, sub: React.ReactNode, to: DetailTab) => (
+    <button type="button" onClick={() => onTab(to)} className="rounded-lg border border-border bg-card px-3 py-2.5 text-left hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="tabular text-lg font-semibold leading-snug">{value}</p>
+      <p className="tabular truncate text-[12px] text-muted-foreground">{sub}</p>
+    </button>
+  );
+  return (
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {tile(
+        "Goal progress",
+        r.progress ? `${r.progress.pct}%` : "—",
+        r.progress
+          ? `${Math.round(fromLb(r.progress.doneLb, unit) * 10) / 10} of ${Math.round(fromLb(r.progress.totalLb, unit) * 10) / 10} ${unit}`
+          : r.goal === "Recomp" || r.goal === "Maintenance"
+            ? "No weight goal"
+            : r.goal,
+        "body",
+      )}
+      {tile(
+        "Adherence · 14d",
+        <>
+          <span className={pct(r.nutrition)}>{r.nutrition === null ? "—" : `${r.nutrition}%`}</span>
+          <span className="text-muted-foreground"> · </span>
+          <span className={pct(r.workouts?.pct ?? null)}>{r.workouts ? `${r.workouts.pct}%` : "—"}</span>
+          <span className="text-muted-foreground"> · </span>
+          <span className={pct(r.habits)}>{r.habits === null ? "—" : `${r.habits}%`}</span>
+        </>,
+        "Nutrition · workouts · habits",
+        "food",
+      )}
+      {tile(
+        "Check-in",
+        <span className={r.checkin.kind === "overdue" ? "text-destructive" : r.checkin.kind === "review" ? "text-primary" : undefined}>{ci}</span>,
+        <span className={contactDays === null || contactDays >= CONTACT_LATE_DAYS ? "font-semibold text-destructive" : undefined}>
+          you: {contactDays === null ? "never" : contactDays === 0 ? "today" : `${contactDays} days ago`}
+        </span>,
+        "checkins",
+      )}
+      {tile(
+        "Trend",
+        lb === null ? "—" : weight(lb, unit),
+        tr.changeLb === null ? "Not enough weigh-ins" : `${tr.changeLb > 0 ? "+" : "−"}${Math.abs(Math.round(fromLb(tr.changeLb, unit) * 10) / 10)} ${unit} over 4 weeks`,
+        "body",
+      )}
+    </div>
+  );
+}
+
+/** Progress photos, shared or not (Progress tab). */
+function ProgressPhotos({ m, companyId, unit }: { m: MemberSummary; companyId: string; unit: WeightUnit }) {
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Camera className="h-4 w-4 text-primary" />
+            Progress photos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {m.data.photos === null ? (
+            <p className="flex gap-2 text-sm text-muted-foreground">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              Not shared. Photos are private unless the member turns on &ldquo;Share my photos with my coach&rdquo;.
+            </p>
+          ) : m.data.photos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sharing is on, but there are no photos yet.</p>
+          ) : (
+            <PhotoGallery
+              photos={m.data.photos}
+              srcFor={(ph) =>
+                `/api/coach/photo?company=${encodeURIComponent(companyId)}&member=${encodeURIComponent(m.data.userId)}&id=${encodeURIComponent(ph.id)}`
+              }
+            />
+          )}
+        </CardContent>
+      </Card>
+      {m.data.photos !== null ? <CoachComparisonCard companyId={companyId} memberId={m.data.userId} memberName={m.displayName} unit={unit} /> : null}
+    </>
   );
 }
 
