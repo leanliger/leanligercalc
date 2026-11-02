@@ -13,6 +13,10 @@ import { weightChangeOver } from "./muscle-check";
 import { STATUS_RANK, checkinRank, type RosterInfo } from "./roster";
 
 export type ColumnKey =
+  | "goalStart"
+  | "weightTrend"
+  | "adherence"
+  | "engage"
   | "goalType"
   | "start"
   | "weight"
@@ -62,19 +66,24 @@ export interface ColumnDef {
 }
 
 export const COLUMNS: ColumnDef[] = [
-  // The client roster, on by default.
-  { key: "goalType", label: "Goal", group: "progress", firstDir: 1, width: "6rem", align: "left" },
+  // The client roster, on by default: related values share a two-line cell, so it fits a laptop screen.
+  { key: "goalStart", label: "Goal", group: "progress", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "weightTrend", label: "Weight · trend", group: "progress", firstDir: -1, width: "7rem", align: "left" },
+  { key: "progress", label: "Progress", group: "progress", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "adherence", label: "Adherence", group: "adherence", firstDir: 1, width: "8.5rem", align: "left" },
+  { key: "engage", label: "Check-in · active", group: "engagement", firstDir: -1, width: "7.75rem", align: "left" },
+  { key: "status", label: "Status", group: "coaching", firstDir: -1, width: "7.75rem", align: "left" },
+  { key: "next", label: "Next action", group: "coaching", firstDir: -1, width: "11rem", align: "left" },
+  // The same, one value a column, to add.
+  { key: "goalType", label: "Goal type", group: "progress", firstDir: 1, width: "6rem", align: "left" },
   { key: "start", label: "Start", group: "progress", firstDir: -1, width: "6.5rem", align: "left" },
   { key: "weight", label: "Weight", group: "progress", firstDir: -1, width: "4.75rem", align: "right" },
   { key: "trend", label: "4-wk trend", group: "progress", firstDir: -1, width: "6.75rem", align: "right" },
-  { key: "progress", label: "Goal progress", group: "progress", firstDir: 1, width: "9.5rem", align: "left" },
   { key: "nutrition", label: "Nutrition", group: "adherence", firstDir: 1, width: "8.5rem", align: "left" },
   { key: "workoutPct", label: "Workouts", group: "adherence", firstDir: 1, width: "6.5rem", align: "left" },
   { key: "habits", label: "Habits", group: "adherence", firstDir: 1, width: "6.5rem", align: "left" },
   { key: "checkin", label: "Check-in", group: "engagement", firstDir: -1, width: "7rem", align: "left" },
   { key: "active", label: "Last active", group: "engagement", firstDir: -1, width: "6rem", align: "left" },
-  { key: "status", label: "Status", group: "coaching", firstDir: -1, width: "8rem", align: "left" },
-  { key: "next", label: "Next action", group: "coaching", firstDir: -1, width: "15rem", align: "left" },
   // More to add.
   { key: "health", label: "Health score", group: "coaching", firstDir: 1, width: "4.5rem", align: "center" },
   { key: "week", label: "Habits this week", group: "more", firstDir: 1, width: "4.5rem", align: "right" },
@@ -90,9 +99,9 @@ export const COLUMNS: ColumnDef[] = [
 
 export const OPTIONAL_COLUMNS = COLUMNS.filter((c) => !c.fixed).map((c) => c.key);
 /** The client roster, on until a coach changes the picks. */
-export const DEFAULT_EXTRA: ColumnKey[] = ["goalType", "start", "weight", "trend", "progress", "nutrition", "workoutPct", "habits", "checkin", "active", "status", "next"];
-/** Where the picks are kept on the device (v2: the client roster's columns). */
-export const COLUMNS_KEY = "prep-calculator:member-columns-v2";
+export const DEFAULT_EXTRA: ColumnKey[] = ["goalStart", "weightTrend", "progress", "adherence", "engage", "status", "next"];
+/** Where the picks are kept on the device (v3: the combined columns). */
+export const COLUMNS_KEY = "prep-calculator:member-columns-v3";
 
 /** Weeks in the trend line. */
 export const TREND_WEEKS = 4;
@@ -136,6 +145,17 @@ export function sortValue(
 ): number | string | null {
   const r = () => ctx.roster(m.data.userId);
   switch (key) {
+    // Combined cells sort by their main value.
+    case "goalStart":
+      return r().goal;
+    case "weightTrend":
+      return weightTrend(m.data.weighIns, ctx.today).changeLb;
+    case "adherence": {
+      const xs = [r().nutrition, r().workouts?.pct ?? null, r().habits].filter((x): x is number => x !== null);
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    }
+    case "engage":
+      return checkinRank(r().checkin);
     case "goalType":
       return r().goal;
     case "start":

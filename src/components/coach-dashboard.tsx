@@ -246,6 +246,19 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   // The headings scroll sideways with the list (they sit outside it, to stick to the top).
   const headScroll = React.useRef<HTMLDivElement>(null);
   const bodyScroll = React.useRef<HTMLDivElement>(null);
+  const barScroll = React.useRef<HTMLDivElement>(null);
+  // How wide the list's content is when it doesn't fit (0 when it does): sizes the pinned scrollbar.
+  const [listWide, setListWide] = React.useState(0);
+  React.useEffect(() => {
+    const el = bodyScroll.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setListWide(el.scrollWidth > el.clientWidth + 1 ? el.scrollWidth : 0);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    measure();
+    return () => ro.disconnect();
+  });
   const chooseSort = (v: MemberSort) => {
     setSort(v);
     setColSort(null);
@@ -449,8 +462,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
         : pool;
   // The list's columns on a computer: the fixed ones and the picks, in the picker's order.
   const visibleCols = COLUMNS.filter((c) => c.fixed || extraCols.includes(c.key));
-  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 15rem for the client, every column and its gap, and Next action's button.
-  const nextOn = visibleCols.some((c) => c.key === "next");
+  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 13rem for the client, every column and its gap.
   // Column groups: a label over each run of the same group, and a faint line where one starts.
   const groupRuns: { group: ColumnGroup; span: number }[] = [];
   for (const c of visibleCols) {
@@ -459,9 +471,9 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     else groupRuns.push({ group: c.group, span: 1 });
   }
   const groupStarts = new Set(visibleCols.filter((c, i) => i === 0 || visibleCols[i - 1]!.group !== c.group).map((c) => c.key));
-  const listMinRem = 5 + 15 + 1.5 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0) + (nextOn ? 6 : 0);
+  const listMinRem = 5 + 13 + 1.5 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0);
   const gridStyle = {
-    "--member-cols": `minmax(15rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
+    "--member-cols": `minmax(13rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
     "--member-min": `${listMinRem}rem`,
   } as React.CSSProperties;
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
@@ -1316,7 +1328,6 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                             </span>
                           ))}
                         </div>
-                        {nextOn ? <div className="w-24 shrink-0" /> : null}
                       </div>
                       <div className="flex">
                         {/* Pinned: the select and remind boxes, then Client, stay put while the columns scroll. */}
@@ -1344,16 +1355,21 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                             );
                           })}
                         </div>
-                        {nextOn ? <div className="w-24 shrink-0" /> : null}
                       </div>
                     </div>
                   </div>
                   <div
                     ref={bodyScroll}
                     onScroll={(e) => {
-                      if (headScroll.current) headScroll.current.scrollLeft = e.currentTarget.scrollLeft;
+                      const x = e.currentTarget.scrollLeft;
+                      if (headScroll.current) headScroll.current.scrollLeft = x;
+                      if (barScroll.current && barScroll.current.scrollLeft !== x) barScroll.current.scrollLeft = x;
                     }}
-                    className="overflow-hidden rounded-[1.25rem] sm:overflow-x-auto sm:rounded-t-none"
+                    className={cn(
+                      "overflow-hidden rounded-[1.25rem] sm:overflow-x-auto sm:rounded-t-none",
+                      // Its own scrollbar hides while the pinned one below shows.
+                      listWide && "sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden",
+                    )}
                   >
                   {/* The card's width; wider (and scrolling) only when the columns on don't fit. */}
                   <div className="sm:min-w-[var(--member-min)]" style={gridStyle}>
@@ -1399,29 +1415,42 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               next={next}
                               ticked={ticked}
                               groupStarts={groupStarts}
+                              nextButton={
+                                next?.kind === "win" ? (
+                                  <KudosButton m={m} unit={unit} onKudos={sendKudos} />
+                                ) : next ? (
+                                  <Button size="sm" variant={NEXT_BUTTON[next.kind].primary ? "default" : "outline"} className="h-7 px-2.5 text-xs" onClick={() => openInbox(m.data.userId)}>
+                                    {NEXT_BUTTON[next.kind].label}
+                                  </Button>
+                                ) : (
+                                  <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs" onClick={() => openMember(m.data.userId)}>
+                                    Open
+                                  </Button>
+                                )
+                              }
                             />
                           </div>
-                          {nextOn ? (
-                            <div className="hidden w-24 shrink-0 items-center pr-3 sm:flex">
-                              {next?.kind === "win" ? (
-                                <KudosButton m={m} unit={unit} onKudos={sendKudos} />
-                              ) : next ? (
-                                <Button size="sm" variant={NEXT_BUTTON[next.kind].primary ? "default" : "outline"} className="h-7 px-2.5 text-xs" onClick={() => openInbox(m.data.userId)}>
-                                  {NEXT_BUTTON[next.kind].label}
-                                </Button>
-                              ) : (
-                                <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs" onClick={() => openMember(m.data.userId)}>
-                                  Open
-                                </Button>
-                              )}
-                            </div>
-                          ) : null}
                         </li>
                       );
                     })}
                   </ul>
                   </div>
                   </div>
+                  {/* When the columns don't fit: a scrollbar pinned to the bottom of the window (above the phone bar), not the bottom of the list. */}
+                  {listWide ? (
+                    <div
+                      ref={barScroll}
+                      onScroll={(e) => {
+                        const x = e.currentTarget.scrollLeft;
+                        if (bodyScroll.current && bodyScroll.current.scrollLeft !== x) bodyScroll.current.scrollLeft = x;
+                        if (headScroll.current) headScroll.current.scrollLeft = x;
+                      }}
+                      aria-hidden
+                      className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 hidden overflow-x-auto rounded-b-[1.25rem] border-t border-border bg-card/95 backdrop-blur sm:block lg:bottom-0"
+                    >
+                      <div style={{ width: listWide, height: 1 }} />
+                    </div>
+                  ) : null}
                 </div>
                 </>
               )}
@@ -1594,6 +1623,15 @@ const coachingLength = (start: string, today: string) => {
   const d = Math.max(0, daysBetween(start, today));
   return d < 7 ? `day ${d + 1}` : `wk ${Math.floor(d / 7) + 1}`;
 };
+/** A cell's second line: smaller and muted. */
+function Line2({ children, className, title }: { children: React.ReactNode; className?: string; title?: string }) {
+  return (
+    <span className={cn("mt-0.5 block truncate text-[11px] text-muted-foreground", className)} title={title}>
+      {children}
+    </span>
+  );
+}
+
 /** The faint line where a column group starts. */
 const GROUP_EDGE = "border-l border-border/60 pl-3";
 const STATUS_RING: Record<CoachStatus, string> = {
@@ -1825,6 +1863,7 @@ function MemberRow({
   next,
   ticked,
   groupStarts,
+  nextButton,
 }: {
   m: MemberSummary;
   unit: WeightUnit;
@@ -1843,6 +1882,8 @@ function MemberRow({
   ticked: boolean;
   /** Columns that start a group, for the faint line between groups. */
   groupStarts: ReadonlySet<ColumnKey>;
+  /** Next action's button (Reply, Message, Kudos, Open), inside its cell. */
+  nextButton: React.ReactNode;
 }) {
   const week = m.week.percent === null ? "—" : `${m.week.percent}%`;
   const r = roster;
@@ -1870,17 +1911,68 @@ function MemberRow({
       }
       case "progress":
         return r.progress ? (
-          <span className="tabular inline-flex items-center gap-1.5" title={`${r.progress.doneLb} of ${r.progress.totalLb} lb`}>
-            <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted/50" aria-hidden>
-              <span className="block h-full rounded-full bg-primary" style={{ width: `${r.progress.pct}%` }} />
+          <span className="block">
+            <span className="tabular inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-10 overflow-hidden rounded-full bg-muted/50" aria-hidden>
+                <span className="block h-full rounded-full bg-primary" style={{ width: `${r.progress.pct}%` }} />
+              </span>
+              {r.progress.pct}%
             </span>
-            {r.progress.pct}%
-            <span className="truncate text-[11px] text-muted-foreground">
-              {Math.round(fromLb(r.progress.doneLb, unit) * 10) / 10} of {Math.round(fromLb(r.progress.totalLb, unit) * 10) / 10}
-            </span>
+            <Line2>
+              {Math.round(fromLb(r.progress.doneLb, unit) * 10) / 10} of {Math.round(fromLb(r.progress.totalLb, unit) * 10) / 10} {unit}
+            </Line2>
           </span>
         ) : (
           <span className="text-muted-foreground">{r.goal === "Recomp" || r.goal === "Maintenance" ? "No weight goal" : "—"}</span>
+        );
+      case "goalStart":
+        return (
+          <span className="block">
+            <span className={cn("block truncate", r.goal === "No plan" && "text-muted-foreground")}>{r.goal}</span>
+            <Line2>{r.start ? `${formatShort(r.start)} · ${coachingLength(r.start, today)}` : "—"}</Line2>
+          </span>
+        );
+      case "weightTrend": {
+        const lb = m.progress?.trendWeight ?? m.latestWeightLb;
+        return (
+          <span className="block">
+            <span className="tabular block">{lb === null ? "—" : weight(lb, unit)}</span>
+            <Line2>
+              <TrendLine m={m} today={today} unit={unit} compact />
+            </Line2>
+          </span>
+        );
+      }
+      case "adherence": {
+        // Their latest answer to "what made it difficult?" under the three (src/lib/miss-reasons.ts).
+        const why = m.data.missReasons?.find((x) => x.reason);
+        const part = (label: string, v: number | null, title: string) => (
+          <span className="flex flex-col" title={title}>
+            <span className={cn("tabular text-[13px] font-semibold leading-tight", v === null ? "text-muted-foreground" : v >= 80 ? "text-success" : v >= 60 ? "text-warning" : "text-destructive")}>
+              {v === null ? "—" : `${v}%`}
+            </span>
+            <span className="text-[10px] text-muted-foreground">{label}</span>
+          </span>
+        );
+        return (
+          <span className="block">
+            <span className="flex gap-3">
+              {part("Nutr", r.nutrition, "Days on their calorie target, last 14")}
+              {part("Wkts", r.workouts?.pct ?? null, r.workouts ? `${r.workouts.done} of ${r.workouts.planned} planned workouts, last 14 days` : "No active program")}
+              {part("Habits", r.habits, "Habit score, last 14 days")}
+            </span>
+            {why ? <Line2 title={why.note || undefined}>{reasonLabel(why.reason)} · {formatShort(why.date)}</Line2> : null}
+          </span>
+        );
+      }
+      case "engage":
+        return (
+          <span className="block">
+            <span className={cn("block truncate", ciTone)}>{ci}</span>
+            <Line2 className={activeDays !== null && activeDays >= 3 ? "font-semibold text-destructive" : undefined}>
+              {activeDays === null ? "—" : `active ${activeDays === 0 ? "today" : activeDays === 1 ? "yesterday" : `${activeDays} days ago`}`}
+            </Line2>
+          </span>
         );
       case "nutrition": {
         // Their latest answer to "what made it difficult?" (src/lib/miss-reasons.ts).
@@ -1907,14 +1999,22 @@ function MemberRow({
           </span>
         );
       case "status":
-        return <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>;
+        return <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>;
       case "next":
-        return next ? (
-          <span className="block truncate" title={next.reason}>
-            <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
+        return (
+          <span className="flex items-center gap-2">
+            {next ? (
+              <span className="min-w-0 flex-1 truncate" title={`${NEXT_LABEL[next.kind]}: ${next.reason}`}>
+                <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
+              </span>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">Nothing needed</span>
+            )}
+            {/* Its own click, not the row's. */}
+            <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+              {nextButton}
+            </span>
           </span>
-        ) : (
-          <span className="text-muted-foreground">Nothing needed: keep going</span>
         );
       case "health":
         return (
