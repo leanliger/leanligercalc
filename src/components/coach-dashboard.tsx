@@ -111,6 +111,7 @@ import {
   isAtRisk,
   newestWinLabel,
   queueReason,
+  QUIET_DAYS,
   type CoachNavItem,
   type QueueKind,
 } from "@/components/coach-today";
@@ -142,14 +143,16 @@ import { fromLb } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 /** The list's quick filters; "risk" is any flag but a check-in waiting on the coach; "safety" is losing too fast or eating too little. */
-type Filter = "all" | "risk" | "ontrack" | "safety" | Flag;
+// "risk" and "ontrack" stay readable for views saved before the status bar replaced them.
+type Filter = "all" | "risk" | "ontrack" | "safety" | "quiet" | Flag;
 
+/** Filters → Show. At risk / On track are the status bar now. */
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "risk", label: "At risk" },
   { value: "reply", label: "Check-ins to review" },
-  { value: "ontrack", label: "On track" },
 ];
+/** Names for the filters that aren't buttons, for their chip. */
+const FILTER_NAMES: Partial<Record<Filter, string>> = { risk: "At risk", ontrack: "On track (old)", safety: "Safety", quiet: `Quiet ${QUIET_DAYS}+ days` };
 
 /** The rest, one at a time from a menu. */
 const FLAG_FILTERS = [
@@ -173,6 +176,11 @@ function matchesFilter(m: MemberSummary, f: Filter): boolean {
   if (f === "risk") return isAtRisk(m);
   if (f === "ontrack") return !isAtRisk(m);
   if (f === "safety") return m.flags.includes("too-fast") || m.flags.includes("under-floor");
+  if (f === "quiet") {
+    // No message, check-in reply or reminder from you in QUIET_DAYS (counted from when they started sharing if never).
+    const from = (m.data.lastCoachContact ?? m.data.sharing.since)?.slice(0, 10);
+    return !!from && daysBetween(from, todayISO()) >= QUIET_DAYS;
+  }
   return m.flags.includes(f);
 }
 
@@ -186,13 +194,17 @@ interface SavedView {
   tag: string | null;
   sort: MemberSort;
   query: string;
+  /** Saved since the roster: the status bar's filter, the column sort and the columns on. Older views leave them out. */
+  status?: CoachStatus | null;
+  colSort?: { key: ColumnKey; dir: SortDir } | null;
+  columns?: ColumnKey[];
 }
 
+/** Views that add something the status bar and filters don't. */
 const BUILT_IN_VIEWS: SavedView[] = [
-  { id: "needs-reply", name: "Needs reply", filter: "reply", tag: null, sort: "attention", query: "" },
-  { id: "may-quit", name: "At risk of quitting", filter: "drop-off", tag: null, sort: "attention", query: "" },
-  { id: "losing-muscle", name: "Losing muscle", filter: "muscle-loss", tag: null, sort: "attention", query: "" },
+  { id: "needs-reply", name: "Check-ins to review", filter: "reply", tag: null, sort: "attention", query: "" },
   { id: "safety", name: "Safety", filter: "safety", tag: null, sort: "attention", query: "" },
+  { id: "quiet", name: `Quiet ${QUIET_DAYS}+ days`, filter: "quiet", tag: null, sort: "attention", query: "", colSort: { key: "contact", dir: -1 } },
 ];
 
 /** How often the dashboard reloads by itself while it's open and showing. */
@@ -274,6 +286,15 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
       /* no storage: the default */
     }
   }, []);
+  const setColumns = (next: ColumnKey[]) => {
+    const keep = OPTIONAL_COLUMNS.filter((k) => next.includes(k));
+    setExtraCols(keep);
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(keep));
+    } catch {
+      /* not remembered */
+    }
+  };
   const toggleColumn = (key: ColumnKey, on: boolean) => {
     const next = OPTIONAL_COLUMNS.filter((k) => (k === key ? on : extraCols.includes(k)));
     setExtraCols(next);
@@ -1186,47 +1207,50 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                         </div>
                       </div>
                     ) : null}
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sort</p>
-                      <SegmentedControl
-                        ariaLabel="Sort members"
-                        size="sm"
-                        value={sort}
-                        onValueChange={chooseSort}
-                        options={[
-                          { value: "attention" as const, label: "Most urgent" },
-                          { value: "health" as const, label: "Health score" },
-                          { value: "name" as const, label: "Name" },
-                        ]}
-                        className={cn("w-auto", colSort && "opacity-60")}
-                      />
-                      {/* Phones have no headings to tap: every column's sort from a menu. */}
-                      <select
-                        aria-label="Sort by a column"
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:hidden"
-                        value={colSort?.key ?? ""}
-                        onChange={(e) => (e.target.value ? sortByColumn(e.target.value as ColumnKey) : setColSort(null))}
-                      >
-                        <option value="">More sorts…</option>
-                        {visibleCols.map((c) => (
-                          <option key={c.key} value={c.key}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
                 </ToolbarMenu>
+                {/* The one sort menu: Status (the default), Name, and every column; headings sort too. */}
+                <label className="sr-only" htmlFor="coach-sort">
+                  Sort
+                </label>
+                <select
+                  id="coach-sort"
+                  value={colSort ? `col:${colSort.key}` : sort}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "name" || v === "attention" || v === "health") chooseSort(v);
+                    else {
+                      const key = v.slice(4) as ColumnKey;
+                      setColSort({ key, dir: COLUMNS.find((c) => c.key === key)!.firstDir });
+                    }
+                  }}
+                  className="h-9 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="col:status">Sort: Status</option>
+                  <option value="name">Sort: Name</option>
+                  {/* Only while a saved view from before uses them. */}
+                  {!colSort && sort === "attention" ? <option value="attention">Sort: Most urgent</option> : null}
+                  {!colSort && sort === "health" ? <option value="health">Sort: Health score</option> : null}
+                  {[...visibleCols.filter((c) => c.key !== "status" && c.key !== "contact"), COLUMNS.find((c) => c.key === "contact")!].map((c) => (
+                    <option key={c.key} value={`col:${c.key}`}>
+                      Sort: {c.label}
+                    </option>
+                  ))}
+                </select>
                 <ToolbarMenu label="Views" icon={<Bookmark />} wide>
                   <SavedViews
                     companyId={companyId}
-                    current={{ filter, tag: tagFilter, sort, query }}
-                    count={(v) => summaries.filter((m) => inView(m, v)).length}
+                    current={{ filter, tag: tagFilter, sort, query, status: statusFilter, colSort, columns: extraCols }}
+                    count={(v) => summaries.filter((m) => inView(m, v) && (!v.status || rosterOf(m.data.userId).status === v.status)).length}
                     onApply={(v) => {
                       setFilter(v.filter);
                       setTagFilter(v.tag);
-                      chooseSort(v.sort);
                       setQuery(v.query);
+                      setStatusFilter(v.status ?? null);
+                      // Older views saved the sort buttons; newer ones the column sort.
+                      if (v.colSort !== undefined) setColSort(v.colSort);
+                      else chooseSort(v.sort);
+                      if (v.columns) setColumns(v.columns);
                     }}
                   />
                 </ToolbarMenu>
@@ -1249,7 +1273,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 {statusFilter ? <FilterChip label={`Status: ${ROSTER_STATUS[statusFilter]}`} onRemove={() => setStatusFilter(null)} /> : null}
                 {filter !== "all" ? (
                   <FilterChip
-                    label={FILTERS.find((f) => f.value === filter)?.label ?? (filter === "safety" ? "Safety" : `Flag: ${FLAG_LABELS[filter as Flag]}`)}
+                    label={FILTERS.find((f) => f.value === filter)?.label ?? FILTER_NAMES[filter] ?? `Flag: ${FLAG_LABELS[filter as Flag]}`}
                     onRemove={() => setFilter("all")}
                   />
                 ) : null}
@@ -1274,16 +1298,34 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     {colSort ? (
                       <>
                         Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()},{" "}
-                        {colSort.key === "status" ? (colSort.dir === -1 ? "needs attention first" : "on track first") : colSort.dir === 1 ? "low to high" : "high to low"}.
+                        {colSort.key === "status"
+                          ? colSort.dir === -1
+                            ? "needs attention first"
+                            : "on track first"
+                          : colSort.key === "contact" || colSort.key === "active"
+                            ? colSort.dir === -1
+                              ? "longest ago first"
+                              : "most recent first"
+                            : colSort.dir === 1
+                              ? "low to high"
+                              : "high to low"}
+                        .
                         <button type="button" className="font-medium text-primary hover:underline" onClick={() => sortByColumn(colSort.key)}>
                           Reverse
                         </button>
-                        <button type="button" className="font-medium text-primary hover:underline" onClick={() => chooseSort("attention")}>
-                          Back to most urgent
-                        </button>
+                        {colSort.key !== "status" ? (
+                          <button type="button" className="font-medium text-primary hover:underline" onClick={() => setColSort({ key: "status", dir: -1 })}>
+                            Back to status
+                          </button>
+                        ) : null}
                       </>
                     ) : (
-                      <>Sorted by {sort === "health" ? "health score" : sort === "name" ? "name" : "most urgent"}.</>
+                      <>
+                        Sorted by {sort === "health" ? "health score" : sort === "name" ? "name" : "most urgent"}.
+                        <button type="button" className="font-medium text-primary hover:underline" onClick={() => setColSort({ key: "status", dir: -1 })}>
+                          Back to status
+                        </button>
+                      </>
                     )}
                   </span>
                 ) : null}
@@ -1301,7 +1343,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                 <EffortResultsChart members={shown} onOpen={(id) => openMember(id)} />
               ) : (
                 <>
-                <label className="flex w-fit cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
+                <label className="flex w-fit cursor-pointer items-center gap-2 text-[12px] text-muted-foreground sm:hidden">
                   <input
                     type="checkbox"
                     className="h-4 w-4 accent-[hsl(var(--primary))]"
@@ -1330,8 +1372,21 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                         </div>
                       </div>
                       <div className="flex">
-                        {/* Pinned: the select and remind boxes, then Client, stay put while the columns scroll. */}
-                        <div className="sticky left-0 z-20 w-20 shrink-0 bg-card" />
+                        {/* Pinned: select all (over the select boxes), then Client, stay put while the columns scroll. */}
+                        <div className="sticky left-0 z-20 flex w-20 shrink-0 items-center bg-card">
+                          <label className="flex w-10 cursor-pointer items-center justify-center" title={`Select all ${shown.length} shown, for bulk actions`}>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-[hsl(var(--primary))]"
+                              aria-label={`Select all ${shown.length} shown, for bulk actions`}
+                              checked={shown.length > 0 && shown.every((m) => picked.includes(m.data.userId))}
+                              onChange={(e) => {
+                                const ids = shown.map((m) => m.data.userId);
+                                setPicked((p) => (e.target.checked ? [...new Set([...p, ...ids])] : p.filter((id) => !ids.includes(id))));
+                              }}
+                            />
+                          </label>
+                        </div>
                         <div className={cn("grid flex-1 gap-x-3 border-l-2 border-l-transparent px-3 py-2", ROW_GRID)} style={gridStyle}>
                           <span className="sticky left-20 z-20 -ml-3 bg-card pl-3">Client</span>
                           {visibleCols.map((c) => {
@@ -1515,7 +1570,7 @@ function SavedViews({
   onApply,
 }: {
   companyId: string;
-  current: Pick<SavedView, "filter" | "tag" | "sort" | "query">;
+  current: Pick<SavedView, "filter" | "tag" | "sort" | "query" | "status" | "colSort" | "columns">;
   count: (v: SavedView) => number;
   onApply: (v: SavedView) => void;
 }) {
@@ -1538,13 +1593,21 @@ function SavedViews({
       /* kept until the page closes */
     }
   };
-  const same = (v: SavedView) => v.filter === current.filter && v.tag === current.tag && v.sort === current.sort && v.query.trim() === current.query.trim();
-  const isDefault = current.filter === "all" && current.tag === null && current.sort === "attention" && current.query.trim() === "";
+  // A view matches when what it saved matches (older views saved less, so they match on that).
+  const same = (v: SavedView) =>
+    v.filter === current.filter &&
+    v.tag === current.tag &&
+    v.query.trim() === current.query.trim() &&
+    (v.status ?? null) === (current.status ?? null) &&
+    (v.colSort === undefined ? v.sort === current.sort : JSON.stringify(v.colSort) === JSON.stringify(current.colSort)) &&
+    (v.columns === undefined || JSON.stringify(v.columns) === JSON.stringify(current.columns));
+  const isDefault =
+    current.filter === "all" && current.tag === null && current.query.trim() === "" && !current.status && current.colSort?.key === "status" && current.colSort.dir === -1;
   const unsaved = !isDefault && ![...BUILT_IN_VIEWS, ...mine].some(same);
   const save = () => {
     const name = (naming ?? "").trim();
     if (!name) return;
-    store([...mine, { id: `v${Date.now().toString(36)}`, name: name.slice(0, 40), ...current, query: current.query.trim() }]);
+    store([...mine, { id: `v${Date.now().toString(36)}`, name: name.slice(0, 40), ...current, query: current.query.trim(), status: current.status ?? null, colSort: current.colSort ?? null }]);
     setNaming(null);
   };
   const chip = (v: SavedView, removable: boolean) => {
@@ -1554,7 +1617,7 @@ function SavedViews({
         <button
           type="button"
           aria-pressed={on}
-          onClick={() => onApply(on ? { ...v, filter: "all", tag: null, sort: "attention", query: "" } : v)}
+          onClick={() => onApply(on ? { ...v, filter: "all", tag: null, sort: "attention", query: "", status: null, colSort: { key: "status", dir: -1 }, columns: undefined } : v)}
           className="h-full rounded-full px-3 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {v.name} <span className="tabular opacity-80">{count(v)}</span>
@@ -1616,7 +1679,11 @@ function SavedViews({
 
 /** Member · health · week · weight per week · check-in; on phones the numbers move under the name. */
 // Phones: name and health; computers: the columns on (`--member-cols`, set where the list is drawn).
-const ROW_GRID = "grid-cols-[minmax(0,1fr)_2.75rem] sm:[grid-template-columns:var(--member-cols)]";
+const ROW_GRID = "grid-cols-[minmax(0,1fr)] sm:[grid-template-columns:var(--member-cols)]";
+/** Flags the row already shows in a column (check-in, last active, habits, goal): left out of the flags chip. */
+const SHOWN_IN_ROW: ReadonlySet<Flag> = new Set<Flag>(["reply", "checkin", "inactive", "red", "no-plan"]);
+/** No contact from you in this many days turns "you: …" red. */
+const CONTACT_LATE_DAYS = 7;
 const ALIGN_HEAD = { left: "justify-start", center: "justify-center", right: "justify-end" } as const;
 /** How long they've been coached: "day 3", "wk 8". */
 const coachingLength = (start: string, today: string) => {
@@ -1969,11 +2036,19 @@ function MemberRow({
         return (
           <span className="block">
             <span className={cn("block truncate", ciTone)}>{ci}</span>
-            <Line2 className={activeDays !== null && activeDays >= 3 ? "font-semibold text-destructive" : undefined}>
-              {activeDays === null ? "—" : `active ${activeDays === 0 ? "today" : activeDays === 1 ? "yesterday" : `${activeDays} days ago`}`}
+            <Line2>
+              <span className={activeDays !== null && activeDays >= 3 ? "font-semibold text-destructive" : undefined}>
+                {activeDays === null ? "—" : `active ${activeDays === 0 ? "today" : `${activeDays}d ago`}`}
+              </span>
+              {" · "}
+              <span className={contactLate ? "font-semibold text-destructive" : undefined} title={`Your last message, check-in reply or reminder: ${contactText.replace(/^you: /, "")}`}>
+                {contactShort}
+              </span>
             </Line2>
           </span>
         );
+      case "contact":
+        return <span className={cn("tabular", contactLate && "font-semibold text-destructive")}>{contactText.replace(/^you: /, "")}</span>;
       case "nutrition": {
         // Their latest answer to "what made it difficult?" (src/lib/miss-reasons.ts).
         const why = m.data.missReasons?.find((x) => x.reason);
@@ -2053,8 +2128,15 @@ function MemberRow({
     }
   };
   // One line a member: flags fold into a chip that opens them under the row.
-  const flagCount = m.flags.length + (m.paused ? 1 : 0);
-  const urgentFlag = m.flags.some((f) => FLAG_VARIANT[f] === "danger");
+  const extraFlags = m.flags.filter((f) => !SHOWN_IN_ROW.has(f));
+  const flagCount = extraFlags.length + (m.paused ? 1 : 0);
+  const urgentFlag = extraFlags.some((f) => FLAG_VARIANT[f] === "danger");
+  // When you last messaged them, replied to a check-in or sent a reminder.
+  const contactDays = m.data.lastCoachContact ? Math.max(0, daysBetween(m.data.lastCoachContact.slice(0, 10), today)) : null;
+  const contactText = contactDays === null ? "you: never" : `you: ${contactDays === 0 ? "today" : contactDays === 1 ? "yesterday" : `${contactDays} days ago`}`;
+  const contactLate = contactDays === null || contactDays >= CONTACT_LATE_DAYS;
+  // The short form, for the table cell: "you: 9d".
+  const contactShort = contactDays === null ? "you: never" : `you: ${contactDays === 0 ? "today" : `${contactDays}d`}`;
   const [flagsOpen, setFlagsOpen] = React.useState(false);
   return (
     <div className={cn("border-l-2 transition-colors", selected ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-muted/40")}>
@@ -2096,7 +2178,7 @@ function MemberRow({
                     e.stopPropagation();
                     setFlagsOpen((v) => !v);
                   }}
-                  title={[m.paused ? pausedLabel(m.paused) : null, ...m.flags.map((f) => FLAG_LABELS[f])].filter(Boolean).join("\n")}
+                  title={[m.paused ? pausedLabel(m.paused) : null, ...extraFlags.map((f) => FLAG_LABELS[f])].filter(Boolean).join("\n")}
                   className={cn(
                     "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-px text-[10px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     urgentFlag ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground",
@@ -2111,9 +2193,12 @@ function MemberRow({
               {m.data.username && m.data.name ? `@${m.data.username} · ` : ""}last log {describeDaysAgo(m.daysSinceLog)}
             </span>
             <span className="tabular flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:hidden">
-              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
+              {/* Status, the same headline as on a computer. */}
+              <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
               <TrendLine m={m} today={today} unit={unit} compact />
-              <span className={ciTone}>Check-in: {ci.toLowerCase()}</span>
+              <span>
+                <span className={ciTone}>{ci}</span> · <span className={contactLate ? "font-semibold text-destructive" : undefined}>{contactText}</span>
+              </span>
             </span>
             {next ? (
               <span className="block truncate text-xs sm:hidden">
@@ -2123,10 +2208,7 @@ function MemberRow({
             <span className="sm:hidden">{tags}</span>
           </span>
         </span>
-        {/* Phones: the health score beside the name; computers: the columns on. */}
-        <span className="flex justify-center sm:hidden">
-          <HealthPill health={m.health} />
-        </span>
+        {/* Computers: the columns on (phones show status in the lines under the name). */}
         {cols.map((c) => (
           <span key={c.key} className={cn("relative hidden min-w-0 text-sm sm:block", ALIGN_CELL[c.align], groupStarts.has(c.key) && GROUP_EDGE)}>
             <span className="sr-only">{c.label}: </span>
@@ -2141,7 +2223,7 @@ function MemberRow({
               {pausedLabel(m.paused)}
             </Badge>
           ) : null}
-          {m.flags.map((f) => (
+          {extraFlags.map((f) => (
             <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
               {FLAG_LABELS[f]}
               {f === "slipping" && m.data.slipping?.length ? `: ${m.data.slipping.slice(0, 2).join(", ")}` : ""}

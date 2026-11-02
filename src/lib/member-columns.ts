@@ -27,6 +27,7 @@ export type ColumnKey =
   | "active"
   | "status"
   | "next"
+  | "contact"
   | "health"
   | "week"
   | "trend"
@@ -71,7 +72,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: "weightTrend", label: "Weight · trend", group: "progress", firstDir: -1, width: "7rem", align: "left" },
   { key: "progress", label: "Progress", group: "progress", firstDir: 1, width: "6.5rem", align: "left" },
   { key: "adherence", label: "Adherence", group: "adherence", firstDir: 1, width: "8.5rem", align: "left" },
-  { key: "engage", label: "Check-in · active", group: "engagement", firstDir: -1, width: "7.75rem", align: "left" },
+  { key: "engage", label: "Check-in · active", group: "engagement", firstDir: -1, width: "8.25rem", align: "left" },
   { key: "status", label: "Status", group: "coaching", firstDir: -1, width: "7.75rem", align: "left" },
   { key: "next", label: "Next action", group: "coaching", firstDir: -1, width: "11rem", align: "left" },
   // The same, one value a column, to add.
@@ -84,6 +85,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: "habits", label: "Habits", group: "adherence", firstDir: 1, width: "6.5rem", align: "left" },
   { key: "checkin", label: "Check-in", group: "engagement", firstDir: -1, width: "7rem", align: "left" },
   { key: "active", label: "Last active", group: "engagement", firstDir: -1, width: "6rem", align: "left" },
+  { key: "contact", label: "Last contact", group: "engagement", firstDir: -1, width: "6.5rem", align: "left" },
   // More to add.
   { key: "health", label: "Health score", group: "coaching", firstDir: 1, width: "4.5rem", align: "center" },
   { key: "week", label: "Habits this week", group: "more", firstDir: 1, width: "4.5rem", align: "right" },
@@ -175,6 +177,9 @@ export function sortValue(
       return r().lastActive ? -Date.parse(r().lastActive!) : null;
     case "status":
       return STATUS_RANK[r().status] * 1000 + (100 - (m.health?.score ?? 100));
+    case "contact":
+      // Longest since you were in touch first; never first of all.
+      return m.data.lastCoachContact ? -Date.parse(m.data.lastCoachContact) : Number.MAX_SAFE_INTEGER;
     case "next":
       return ctx.next(m.data.userId);
     case "health":
