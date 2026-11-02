@@ -8,6 +8,9 @@ import {
   ClipboardList,
   Lock,
   ArrowLeft,
+  Bookmark,
+  ChevronDown,
+  SlidersHorizontal,
   ArrowUp,
   ArrowDown,
   Columns3,
@@ -67,6 +70,8 @@ import {
   sortMembers,
   weightTrend,
   type ColumnDef,
+  type ColumnGroup,
+  GROUP_LABEL,
   type ColumnKey,
   type SortDir,
   COLUMNS_KEY,
@@ -236,6 +241,11 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
   // A column heading's sort (src/lib/member-columns.ts), over the sort buttons until one of them is picked again.
   // Opens sorted by Status, needs attention first.
   const [colSort, setColSort] = React.useState<{ key: ColumnKey; dir: SortDir } | null>({ key: "status", dir: -1 });
+  // The status bar's filter (Needs attention / Monitor / On track).
+  const [statusFilter, setStatusFilter] = React.useState<CoachStatus | null>(null);
+  // The headings scroll sideways with the list (they sit outside it, to stick to the top).
+  const headScroll = React.useRef<HTMLDivElement>(null);
+  const bodyScroll = React.useRef<HTMLDivElement>(null);
   const chooseSort = (v: MemberSort) => {
     setSort(v);
     setColSort(null);
@@ -429,20 +439,29 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
     const n = m ? nextOf(m) : null;
     return n ? 10 - NEXT_RANK[n.kind] : -1;
   };
+  const pool = statusFilter ? filtered.filter((m) => rosterOf(m.data.userId).status === statusFilter) : filtered;
   const shown = colSort
-    ? sortMembers(filtered, colSort.key, colSort.dir, { today, tagNames, roster: rosterOf, next: nextRank })
+    ? sortMembers(pool, colSort.key, colSort.dir, { today, tagNames, roster: rosterOf, next: nextRank })
     : sort === "health"
-      ? [...filtered].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
+      ? [...pool].sort((a, b) => (a.health?.score ?? 101) - (b.health?.score ?? 101))
       : sort === "name"
-        ? [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName))
-        : filtered;
+        ? [...pool].sort((a, b) => a.displayName.localeCompare(b.displayName))
+        : pool;
   // The list's columns on a computer: the fixed ones and the picks, in the picker's order.
   const visibleCols = COLUMNS.filter((c) => c.fixed || extraCols.includes(c.key));
-  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 12rem for the client, every column and its gap, and Next action's button.
+  // The narrowest the list can be before it scrolls sideways: the select and remind boxes, 15rem for the client, every column and its gap, and Next action's button.
   const nextOn = visibleCols.some((c) => c.key === "next");
-  const listMinRem = 5 + 12 + 1.5 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0) + (nextOn ? 6 : 0);
+  // Column groups: a label over each run of the same group, and a faint line where one starts.
+  const groupRuns: { group: ColumnGroup; span: number }[] = [];
+  for (const c of visibleCols) {
+    const last = groupRuns[groupRuns.length - 1];
+    if (last && last.group === c.group) last.span++;
+    else groupRuns.push({ group: c.group, span: 1 });
+  }
+  const groupStarts = new Set(visibleCols.filter((c, i) => i === 0 || visibleCols[i - 1]!.group !== c.group).map((c) => c.key));
+  const listMinRem = 5 + 15 + 1.5 + visibleCols.reduce((n, c) => n + parseFloat(c.width) + 0.75, 0) + (nextOn ? 6 : 0);
   const gridStyle = {
-    "--member-cols": `minmax(12rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
+    "--member-cols": `minmax(15rem,1fr) ${visibleCols.map((c) => c.width).join(" ")}`,
     "--member-min": `${listMinRem}rem`,
   } as React.CSSProperties;
   const current = summaries.find((m) => m.data.userId === selected) ?? null;
@@ -1039,58 +1058,39 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
               aria-labelledby="coach-members"
               className="min-w-0 space-y-3"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <h2 id="coach-members" className="text-base font-semibold">
                   Members
                 </h2>
-                <SegmentedControl
-                  ariaLabel="Show members as"
-                  size="sm"
-                  value={membersAs}
-                  onValueChange={setMembersAs}
-                  options={[
-                    { value: "list" as const, label: "List" },
-                    { value: "chart" as const, label: "Chart" },
-                  ]}
-                  className="w-auto"
-                />
-                <SavedViews
-                  companyId={companyId}
-                  current={{ filter, tag: tagFilter, sort, query }}
-                  count={(v) => summaries.filter((m) => inView(m, v)).length}
-                  onApply={(v) => {
-                    setFilter(v.filter);
-                    setTagFilter(v.tag);
-                    chooseSort(v.sort);
-                    setQuery(v.query);
-                  }}
-                />
-                <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
-                  {FILTERS.map((f) => {
-                    const n = summaries.filter((m) => matchesFilter(m, f.value)).length;
-                    return (
-                      <button
-                        key={f.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={filter === f.value}
-                        onClick={() => setFilter(f.value)}
-                        className={cn(
-                          "h-8 rounded-full border px-3 text-xs font-medium transition-colors",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          filter === f.value
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border text-muted-foreground hover:bg-muted/40",
-                        )}
-                      >
-                        {f.label} <span className="tabular opacity-80">{n}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <span className="tabular text-[12px] text-muted-foreground">{summaries.length} sharing</span>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              {/* Status at a glance, each a filter (src/lib/roster.ts). */}
+              <div role="radiogroup" aria-label="Filter by status" className="grid grid-cols-3 gap-2">
+                {(["attention", "monitor", "on-track"] as const).map((s) => {
+                  const n = filtered.filter((m) => rosterOf(m.data.userId).status === s).length;
+                  const on = statusFilter === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setStatusFilter(on ? null : s)}
+                      className={cn(
+                        "rounded-xl border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        on ? STATUS_RING[s] : "border-border",
+                      )}
+                    >
+                      <span className={cn("tabular block text-xl font-semibold leading-tight", STATUS_TEXT[s])}>{n}</span>
+                      <span className="text-[12px] text-muted-foreground">{ROSTER_STATUS[s]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* One toolbar: search, then Filters, Views and Columns as menus, and List / Chart. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-[12rem] flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <label htmlFor="coach-search" className="sr-only">
@@ -1102,93 +1102,180 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                     placeholder="Search by name or username"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    className="pl-9"
+                    className="h-9 pl-9"
                   />
                 </div>
-                <label className="sr-only" htmlFor="coach-flag">
-                  Filter by flag
-                </label>
-                <select
-                  id="coach-flag"
-                  value={(FLAG_FILTERS as readonly string[]).includes(filter) ? filter : ""}
-                  onChange={(e) => setFilter((e.target.value || "all") as Filter)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Any flag</option>
-                  {FLAG_FILTERS.map((f) => (
-                    <option key={f} value={f}>
-                      {FLAG_LABELS[f]} ({summaries.filter((m) => m.flags.includes(f)).length})
-                    </option>
-                  ))}
-                </select>
+                <ToolbarMenu label="Filters" icon={<SlidersHorizontal />} count={(filter !== "all" ? 1 : 0) + (tagFilter ? 1 : 0)} wide>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Show</p>
+                      <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5">
+                        {FILTERS.map((f) => {
+                          const n = summaries.filter((m) => matchesFilter(m, f.value)).length;
+                          return (
+                            <button
+                              key={f.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={filter === f.value}
+                              onClick={() => setFilter(f.value)}
+                              className={cn(
+                                "h-8 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                filter === f.value ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted/40",
+                              )}
+                            >
+                              {f.label} <span className="tabular opacity-80">{n}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="coach-flag" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Flag
+                      </label>
+                      <select
+                        id="coach-flag"
+                        value={(FLAG_FILTERS as readonly string[]).includes(filter) ? filter : ""}
+                        onChange={(e) => setFilter((e.target.value || "all") as Filter)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <option value="">Any flag</option>
+                        {FLAG_FILTERS.map((f) => (
+                          <option key={f} value={f}>
+                            {FLAG_LABELS[f]} ({summaries.filter((m) => m.flags.includes(f)).length})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {tagsData && tagsData.tags.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tag</p>
+                        <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap gap-1.5">
+                          {tagsData.tags.map((t) => {
+                            const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
+                            const on = tagFilter === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => setTagFilter(on ? null : t.id)}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-0.5 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
+                                )}
+                              >
+                                {t.name} <span className="tabular opacity-80">{n}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sort</p>
+                      <SegmentedControl
+                        ariaLabel="Sort members"
+                        size="sm"
+                        value={sort}
+                        onValueChange={chooseSort}
+                        options={[
+                          { value: "attention" as const, label: "Most urgent" },
+                          { value: "health" as const, label: "Health score" },
+                          { value: "name" as const, label: "Name" },
+                        ]}
+                        className={cn("w-auto", colSort && "opacity-60")}
+                      />
+                      {/* Phones have no headings to tap: every column's sort from a menu. */}
+                      <select
+                        aria-label="Sort by a column"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:hidden"
+                        value={colSort?.key ?? ""}
+                        onChange={(e) => (e.target.value ? sortByColumn(e.target.value as ColumnKey) : setColSort(null))}
+                      >
+                        <option value="">More sorts…</option>
+                        {visibleCols.map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </ToolbarMenu>
+                <ToolbarMenu label="Views" icon={<Bookmark />} wide>
+                  <SavedViews
+                    companyId={companyId}
+                    current={{ filter, tag: tagFilter, sort, query }}
+                    count={(v) => summaries.filter((m) => inView(m, v)).length}
+                    onApply={(v) => {
+                      setFilter(v.filter);
+                      setTagFilter(v.tag);
+                      chooseSort(v.sort);
+                      setQuery(v.query);
+                    }}
+                  />
+                </ToolbarMenu>
+                <ColumnPicker extra={extraCols} onToggle={toggleColumn} />
+                <SegmentedControl
+                  ariaLabel="Show members as"
+                  size="sm"
+                  value={membersAs}
+                  onValueChange={setMembersAs}
+                  options={[
+                    { value: "list" as const, label: "List" },
+                    { value: "chart" as const, label: "Chart" },
+                  ]}
+                  className="w-auto"
+                />
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <SegmentedControl
-                  ariaLabel="Sort members"
-                  size="sm"
-                  value={sort}
-                  onValueChange={chooseSort}
-                  options={[
-                    { value: "attention" as const, label: "Most urgent" },
-                    { value: "health" as const, label: "Health score" },
-                    { value: "name" as const, label: "Name" },
-                  ]}
-                  className={cn("w-auto", colSort && "opacity-60")}
-                />
-                {/* Phones have no headings to tap: every column's sort from a menu. */}
-                <select
-                  aria-label="Sort by a column"
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs sm:hidden"
-                  value={colSort?.key ?? ""}
-                  onChange={(e) => (e.target.value ? sortByColumn(e.target.value as ColumnKey) : setColSort(null))}
-                >
-                  <option value="">More sorts…</option>
-                  {visibleCols.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <ColumnPicker extra={extraCols} onToggle={toggleColumn} />
-                {tagsData && tagsData.tags.length > 0 ? (
-                  <div role="radiogroup" aria-label="Filter by tag" className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[12px] text-muted-foreground">Tags:</span>
-                    {tagsData.tags.map((t) => {
-                      const n = summaries.filter((m) => (tagsData.members[m.data.userId] ?? []).includes(t.id)).length;
-                      const on = tagFilter === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={on}
-                          onClick={() => setTagFilter(on ? null : t.id)}
-                          className={cn(
-                            "rounded-full border px-2.5 py-0.5 text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            on ? TAG_CLASS[t.color] : "border-border text-muted-foreground hover:bg-muted/40",
-                          )}
-                        >
-                          {t.name} <span className="tabular opacity-80">{n}</span>
+              {/* What's filtering the list, each removable; and how it's sorted. */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px] text-muted-foreground">
+                {statusFilter ? <FilterChip label={`Status: ${ROSTER_STATUS[statusFilter]}`} onRemove={() => setStatusFilter(null)} /> : null}
+                {filter !== "all" ? (
+                  <FilterChip
+                    label={FILTERS.find((f) => f.value === filter)?.label ?? (filter === "safety" ? "Safety" : `Flag: ${FLAG_LABELS[filter as Flag]}`)}
+                    onRemove={() => setFilter("all")}
+                  />
+                ) : null}
+                {tagFilter ? (
+                  <FilterChip label={`Tag: ${tagsData?.tags.find((t) => t.id === tagFilter)?.name ?? "tag"}`} onRemove={() => setTagFilter(null)} />
+                ) : null}
+                {statusFilter || filter !== "all" || tagFilter ? (
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => {
+                      setStatusFilter(null);
+                      setFilter("all");
+                      setTagFilter(null);
+                    }}
+                  >
+                    Clear all
+                  </button>
+                ) : null}
+                {membersAs === "list" ? (
+                  <span className="ml-auto flex flex-wrap items-center gap-x-2">
+                    {colSort ? (
+                      <>
+                        Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()},{" "}
+                        {colSort.key === "status" ? (colSort.dir === -1 ? "needs attention first" : "on track first") : colSort.dir === 1 ? "low to high" : "high to low"}.
+                        <button type="button" className="font-medium text-primary hover:underline" onClick={() => sortByColumn(colSort.key)}>
+                          Reverse
                         </button>
-                      );
-                    })}
-                  </div>
+                        <button type="button" className="font-medium text-primary hover:underline" onClick={() => chooseSort("attention")}>
+                          Back to most urgent
+                        </button>
+                      </>
+                    ) : (
+                      <>Sorted by {sort === "health" ? "health score" : sort === "name" ? "name" : "most urgent"}.</>
+                    )}
+                  </span>
                 ) : null}
               </div>
-
-              {colSort && membersAs === "list" ? (
-                <p className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
-                  Sorted by {COLUMNS.find((c) => c.key === colSort.key)!.label.toLowerCase()},{" "}
-                  {colSort.key === "status" ? (colSort.dir === -1 ? "needs attention first" : "on track first") : colSort.dir === 1 ? "low to high" : "high to low"}.
-                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => sortByColumn(colSort.key)}>
-                    Reverse
-                  </button>
-                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => chooseSort("attention")}>
-                    Back to most urgent
-                  </button>
-                </p>
-              ) : null}
               {summaries.length === 0 ? (
                 <EmptyNote>
                   {overview.members.length === 0
@@ -1214,36 +1301,62 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                   />
                   Select all {shown.length} shown, for bulk actions
                 </label>
-                <div className="overflow-hidden molten-card rounded-[1.25rem] border border-primary/15 bg-card sm:overflow-x-auto">
+                <div className="molten-card rounded-[1.25rem] border border-primary/15 bg-card">
+                  {/* Headings: stick under the page header while the list scrolls down, and follow it sideways (synced in onScroll below). */}
+                  <div ref={headScroll} className="sticky top-16 z-20 hidden overflow-hidden rounded-t-[1.25rem] border-b border-b-border bg-card sm:block">
+                    <div className="min-w-[var(--member-min)] text-[11px] font-medium uppercase tracking-wide text-muted-foreground" style={gridStyle}>
+                      {/* Column groups: a label over each run of the same group. */}
+                      <div className="flex border-b border-b-border/60">
+                        <div className="sticky left-0 z-20 w-20 shrink-0 bg-card" />
+                        <div className={cn("grid flex-1 gap-x-3 border-l-2 border-l-transparent px-3 py-1", ROW_GRID)} style={gridStyle}>
+                          <span className="sticky left-20 z-20 -ml-3 bg-card pl-3" />
+                          {groupRuns.map((g, i) => (
+                            <span key={i} style={{ gridColumn: `span ${g.span}` }} className="truncate border-l border-border/60 pl-3 text-[10px] text-muted-foreground/80">
+                              {GROUP_LABEL[g.group]}
+                            </span>
+                          ))}
+                        </div>
+                        {nextOn ? <div className="w-24 shrink-0" /> : null}
+                      </div>
+                      <div className="flex">
+                        {/* Pinned: the select and remind boxes, then Client, stay put while the columns scroll. */}
+                        <div className="sticky left-0 z-20 w-20 shrink-0 bg-card" />
+                        <div className={cn("grid flex-1 gap-x-3 border-l-2 border-l-transparent px-3 py-2", ROW_GRID)} style={gridStyle}>
+                          <span className="sticky left-20 z-20 -ml-3 bg-card pl-3">Client</span>
+                          {visibleCols.map((c) => {
+                            const on = colSort?.key === c.key;
+                            return (
+                              <button
+                                key={c.key}
+                                type="button"
+                                onClick={() => sortByColumn(c.key)}
+                                aria-label={`Sort by ${c.label}${on ? `, now ${colSort!.dir === 1 ? "low to high" : "high to low"}` : ""}`}
+                                className={cn(
+                                  "flex items-center gap-0.5 whitespace-nowrap uppercase tracking-wide hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  ALIGN_HEAD[c.align],
+                                  groupStarts.has(c.key) && GROUP_EDGE,
+                                  on && "text-foreground",
+                                )}
+                              >
+                                {c.label}
+                                {on ? colSort!.dir === 1 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden /> : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {nextOn ? <div className="w-24 shrink-0" /> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    ref={bodyScroll}
+                    onScroll={(e) => {
+                      if (headScroll.current) headScroll.current.scrollLeft = e.currentTarget.scrollLeft;
+                    }}
+                    className="overflow-hidden rounded-[1.25rem] sm:overflow-x-auto sm:rounded-t-none"
+                  >
                   {/* The card's width; wider (and scrolling) only when the columns on don't fit. */}
                   <div className="sm:min-w-[var(--member-min)]" style={gridStyle}>
-                  <div className="hidden border-b border-b-border text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:flex">
-                  {/* Pinned: the select and remind boxes, then Client, stay put while the columns scroll. */}
-                  <div className="sticky left-0 z-20 w-20 shrink-0 bg-card" />
-                  <div className={cn("grid flex-1 gap-x-3 border-l-2 border-l-transparent px-3 py-2", ROW_GRID)} style={gridStyle}>
-                    <span className="sticky left-20 z-20 -ml-3 bg-card pl-3">Client</span>
-                    {visibleCols.map((c) => {
-                      const on = colSort?.key === c.key;
-                      return (
-                        <button
-                          key={c.key}
-                          type="button"
-                          onClick={() => sortByColumn(c.key)}
-                          aria-label={`Sort by ${c.label}${on ? `, now ${colSort!.dir === 1 ? "low to high" : "high to low"}` : ""}`}
-                          className={cn(
-                            "flex items-center gap-0.5 whitespace-nowrap uppercase tracking-wide hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            ALIGN_HEAD[c.align],
-                            on && "text-foreground",
-                          )}
-                        >
-                          {c.label}
-                          {on ? colSort!.dir === 1 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {nextOn ? <div className="w-24 shrink-0" /> : null}
-                  </div>
                   <ul className="divide-y divide-border">
                     {shown.map((m) => {
                       const ticked = picked.includes(m.data.userId);
@@ -1285,6 +1398,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                               roster={rosterOf(m.data.userId)}
                               next={next}
                               ticked={ticked}
+                              groupStarts={groupStarts}
                             />
                           </div>
                           {nextOn ? (
@@ -1306,6 +1420,7 @@ export function CoachDashboard({ companyId }: { companyId: string }) {
                       );
                     })}
                   </ul>
+                  </div>
                   </div>
                 </div>
                 </>
@@ -1479,6 +1594,85 @@ const coachingLength = (start: string, today: string) => {
   const d = Math.max(0, daysBetween(start, today));
   return d < 7 ? `day ${d + 1}` : `wk ${Math.floor(d / 7) + 1}`;
 };
+/** The faint line where a column group starts. */
+const GROUP_EDGE = "border-l border-border/60 pl-3";
+const STATUS_RING: Record<CoachStatus, string> = {
+  attention: "border-destructive/60 ring-1 ring-destructive/40",
+  monitor: "border-warning/60 ring-1 ring-warning/40",
+  "on-track": "border-success/60 ring-1 ring-success/40",
+};
+const STATUS_TEXT: Record<CoachStatus, string> = { attention: "text-destructive", monitor: "text-warning", "on-track": "text-success" };
+
+/** An active filter, with × to remove it. */
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-[12px] font-medium text-primary">
+      {label}
+      <button type="button" onClick={onRemove} aria-label={`Remove ${label}`} className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * A toolbar button that opens a panel (Filters, Views): under it on a
+ * computer, a full-screen sheet on a phone. Closes on a click outside or Escape.
+ */
+function ToolbarMenu({ label, icon, count, wide, children }: { label: string; icon: React.ReactNode; count?: number; wide?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+  const box = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:h-3.5 [&_svg]:w-3.5",
+          count ? "border-primary/50 text-foreground" : "border-border text-muted-foreground",
+        )}
+      >
+        {icon}
+        {label}
+        {count ? <span className="tabular rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">{count}</span> : null}
+      </button>
+      {open ? (
+        <div
+          className={cn(
+            "fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] top-20 z-50 overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-xl",
+            "sm:absolute sm:inset-auto sm:left-0 sm:top-full sm:mt-1 sm:max-h-[70vh] sm:rounded-xl",
+            wide ? "sm:w-[26rem]" : "sm:w-64",
+          )}
+        >
+          <div className="mb-2 flex items-center justify-between sm:hidden">
+            <p className="text-sm font-semibold">{label}</p>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-muted/40">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** A ticked row's tint, painted over the pinned cells' solid background too. */
 const TICKED = "shadow-[inset_0_0_0_999px_hsl(var(--primary)/0.06)]";
 
@@ -1630,6 +1824,7 @@ function MemberRow({
   roster,
   next,
   ticked,
+  groupStarts,
 }: {
   m: MemberSummary;
   unit: WeightUnit;
@@ -1646,6 +1841,8 @@ function MemberRow({
   roster: RosterInfo;
   next: NextAction;
   ticked: boolean;
+  /** Columns that start a group, for the faint line between groups. */
+  groupStarts: ReadonlySet<ColumnKey>;
 }) {
   const week = m.week.percent === null ? "—" : `${m.week.percent}%`;
   const r = roster;
@@ -1755,84 +1952,106 @@ function MemberRow({
         return <span className="block truncate">{m.data.program ?? "—"}</span>;
     }
   };
+  // One line a member: flags fold into a chip that opens them under the row.
+  const flagCount = m.flags.length + (m.paused ? 1 : 0);
+  const urgentFlag = m.flags.some((f) => FLAG_VARIANT[f] === "danger");
+  const [flagsOpen, setFlagsOpen] = React.useState(false);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      style={gridStyle}
-      aria-current={selected ? "true" : undefined}
-      className={cn(
-        "grid w-full items-center gap-x-3 border-l-2 px-3 py-2.5 text-left transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        ROW_GRID,
-        selected ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-muted/40",
-      )}
-    >
-      <span
-        className={cn(
-          "flex min-w-0 items-center gap-3 sm:sticky sm:left-20 sm:z-10 sm:-my-2.5 sm:-ml-3 sm:self-stretch sm:bg-card sm:py-2.5 sm:pl-3",
-          ticked && TICKED,
-          selected && "sm:shadow-[inset_0_0_0_999px_hsl(var(--primary)/0.05)]",
-        )}
-      >
-        <Avatar name={m.displayName} url={m.data.avatarUrl} />
-        <span className="min-w-0 flex-1 space-y-1">
-          <span className="flex items-baseline gap-1.5">
-            <span className="truncate text-sm font-medium">{m.displayName}</span>
-            {m.streak > 0 ? (
-              <span className="tabular inline-flex shrink-0 items-center gap-0.5 text-xs text-primary">
-                <Flame className="h-3 w-3" aria-hidden />
-                {m.streak}
-                <span className="sr-only">-day streak</span>
+    <div className={cn("border-l-2 transition-colors", selected ? "border-l-primary bg-primary/5" : "border-l-transparent hover:bg-muted/40")}>
+      {/* The whole row opens them; the name is the keyboard's way in. */}
+      <div style={gridStyle} onClick={onOpen} className={cn("grid w-full cursor-pointer items-center gap-x-3 px-3 py-2.5 text-left", ROW_GRID)}>
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-3 sm:sticky sm:left-20 sm:z-10 sm:-my-2.5 sm:-ml-3 sm:self-stretch sm:bg-card sm:py-2.5 sm:pl-3",
+            ticked && TICKED,
+            selected && "sm:shadow-[inset_0_0_0_999px_hsl(var(--primary)/0.05)]",
+          )}
+        >
+          <Avatar name={m.displayName} url={m.data.avatarUrl} size="h-8 w-8" />
+          <span className="min-w-0 flex-1 space-y-1 sm:space-y-0">
+            <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
+                aria-current={selected ? "true" : undefined}
+                className="truncate rounded-sm text-left text-sm font-medium hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {m.displayName}
+              </button>
+              {m.streak > 0 ? (
+                <span className="tabular inline-flex shrink-0 items-center gap-0.5 text-xs text-primary">
+                  <Flame className="h-3 w-3" aria-hidden />
+                  {m.streak}
+                  <span className="sr-only">-day streak</span>
+                </span>
+              ) : null}
+              {flagCount > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={flagsOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFlagsOpen((v) => !v);
+                  }}
+                  title={[m.paused ? pausedLabel(m.paused) : null, ...m.flags.map((f) => FLAG_LABELS[f])].filter(Boolean).join("\n")}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-px text-[10px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    urgentFlag ? "border-destructive/40 text-destructive" : "border-border text-muted-foreground",
+                  )}
+                >
+                  {flagCount} flag{flagCount === 1 ? "" : "s"}
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", flagsOpen && "rotate-180")} aria-hidden />
+                </button>
+              ) : null}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground sm:hidden">
+              {m.data.username && m.data.name ? `@${m.data.username} · ` : ""}last log {describeDaysAgo(m.daysSinceLog)}
+            </span>
+            <span className="tabular flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:hidden">
+              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
+              <TrendLine m={m} today={today} unit={unit} compact />
+              <span className={ciTone}>Check-in: {ci.toLowerCase()}</span>
+            </span>
+            {next ? (
+              <span className="block truncate text-xs sm:hidden">
+                <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
               </span>
             ) : null}
+            <span className="sm:hidden">{tags}</span>
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {m.data.username && m.data.name ? <span className="sm:hidden">@{m.data.username} · </span> : null}
-            <span className="sm:hidden">last log {describeDaysAgo(m.daysSinceLog)}</span>
-            {m.data.username && m.data.name ? <span className="hidden sm:inline">@{m.data.username}</span> : null}
-          </span>
-          <span className="tabular flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:hidden">
-            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_CHIP[r.status])}>{ROSTER_STATUS[r.status]}</span>
-            <TrendLine m={m} today={today} unit={unit} compact />
-            <span className={ciTone}>Check-in: {ci.toLowerCase()}</span>
-          </span>
-          {next ? (
-            <span className="block truncate text-xs sm:hidden">
-              <span className="font-medium">{NEXT_LABEL[next.kind]}:</span> <span className="text-muted-foreground">{next.reason}</span>
-            </span>
-          ) : null}
-          {tags}
-          {m.flags.length > 0 || m.paused ? (
-            <span className="flex flex-wrap gap-1">
-              {m.paused ? (
-                <Badge variant="secondary" className="px-2 py-0 text-[11px]">
-                  {pausedLabel(m.paused)}
-                </Badge>
-              ) : null}
-              {m.flags.map((f) => (
-                <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
-                  {FLAG_LABELS[f]}
-                </Badge>
-              ))}
-            </span>
-          ) : null}
         </span>
-      </span>
-      {/* Phones: the health score beside the name; computers: the columns on. */}
-      <span className="flex justify-center sm:hidden">
-        <HealthPill health={m.health} />
-      </span>
-      {cols.map((c) => (
-        <span key={c.key} className={cn("relative hidden min-w-0 text-sm sm:block", ALIGN_CELL[c.align])}>
-          <span className="sr-only">{c.label}: </span>
-          {cell(c)}
+        {/* Phones: the health score beside the name; computers: the columns on. */}
+        <span className="flex justify-center sm:hidden">
+          <HealthPill health={m.health} />
         </span>
-      ))}
-    </button>
+        {cols.map((c) => (
+          <span key={c.key} className={cn("relative hidden min-w-0 text-sm sm:block", ALIGN_CELL[c.align], groupStarts.has(c.key) && GROUP_EDGE)}>
+            <span className="sr-only">{c.label}: </span>
+            {cell(c)}
+          </span>
+        ))}
+      </div>
+      {flagsOpen ? (
+        <div className="flex flex-wrap gap-1 px-3 pb-2.5 sm:sticky sm:left-20 sm:w-fit sm:max-w-[40rem] sm:pl-14">
+          {m.paused ? (
+            <Badge variant="secondary" className="px-2 py-0 text-[11px]">
+              {pausedLabel(m.paused)}
+            </Badge>
+          ) : null}
+          {m.flags.map((f) => (
+            <Badge key={f} variant={FLAG_VARIANT[f]} className="px-2 py-0 text-[11px]">
+              {FLAG_LABELS[f]}
+              {f === "slipping" && m.data.slipping?.length ? `: ${m.data.slipping.slice(0, 2).join(", ")}` : ""}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
-
 const ZONE_RING: Record<Zone, string> = {
   green: "border-success/50 bg-success/10 text-success",
   yellow: "border-warning/50 bg-warning/10 text-warning",

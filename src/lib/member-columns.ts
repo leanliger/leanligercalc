@@ -38,11 +38,22 @@ export type ColumnKey =
 
 export type SortDir = 1 | -1;
 
+export type ColumnGroup = "progress" | "adherence" | "engagement" | "coaching" | "more";
+export const GROUP_LABEL: Record<ColumnGroup, string> = {
+  progress: "Progress",
+  adherence: "Adherence · 14 days",
+  engagement: "Engagement",
+  coaching: "Coaching",
+  more: "More",
+};
+
 export interface ColumnDef {
   key: ColumnKey;
   label: string;
   /** Always shown (not in the picker's choices). */
   fixed?: boolean;
+  /** The label above it (Members' column groups); a run of the same group shares one label. */
+  group: ColumnGroup;
   /** The first click's direction: whichever puts the ones needing you on top. */
   firstDir: SortDir;
   /** Grid track on a computer. */
@@ -52,29 +63,29 @@ export interface ColumnDef {
 
 export const COLUMNS: ColumnDef[] = [
   // The client roster, on by default.
-  { key: "goalType", label: "Goal", firstDir: 1, width: "6rem", align: "left" },
-  { key: "start", label: "Start", firstDir: -1, width: "6.5rem", align: "left" },
-  { key: "weight", label: "Weight", firstDir: -1, width: "4.75rem", align: "right" },
-  { key: "trend", label: "4-wk trend", firstDir: -1, width: "6.75rem", align: "right" },
-  { key: "progress", label: "Goal progress", firstDir: 1, width: "9.5rem", align: "left" },
-  { key: "nutrition", label: "Nutrition", firstDir: 1, width: "8.5rem", align: "left" },
-  { key: "workoutPct", label: "Workouts", firstDir: 1, width: "6.5rem", align: "left" },
-  { key: "habits", label: "Habits", firstDir: 1, width: "6.5rem", align: "left" },
-  { key: "checkin", label: "Check-in", firstDir: -1, width: "7rem", align: "left" },
-  { key: "active", label: "Last active", firstDir: -1, width: "6rem", align: "left" },
-  { key: "status", label: "Status", firstDir: -1, width: "8rem", align: "left" },
-  { key: "next", label: "Next action", firstDir: -1, width: "15rem", align: "left" },
+  { key: "goalType", label: "Goal", group: "progress", firstDir: 1, width: "6rem", align: "left" },
+  { key: "start", label: "Start", group: "progress", firstDir: -1, width: "6.5rem", align: "left" },
+  { key: "weight", label: "Weight", group: "progress", firstDir: -1, width: "4.75rem", align: "right" },
+  { key: "trend", label: "4-wk trend", group: "progress", firstDir: -1, width: "6.75rem", align: "right" },
+  { key: "progress", label: "Goal progress", group: "progress", firstDir: 1, width: "9.5rem", align: "left" },
+  { key: "nutrition", label: "Nutrition", group: "adherence", firstDir: 1, width: "8.5rem", align: "left" },
+  { key: "workoutPct", label: "Workouts", group: "adherence", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "habits", label: "Habits", group: "adherence", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "checkin", label: "Check-in", group: "engagement", firstDir: -1, width: "7rem", align: "left" },
+  { key: "active", label: "Last active", group: "engagement", firstDir: -1, width: "6rem", align: "left" },
+  { key: "status", label: "Status", group: "coaching", firstDir: -1, width: "8rem", align: "left" },
+  { key: "next", label: "Next action", group: "coaching", firstDir: -1, width: "15rem", align: "left" },
   // More to add.
-  { key: "health", label: "Health score", firstDir: 1, width: "4.5rem", align: "center" },
-  { key: "week", label: "Habits this week", firstDir: 1, width: "4.5rem", align: "right" },
-  { key: "lastLog", label: "Last log", firstDir: -1, width: "5.5rem", align: "left" },
-  { key: "risk", label: "Quit risk", firstDir: -1, width: "5rem", align: "left" },
-  { key: "goal", label: "Goal date", firstDir: -1, width: "5rem", align: "right" },
-  { key: "workouts", label: "Workouts this week", firstDir: 1, width: "5rem", align: "right" },
-  { key: "protein", label: "Protein", firstDir: 1, width: "4.5rem", align: "right" },
-  { key: "joined", label: "Joined", firstDir: -1, width: "4.5rem", align: "right" },
-  { key: "tags", label: "Tags", firstDir: 1, width: "6.5rem", align: "left" },
-  { key: "program", label: "Program", firstDir: 1, width: "7rem", align: "left" },
+  { key: "health", label: "Health score", group: "coaching", firstDir: 1, width: "4.5rem", align: "center" },
+  { key: "week", label: "Habits this week", group: "more", firstDir: 1, width: "4.5rem", align: "right" },
+  { key: "lastLog", label: "Last log", group: "engagement", firstDir: -1, width: "5.5rem", align: "left" },
+  { key: "risk", label: "Quit risk", group: "coaching", firstDir: -1, width: "5rem", align: "left" },
+  { key: "goal", label: "Goal date", group: "progress", firstDir: -1, width: "5rem", align: "right" },
+  { key: "workouts", label: "Workouts this week", group: "more", firstDir: 1, width: "5rem", align: "right" },
+  { key: "protein", label: "Protein", group: "more", firstDir: 1, width: "4.5rem", align: "right" },
+  { key: "joined", label: "Joined", group: "progress", firstDir: -1, width: "4.5rem", align: "right" },
+  { key: "tags", label: "Tags", group: "more", firstDir: 1, width: "6.5rem", align: "left" },
+  { key: "program", label: "Program", group: "more", firstDir: 1, width: "7rem", align: "left" },
 ];
 
 export const OPTIONAL_COLUMNS = COLUMNS.filter((c) => !c.fixed).map((c) => c.key);
