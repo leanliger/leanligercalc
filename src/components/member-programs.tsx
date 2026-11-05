@@ -83,6 +83,8 @@ export function MemberPrograms({
   onAdd,
   restDays,
   unit,
+  onRestToday,
+  restLimitReached,
 }: {
   settings: TrainingSettings;
   workouts: readonly Workout[];
@@ -99,6 +101,9 @@ export function MemberPrograms({
   /** Days they ticked "rest day" (excused in Plan vs actual). */
   restDays: ReadonlySet<string>;
   unit: WeightUnit;
+  /** Tick or untick today's "rest day". */
+  onRestToday: (on: boolean) => void;
+  restLimitReached: boolean;
 }) {
   const programs = settings.programs;
   const active = programs.find((p) => p.id === settings.activeProgramId) ?? programs[0] ?? null;
@@ -147,6 +152,8 @@ export function MemberPrograms({
           live={live}
           onStart={(day) => onStart(active, day)}
           onResume={onResume}
+          onRestToday={onRestToday}
+          restLimitReached={restLimitReached}
         />
       ) : (
         <NextUp program={active} workouts={workouts} live={live} onStart={onStart} onResume={onResume} />

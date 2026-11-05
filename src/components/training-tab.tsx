@@ -43,7 +43,7 @@ import { RestTimerBar, useRestTimer } from "@/components/rest-timer";
 import { WorkoutLogger } from "@/components/workout-logger";
 import { addDays, formatShort } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
-import { REST_KEY, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
+import { isRestDay, MAX_REST_DAYS_PER_WEEK, REST_KEY, restDaysInWeek, weekStartOf, type HabitDef, type HabitLog } from "@/lib/habits";
 import {
   MAX_PROGRAMS,
   REST_PRESETS,
@@ -244,6 +244,17 @@ export function TrainingTab({
     window.scrollTo({ top: 0 });
   };
 
+  /** Programs → Plan vs actual: tick or untick today's "rest day" (the same tick as on Today). */
+  const setRestToday = (on: boolean) => {
+    const entries = { ...(habitLogs.find((l) => l.date === today)?.entries ?? {}), [REST_KEY]: on };
+    onSaveHabits({ date: today, entries }).catch(() => {});
+  };
+  // The same weekly cap as Today's rest-day tick.
+  const restLimitReached = React.useMemo(() => {
+    const map = new Map(habitLogs.map((l) => [l.date, l.entries]));
+    return !isRestDay(map.get(today)) && restDaysInWeek(map, weekStartOf(today)) >= MAX_REST_DAYS_PER_WEEK;
+  }, [habitLogs, today]);
+
   /** Completing a workout ticks "Completed workout" on the Check-in scorecard. */
   const tickWorkoutHabit = (date: string) => {
     const def = habits.find((h) => h.link === "workout");
@@ -369,6 +380,8 @@ export function TrainingTab({
         onAdd={addProgram}
         restDays={restDays}
         unit={unit}
+        onRestToday={setRestToday}
+        restLimitReached={restLimitReached}
       />
     );
   }

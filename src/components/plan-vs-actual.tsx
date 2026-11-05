@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { CalendarCheck, ChevronLeft, ChevronRight, Play, Redo2, Trophy } from "lucide-react";
+import { CalendarCheck, ChevronLeft, ChevronRight, Moon, Play, Redo2, Trophy, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatShort } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
+import { MAX_REST_DAYS_PER_WEEK } from "@/lib/habits";
 import { dayLines, planVsActual, type DayKind, type PlanDay } from "@/lib/plan-actual";
+import { sessionStates } from "@/lib/program-schedule";
 import type { Program, ProgramDay, Workout } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
@@ -24,6 +26,9 @@ import { cn } from "@/lib/utils";
  * (legend below), and the day panel spells it out.
  */
 
+/** Today's box, planned or not: outlined in white (the foreground). */
+const TODAY_CELL = "border-2 border-foreground ring-1 ring-foreground/30";
+
 const KIND: Record<DayKind, { label: string; cell: string; text: string }> = {
   done: { label: "Done", cell: "border-success/50 bg-success/15", text: "text-success" },
   part: { label: "Cut short", cell: "border-warning/50 bg-warning/15", text: "text-warning" },
@@ -31,7 +36,7 @@ const KIND: Record<DayKind, { label: string; cell: string; text: string }> = {
   rest: { label: "Rest day", cell: "border-border bg-muted/40", text: "text-primary" },
   off: { label: "Rest", cell: "border-transparent", text: "text-muted-foreground" },
   extra: { label: "Extra", cell: "border-primary/50", text: "text-primary" },
-  today: { label: "Today", cell: "border-primary ring-2 ring-primary/40", text: "text-primary" },
+  today: { label: "Today", cell: TODAY_CELL, text: "text-foreground" },
   planned: { label: "Planned", cell: "border-dashed border-border", text: "text-muted-foreground" },
 };
 
@@ -48,6 +53,8 @@ export function PlanVsActualCard({
   live,
   onStart,
   onResume,
+  onRestToday,
+  restLimitReached,
 }: {
   /** Their active program; its calendar is the plan. */
   program: Program | null;
@@ -63,11 +70,21 @@ export function PlanVsActualCard({
   live?: Workout | null;
   onStart?: (day: ProgramDay) => void;
   onResume?: () => void;
+  /** Member's copy: tick or untick today's "rest day" (the same tick as on Today). */
+  onRestToday?: (on: boolean) => void;
+  /** They've used this week's rest days, so today can't be one. */
+  restLimitReached?: boolean;
 }) {
   const [month, setMonth] = React.useState(today.slice(0, 7));
   const [picked, setPicked] = React.useState(today);
   const { days, summary } = React.useMemo(() => planVsActual(program, workouts, restDays, `${month}-01`, today), [program, workouts, restDays, month, today]);
   const day = days.find((d) => d.date === picked) ?? days[0]!;
+  // The next session still to do after today, for today's panel on a rest day.
+  const next = React.useMemo(() => {
+    if (!program?.schedule) return null;
+    const s = sessionStates(program, workouts.filter((w) => w.finishedAt !== null), today).find((x) => x.date > today && x.status === "upcoming");
+    return s ? { date: s.date, day: s.day } : null;
+  }, [program, workouts, today]);
   const shift = (n: number) => {
     const d = new Date(`${month}-15T00:00:00Z`);
     d.setUTCMonth(d.getUTCMonth() + n);
@@ -79,7 +96,15 @@ export function PlanVsActualCard({
   const lead = weekdayIndex(days[0]!.date);
   // The planned session's name; a session moved elsewhere keeps its name (struck through) here.
   const name = (d: PlanDay) =>
-    d.kind === "extra" ? "Extra" : d.kind === "off" ? (d.movedTo ? (d.plan?.name ?? "Moved") : "Rest") : d.plan?.name ?? (d.workouts[0]?.name || "Workout");
+    d.kind === "extra"
+      ? "Extra"
+      : d.kind === "off"
+        ? d.movedTo
+          ? (d.plan?.name ?? "Moved")
+          : "Rest"
+        : d.kind === "rest"
+          ? "Rest"
+          : (d.plan?.name ?? (d.workouts[0]?.name || "Workout"));
 
   return (
     <Card>
@@ -139,6 +164,7 @@ export function PlanVsActualCard({
                       "flex h-11 min-w-0 flex-col justify-between overflow-hidden rounded-lg border px-0.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-14 sm:px-1",
                       k.cell,
                       d.movedTo && "border-dashed border-border",
+                      d.date === today && TODAY_CELL,
                       d.date === picked && "outline outline-2 outline-primary",
                     )}
                   >
@@ -158,7 +184,7 @@ export function PlanVsActualCard({
               })}
             </div>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {(["done", "part", "missed", "rest", "extra"] as const).map((k) => (
+              {(["done", "part", "missed", "rest", "extra", "today"] as const).map((k) => (
                 <span key={k} className="flex items-center gap-1">
                   <span className={cn("h-2.5 w-2.5 rounded-sm border", KIND[k].cell)} aria-hidden />
                   {KIND[k].label}
@@ -173,7 +199,19 @@ export function PlanVsActualCard({
             </div>
           </div>
 
-          <DayDetail day={day} unit={unit} custom={custom} who={who} today={today} live={live ?? null} onStart={onStart} onResume={onResume} />
+          <DayDetail
+            day={day}
+            unit={unit}
+            custom={custom}
+            who={who}
+            today={today}
+            live={live ?? null}
+            onStart={onStart}
+            onResume={onResume}
+            next={next}
+            onRestToday={onRestToday}
+            restLimitReached={restLimitReached ?? false}
+          />
         </div>
       </CardContent>
     </Card>
@@ -189,6 +227,9 @@ function DayDetail({
   live,
   onStart,
   onResume,
+  next,
+  onRestToday,
+  restLimitReached,
 }: {
   day: PlanDay;
   unit: WeightUnit;
@@ -198,7 +239,13 @@ function DayDetail({
   live: Workout | null;
   onStart?: (day: ProgramDay) => void;
   onResume?: () => void;
+  next: { date: string; day: ProgramDay } | null;
+  onRestToday?: (on: boolean) => void;
+  restLimitReached: boolean;
 }) {
+  const isToday = d.date === today;
+  // Today with nothing to do (a day off, or rest ticked): offer the next session instead.
+  const restingToday = isToday && ((d.kind === "off" && !d.movedTo) || d.kind === "rest");
   // Member's copy: today's session, a missed one, or a later one done today instead.
   const startable = onStart && d.plan && (d.kind === "today" || d.kind === "missed" || d.kind === "planned") ? d.plan : null;
   const startLabel = !startable ? "" : d.kind === "today" ? `Start ${startable.name}` : d.kind === "missed" ? `Do ${startable.name} today` : "Do it today instead";
@@ -210,7 +257,7 @@ function DayDetail({
     <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
       <div>
         <p className="font-semibold">
-          {weekday} {formatShort(d.date)} · {d.kind === "extra" ? "Extra workout" : d.plan ? d.plan.name : d.kind === "off" ? "Rest" : (w?.name ?? "Workout")}
+          {weekday} {formatShort(d.date)} · {d.kind === "extra" ? "Extra workout" : d.kind === "rest" && !d.plan ? "Rest day" : d.plan ? d.plan.name : d.kind === "off" ? "Rest" : (w?.name ?? "Workout")}
         </p>
         <p className={cn("text-[12px]", KIND[d.kind].text)}>
           {d.movedTo ? "Moved" : KIND[d.kind].label}
@@ -229,6 +276,11 @@ function DayDetail({
       ) : d.kind === "missed" ? (
         <p className="text-destructive">Planned, but no workout and no rest day ticked.</p>
       ) : null}
+      {restingToday && next ? (
+        <p className="text-[13px]">
+          <span className="text-muted-foreground">Next:</span> {next.day.name} · {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekdayIndex(next.date)]} {formatShort(next.date)}
+        </p>
+      ) : null}
       {lines.length ? (
         <div className="space-y-1">
           <div className="grid grid-cols-[minmax(0,1.1fr)_3.5rem_minmax(0,1.5fr)] gap-2 border-b border-border pb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -240,12 +292,15 @@ function DayDetail({
             <div key={l.exerciseId} className="grid grid-cols-[minmax(0,1.1fr)_3.5rem_minmax(0,1.5fr)] items-start gap-2 text-[13px]">
               <span className="truncate">{l.name}</span>
               <span className="tabular text-[12px] text-muted-foreground">{l.target ?? "—"}</span>
-              <span className={cn("tabular text-[12px]", d.kind === "planned" || d.kind === "today" ? "text-muted-foreground" : LINE_TONE[l.status])}>
+              <span className={cn("tabular text-[12px]", d.kind === "planned" || d.kind === "today" || !w ? "text-muted-foreground" : LINE_TONE[l.status])}>
                 {d.kind === "planned" || (d.kind === "today" && !l.sets.length)
                   ? "planned"
                   : l.sets.length
                     ? `${l.status === "short" ? `${l.sets.length} sets: ` : ""}${l.sets.map((s) => (s.weight ? `${lb(s.weight)}×${s.reps}` : `${s.reps} reps`)).join(", ")}`
-                    : "skipped"}
+                    : // Nothing logged that day: not started, so nothing "skipped".
+                      w
+                      ? "skipped"
+                      : "—"}
                 {l.status === "extra" ? " (added)" : ""}
               </span>
             </div>
@@ -270,6 +325,32 @@ function DayDetail({
             {startLabel}
           </Button>
         )
+      ) : null}
+      {restingToday && next && onStart && !live ? (
+        <Button className="w-full" variant="outline" onClick={() => onStart(next.day)}>
+          <Play />
+          Do {next.day.name} today instead
+        </Button>
+      ) : null}
+      {/* Today only: excuse today's session with a rest day, or take it back. */}
+      {onRestToday && isToday && d.kind === "today" && !live ? (
+        restLimitReached ? (
+          <p className="text-[12px] text-muted-foreground">You&apos;ve used your {MAX_REST_DAYS_PER_WEEK} rest days this week.</p>
+        ) : (
+          <>
+            <Button className="w-full" variant="outline" onClick={() => onRestToday(true)}>
+              <Moon />
+              Rest today instead
+            </Button>
+            <p className="text-[11px] text-muted-foreground">Counts as an excused rest day, not a miss.</p>
+          </>
+        )
+      ) : null}
+      {onRestToday && isToday && d.kind === "rest" ? (
+        <Button className="w-full" variant="ghost" onClick={() => onRestToday(false)}>
+          <Undo2 />
+          Not resting: undo rest day
+        </Button>
       ) : null}
     </div>
   );
