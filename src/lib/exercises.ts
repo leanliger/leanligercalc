@@ -97,6 +97,7 @@ const ROWS: Row[] = [
   ["db-bench-press", "Dumbbell bench press", "chest", "dumbbell", "Lower to a deep stretch at the chest", "Press up and slightly in"],
   ["incline-db-press", "Incline dumbbell press", "chest", "dumbbell", "Bench at about 30°", "Elbows slightly tucked, not flared"],
   ["machine-chest-press", "Machine chest press", "chest", "machine", "Handles level with mid-chest", "Shoulder blades stay back on the pad"],
+  ["plate-loaded-chest-press", "Plate-loaded chest press", "chest", "machine", "Seat so the handles line up with mid-chest", "Shoulder blades back on the pad, control the plates down"],
   ["incline-machine-press", "Incline machine chest press", "chest", "machine", "Seat so the handles line up with your upper chest", "Shoulder blades back on the pad, press up and out"],
   ["smith-bench-press", "Smith machine bench press", "chest", "smith", "Set the bench so the bar meets mid-chest", "Shoulder blades pinched, control the lowering"],
   ["smith-incline-press", "Smith machine incline bench press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
@@ -195,6 +196,7 @@ const ROWS: Row[] = [
 const ART_OF: Partial<Record<string, string>> = {
   "machine-reverse-v-squat": "hack-squat",
   "cable-lat-pullover": "straight-arm-pulldown",
+  "plate-loaded-chest-press": "machine-chest-press",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
@@ -212,6 +214,7 @@ const ALIASES: Partial<Record<string, string>> = {
   "machine-triceps-extension": "triceps extension machine seated",
   "triceps-dip-machine": "seated dip machine",
   "leg-press-calf-raise": "calf press",
+  "plate-loaded-chest-press": "plate loaded hammer strength chest press iso lateral",
 };
 
 /**
