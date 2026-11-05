@@ -80,6 +80,7 @@ export function MemberPrograms({
   onEdit,
   onCopy,
   onAdd,
+  restDays,
 }: {
   settings: TrainingSettings;
   workouts: readonly Workout[];
@@ -93,6 +94,8 @@ export function MemberPrograms({
   /** Make my own copy of a coach's program (and open it). */
   onCopy: (id: string) => void;
   onAdd: (template: ProgramTemplate | null) => void;
+  /** Days they ticked "rest day" (shown on the calendar as excused). */
+  restDays: ReadonlySet<string>;
 }) {
   const programs = settings.programs;
   const active = programs.find((p) => p.id === settings.activeProgramId) ?? programs[0] ?? null;
@@ -129,7 +132,7 @@ export function MemberPrograms({
         onCopy={onCopy}
       />
       {active.schedule ? (
-        <ProgramCalendarPanel key={active.id} program={active} settings={settings} workouts={workouts} today={today} live={live} onStart={onStart} onResume={onResume} />
+        <ProgramCalendarPanel key={active.id} program={active} settings={settings} workouts={workouts} today={today} live={live} onStart={onStart} onResume={onResume} restDays={restDays} />
       ) : (
         <NextUp program={active} workouts={workouts} live={live} onStart={onStart} onResume={onResume} />
       )}

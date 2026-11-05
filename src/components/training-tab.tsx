@@ -34,7 +34,6 @@ import { NUDGE_IDLE_MIN, NUDGE_REPEAT_MIN } from "@/lib/workout-nudge";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { StrengthTrendsCard } from "@/components/strength-trends-card";
 import { RecentRecordsCard, TrainingVolumeCard, WorkoutAdherenceCard } from "@/components/training-load-card";
-import { PlanVsActualCard } from "@/components/plan-vs-actual";
 import { restDaysOf } from "@/lib/plan-actual";
 import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
@@ -368,6 +367,7 @@ export function TrainingTab({
         onEdit={(id) => setView({ kind: "program", id })}
         onCopy={copyProgram}
         onAdd={addProgram}
+        restDays={restDays}
       />
     );
   }
@@ -399,7 +399,6 @@ export function TrainingTab({
         <div className="space-y-5">
           <MemberLiftGoals workouts={workouts} unit={unit} today={today} cutting={cutting} cloud={cloud} />
           <WorkoutAdherenceCard workouts={workouts} program={activeProgram} today={today} restDays={restDays} />
-          <PlanVsActualCard program={activeProgram} workouts={workouts} restDays={restDays} today={today} unit={unit} custom={custom} />
           <TrainingVolumeCard workouts={workouts} unit={unit} today={today} />
           <RecentRecordsCard workouts={workouts} unit={unit} today={today} onOpen={(id) => setView({ kind: "exercise", id })} />
           <StrengthTrendsCard workouts={workouts} unit={unit} today={today} custom={custom} onOpen={(id) => setView({ kind: "exercise", id })} />
