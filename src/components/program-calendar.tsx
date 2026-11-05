@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftRight, CalendarDays, Check, ChevronLeft, ChevronRight, Moon, Play, Star, UserCheck, X } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, Check, ChevronLeft, ChevronRight, Play, Star, UserCheck, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,46 +17,27 @@ import {
 } from "@/lib/program-schedule";
 import { findExercise, formatDuration, formatTarget, summarizeWorkout, type Program, type ProgramDay, type TrainingSettings, type Workout } from "@/lib/training";
 import { WEEKDAY_LETTER, WEEKDAY_SHORT } from "@/lib/weekday-pattern";
-import { cutShort } from "@/lib/plan-actual";
 import { cn } from "@/lib/utils";
 
-/**
- * How a session went, for the calendar: the schedule's own status, with a
- * done session cut short (a planned exercise skipped or fewer sets) and a
- * missed one excused by a ticked rest day (src/lib/plan-actual.ts).
- */
-type CellStatus = SessionState["status"] | "part" | "rest";
-
-const STATUS_CELL: Record<CellStatus, string> = {
+const STATUS_CELL: Record<SessionState["status"], string> = {
   done: "border-success/50 bg-success/15 text-success",
-  part: "border-warning/50 bg-warning/15 text-warning",
-  missed: "border-dashed border-destructive/60 text-destructive",
-  rest: "border-border bg-muted/40 text-primary",
+  missed: "border-dashed border-muted-foreground/40 text-muted-foreground",
   today: "border-primary bg-primary/15 text-primary ring-2 ring-primary/40",
-  upcoming: "border-dashed border-primary/40 text-foreground",
+  upcoming: "border-primary/40 bg-primary/5 text-foreground",
 };
 
-const STATUS_TEXT: Record<CellStatus, string> = {
+const STATUS_TEXT: Record<SessionState["status"], string> = {
   done: "Done",
-  part: "Cut short",
   missed: "Missed",
-  rest: "Rest day",
   today: "Today",
   upcoming: "Planned",
 };
-
-function cellStatus(s: SessionState, restDays: ReadonlySet<string>): CellStatus {
-  if (s.status === "done" && s.workout) return cutShort(s.day, s.workout) ? "part" : "done";
-  if (s.status === "missed" && restDays.has(s.date)) return "rest";
-  return s.status;
-}
 
 /** "Mon · Tue · Thu · Fri" */
 const weekdaysText = (days: readonly number[]) => days.map((d) => WEEKDAY_SHORT[d]).join(" · ");
 const isCoachProgram = (p: Program) => p.id.startsWith("coach_");
 
 const noop = () => {};
-const NO_DAYS: ReadonlySet<string> = new Set();
 
 /**
  * Training → Programs (member-programs.tsx): the calendar and the chosen
@@ -70,7 +51,6 @@ export function ProgramCalendarPanel({
   live,
   onStart,
   onResume,
-  restDays,
 }: {
   program: Program;
   settings: TrainingSettings;
@@ -79,8 +59,6 @@ export function ProgramCalendarPanel({
   live: Workout | null;
   onStart: (program: Program, day: ProgramDay) => void;
   onResume: () => void;
-  /** Days they ticked "rest day": a missed session then shows as an excused rest. */
-  restDays: ReadonlySet<string>;
 }) {
   if (!program.schedule) return null;
   return (
@@ -96,7 +74,6 @@ export function ProgramCalendarPanel({
       onStart={onStart}
       onMakeActive={noop}
       onResume={onResume}
-      restDays={restDays}
       headless
     />
   );
@@ -116,7 +93,6 @@ function ScheduledProgram({
   onResume,
   coachView,
   headless,
-  restDays = NO_DAYS,
 }: {
   program: Program;
   programs: Program[];
@@ -133,7 +109,6 @@ function ScheduledProgram({
   coachView?: { first: string };
   /** Just the calendar and the day (Training → Programs has its own header). */
   headless?: boolean;
-  restDays?: ReadonlySet<string>;
 }) {
   const schedule = program.schedule!;
   const end = scheduleEnd(program)!;
@@ -154,17 +129,6 @@ function ScheduledProgram({
   const defaultSelected = byDate.has(today) ? today : (states.find((s) => s.date >= today)?.date ?? states[states.length - 1]?.date ?? null);
   const [selected, setSelected] = React.useState<string | null>(defaultSelected);
   const selectedState = selected ? (byDate.get(selected) ?? null) : null;
-
-  // This month's tally of how sessions went, so far.
-  const monthTally = React.useMemo(() => {
-    const t = { done: 0, part: 0, missed: 0, rest: 0 };
-    for (const s of states) {
-      if (monthKeyOf(s.date) !== month) continue;
-      const k = cellStatus(s, restDays);
-      if (k === "done" || k === "part" || k === "missed" || k === "rest") t[k]++;
-    }
-    return t;
-  }, [states, month, restDays]);
 
   const rows: (string | null)[][] = [];
   const cells = monthGrid(month);
@@ -258,15 +222,6 @@ function ScheduledProgram({
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {monthTally.done + monthTally.part + monthTally.missed + monthTally.rest > 0 ? (
-              <p className="tabular text-[13px] text-muted-foreground">
-                This month: <span className="text-success">{monthTally.done} done</span>
-                {monthTally.part ? <> · <span className="text-warning">{monthTally.part} cut short</span></> : null}
-                {" · "}
-                <span className={monthTally.missed ? "text-destructive" : undefined}>{monthTally.missed} missed</span>
-                {monthTally.rest ? <> · <span className="text-primary">{monthTally.rest} rest {monthTally.rest === 1 ? "day" : "days"}</span></> : null}
-              </p>
-            ) : null}
             <div role="grid" aria-label={`${formatMonthYear(month)} training plan`} className="space-y-1">
               <div role="row" className="grid grid-cols-7 gap-1">
                 {WEEKDAY_SHORT.map((label, i) => (
@@ -298,28 +253,24 @@ function ScheduledProgram({
                         </div>
                       );
                     }
-                    const k = cellStatus(s, restDays);
                     return (
                       <div key={iso} role="gridcell" aria-selected={iso === selected}>
                         <button
                           type="button"
                           onClick={() => setSelected(iso)}
-                          aria-label={`${formatLong(iso)}: ${s.day.name}, ${STATUS_TEXT[k].toLowerCase()}`}
+                          aria-label={`${formatLong(iso)}: ${s.day.name}, ${STATUS_TEXT[s.status].toLowerCase()}`}
                           className={cn(
                             "flex min-h-14 w-full flex-col items-start gap-0.5 rounded-md border p-1 text-left sm:min-h-20 sm:p-1.5",
                             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            STATUS_CELL[k],
+                            STATUS_CELL[s.status],
                             iso === selected && "outline outline-2 outline-offset-1 outline-foreground/60",
                           )}
                         >
                           <span className="flex w-full items-center justify-between text-[12px] font-semibold">
                             {n}
-                            {s.status === "done" ? (s.moved ? <ArrowLeftRight className="h-3 w-3" /> : <Check className="h-3 w-3" />) : k === "missed" ? <X className="h-3 w-3" /> : k === "rest" ? <Moon className="h-3 w-3" /> : null}
+                            {s.status === "done" ? (s.moved ? <ArrowLeftRight className="h-3 w-3" /> : <Check className="h-3 w-3" />) : s.status === "missed" ? <X className="h-3 w-3" /> : null}
                           </span>
                           <span className="line-clamp-2 text-[11px] font-medium leading-tight sm:text-[12px]">{s.day.name}</span>
-                          {k === "done" || k === "part" || k === "missed" || k === "rest" ? (
-                            <span className="hidden text-[10px] leading-tight opacity-90 sm:block">{STATUS_TEXT[k]}</span>
-                          ) : null}
                         </button>
                       </div>
                     );
@@ -329,12 +280,10 @@ function ScheduledProgram({
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-success/50 bg-success/15" /> Done</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-warning/50 bg-warning/15" /> Cut short</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-destructive/60" /> Missed</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-border bg-muted/40" /> Rest day (excused)</span>
               <span className="flex items-center gap-1"><ArrowLeftRight className="h-3 w-3" /> Done on another day</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-primary bg-primary/15" /> Today</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-primary/40" /> Planned</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-primary/40 bg-primary/5" /> Planned</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-muted-foreground/40" /> Missed</span>
             </div>
           </CardContent>
         </Card>
@@ -350,7 +299,6 @@ function ScheduledProgram({
         onStart={onStart}
         onResume={onResume}
         readOnly={Boolean(coachView)}
-        status={selectedState ? cellStatus(selectedState, restDays) : null}
       />
     </div>
   );
@@ -424,11 +372,8 @@ function SessionDetail({
   onStart,
   onResume,
   readOnly,
-  status,
 }: {
   session: SessionState | null;
-  /** How it went, with cut short and excused rest (cellStatus). */
-  status: CellStatus | null;
   program: Program;
   settings: TrainingSettings;
   today: string;
@@ -445,7 +390,6 @@ function SessionDetail({
     );
   }
   const s = session;
-  const k = status ?? s.status;
   const summary = s.workout ? summarizeWorkout(s.workout) : null;
   return (
     <Card>
@@ -455,18 +399,15 @@ function SessionDetail({
         </p>
         <CardTitle className="flex flex-wrap items-center gap-2">
           {s.day.name}
-          <Badge variant={k === "done" ? "success" : k === "missed" ? "danger" : k === "today" ? "default" : "secondary"}>{STATUS_TEXT[k]}</Badge>
+          <Badge variant={s.status === "done" ? "success" : s.status === "today" ? "default" : "secondary"}>{STATUS_TEXT[s.status]}</Badge>
         </CardTitle>
         {s.status === "done" && s.workout ? (
           <CardDescription className="tabular">
             {s.moved ? `Done ${formatShort(s.workout.date)} (moved) · ` : ""}
             {summary!.sets} sets{summary!.durationMs ? ` · ${formatDuration(summary!.durationMs)}` : ""}
-            {k === "part" ? " · cut short: a planned exercise skipped or fewer sets than planned" : ""}
           </CardDescription>
-        ) : k === "rest" ? (
-          <CardDescription>You ticked &ldquo;rest day&rdquo;. It&apos;s excused: it doesn&apos;t count against your workout adherence.</CardDescription>
         ) : s.status === "missed" ? (
-          <CardDescription className="text-destructive">Missed: planned, no workout and no rest day ticked. Doing it within 3 days still counts for it.</CardDescription>
+          <CardDescription>Not logged. Doing it within {3} days still counts for it.</CardDescription>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">

@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ProgramCalendarPanel } from "@/components/program-calendar";
+import { PlanVsActualCard } from "@/components/plan-vs-actual";
+import type { WeightUnit } from "@/lib/types";
 import { daysBetween, formatShort } from "@/lib/dates";
 import { planToday, scheduleEnd, scheduleSessions, scheduleSummary, weekdayOf } from "@/lib/program-schedule";
 import {
@@ -81,6 +83,7 @@ export function MemberPrograms({
   onCopy,
   onAdd,
   restDays,
+  unit,
 }: {
   settings: TrainingSettings;
   workouts: readonly Workout[];
@@ -94,8 +97,9 @@ export function MemberPrograms({
   /** Make my own copy of a coach's program (and open it). */
   onCopy: (id: string) => void;
   onAdd: (template: ProgramTemplate | null) => void;
-  /** Days they ticked "rest day" (shown on the calendar as excused). */
+  /** Days they ticked "rest day" (excused in Plan vs actual). */
   restDays: ReadonlySet<string>;
+  unit: WeightUnit;
 }) {
   const programs = settings.programs;
   const active = programs.find((p) => p.id === settings.activeProgramId) ?? programs[0] ?? null;
@@ -132,7 +136,11 @@ export function MemberPrograms({
         onCopy={onCopy}
       />
       {active.schedule ? (
-        <ProgramCalendarPanel key={active.id} program={active} settings={settings} workouts={workouts} today={today} live={live} onStart={onStart} onResume={onResume} restDays={restDays} />
+        <>
+          <ProgramCalendarPanel key={active.id} program={active} settings={settings} workouts={workouts} today={today} live={live} onStart={onStart} onResume={onResume} />
+          {/* What was planned each day against what they did (the coach sees the same card). */}
+          <PlanVsActualCard key={`pva-${active.id}`} program={active} workouts={workouts} restDays={restDays} today={today} unit={unit} custom={settings.customExercises} />
+        </>
       ) : (
         <NextUp program={active} workouts={workouts} live={live} onStart={onStart} onResume={onResume} />
       )}

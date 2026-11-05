@@ -368,6 +368,7 @@ export function TrainingTab({
         onCopy={copyProgram}
         onAdd={addProgram}
         restDays={restDays}
+        unit={unit}
       />
     );
   }
