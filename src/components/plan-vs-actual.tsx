@@ -296,7 +296,7 @@ function DayDetail({
                 {d.kind === "planned" || (d.kind === "today" && !l.sets.length)
                   ? "planned"
                   : l.sets.length
-                    ? `${l.status === "short" ? `${l.sets.length} sets: ` : ""}${l.sets.map((s) => (s.weight ? `${lb(s.weight)}×${s.reps}` : `${s.reps} reps`)).join(", ")}`
+                    ? `${l.status === "short" ? `${l.sets.length} sets: ` : ""}${l.sets.map((s) => (s.side ? `L ${lb(s.side.lw)}×${s.side.l} / R ${lb(s.side.rw)}×${s.side.r}` : s.weight ? `${lb(s.weight)}×${s.reps}` : `${s.reps} reps`)).join(", ")}`
                     : // Nothing logged that day: not started, so nothing "skipped".
                       w
                       ? "skipped"

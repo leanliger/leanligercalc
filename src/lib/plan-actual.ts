@@ -140,7 +140,7 @@ export interface ExerciseLine {
   name: string;
   /** "3×6–8", null for an exercise the plan didn't have. */
   target: string | null;
-  sets: { weight: number; reps: number }[];
+  sets: { weight: number; reps: number; side?: { lw: number; l: number; rw: number; r: number } }[];
   status: "hit" | "short" | "skipped" | "extra";
 }
 
@@ -148,7 +148,13 @@ export interface ExerciseLine {
 export function dayLines(plan: ProgramDay | null, workout: Workout | null, custom: readonly Exercise[]): ExerciseLine[] {
   const nameOf = (id: string) => workout?.exercises.find((e) => e.exerciseId === id)?.name ?? findExercise(id, custom)?.name ?? "Exercise";
   const setsOf = (id: string) =>
-    (workout?.exercises ?? []).filter((e) => e.exerciseId === id).flatMap(doneSets).map((s) => ({ weight: s.weight, reps: s.reps }));
+    (workout?.exercises ?? []).filter((e) => e.exerciseId === id).flatMap(doneSets)
+      .map((s) => ({
+        weight: s.weight,
+        reps: s.reps,
+        // A weight per side: both sides, for the day panel.
+        ...(s.leftWeight !== undefined && s.rightWeight !== undefined ? { side: { lw: s.leftWeight, l: s.left ?? 0, rw: s.rightWeight, r: s.right ?? 0 } } : {}),
+      }));
   const lines: ExerciseLine[] = (plan?.exercises ?? []).map((pe) => {
     const sets = setsOf(pe.exerciseId);
     return {

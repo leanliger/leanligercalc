@@ -113,6 +113,16 @@ export interface WorkoutSet {
    */
   left?: number;
   right?: number;
+  /**
+   * Each side's own weight (lb), for a one-sided exercise logged with a
+   * weight per side (WorkoutExercise.splitWeight), e.g. a lighter injured leg.
+   * Then left/right are always kept, and weight/reps are the stronger side's
+   * (splitCanonical), so records and advice follow it.
+   */
+  leftWeight?: number | null;
+  rightWeight?: number | null;
+  /** While logging: one side ticked off, the other still to do. */
+  sideDone?: "left" | "right";
 }
 
 /** The highest reps-in-reserve choice; it stands for "this many or more". */
@@ -136,6 +146,8 @@ export interface WorkoutExercise {
   sets: WorkoutSet[];
   /** Done one arm or leg at a time: reps are per side, and volume counts both. */
   oneSide?: boolean;
+  /** One-sided, with a weight for each side (WorkoutSet.leftWeight / rightWeight). */
+  splitWeight?: boolean;
 }
 
 export interface Workout {
@@ -246,6 +258,26 @@ export function validateWorkout(raw: unknown, id: string, now: Date = new Date()
       const set: WorkoutSet = { weight: weight === null ? null : round2(weight), reps, done: s.done };
       // Only a completed set has an effort to record.
       if (s.done && rir !== null) set.rir = rir;
+      // A weight for each side: both sides' weight and reps are kept.
+      if (e.oneSide === true && e.splitWeight === true) {
+        const lw = s.leftWeight ?? null;
+        const rw = s.rightWeight ?? null;
+        if ((lw !== null && !isNum(lw, 0, MAX_WEIGHT_LB)) || (rw !== null && !isNum(rw, 0, MAX_WEIGHT_LB))) return bad(`Weight must be 0–${MAX_WEIGHT_LB} lb.`);
+        const l = s.left ?? null;
+        const r = s.right ?? null;
+        if ((l !== null && !isInt(l, 0, MAX_REPS)) || (r !== null && !isInt(r, 0, MAX_REPS))) return bad("Left and right reps must be whole numbers.");
+        if (s.done && (l === null || r === null || Math.max(l, r) < 1)) return bad("A completed set needs reps for both sides.");
+        set.leftWeight = lw === null ? null : round2(lw);
+        set.rightWeight = rw === null ? null : round2(rw);
+        if (l !== null) set.left = l;
+        if (r !== null) set.right = r;
+        if (!s.done && (s.sideDone === "left" || s.sideDone === "right")) set.sideDone = s.sideDone;
+        const c = splitCanonical(set.leftWeight, l, set.rightWeight, r);
+        set.weight = c.weight;
+        set.reps = c.reps;
+        sets.push(set);
+        continue;
+      }
       // Left and right reps, for a one-sided exercise whose sides differed.
       if (e.oneSide === true && (s.left !== undefined || s.right !== undefined)) {
         if (!isInt(s.left, 0, MAX_REPS) || !isInt(s.right, 0, MAX_REPS)) return bad("Left and right reps must be whole numbers.");
@@ -266,6 +298,7 @@ export function validateWorkout(raw: unknown, id: string, now: Date = new Date()
       restSec,
       sets,
       ...(e.oneSide === true ? { oneSide: true } : {}),
+      ...(e.oneSide === true && e.splitWeight === true ? { splitWeight: true } : {}),
     });
   }
 
@@ -544,9 +577,12 @@ export interface DoneSet {
   rir: number | null;
   /** 2 for an exercise done one side at a time. */
   sides?: 1 | 2;
-  /** Each side's reps, when they differed. */
+  /** Each side's reps, when they differed (always, with a weight per side). */
   left?: number;
   right?: number;
+  /** Each side's weight, for an exercise logged with a weight per side. */
+  leftWeight?: number;
+  rightWeight?: number;
 }
 
 export function doneSets(e: WorkoutExercise): DoneSet[] {
@@ -560,6 +596,12 @@ export function doneSets(e: WorkoutExercise): DoneSet[] {
           d.left = s.left;
           d.right = s.right;
         }
+        if (e.splitWeight && s.leftWeight !== undefined && s.rightWeight !== undefined) {
+          d.leftWeight = s.leftWeight ?? 0;
+          d.rightWeight = s.rightWeight ?? 0;
+          d.left = s.left ?? 0;
+          d.right = s.right ?? 0;
+        }
       }
       return d;
     });
@@ -571,9 +613,35 @@ export function setReps(s: DoneSet): number {
   return s.reps * (s.sides ?? 1);
 }
 
-/** Weight × reps, counting both sides of a one-sided set. */
+/** Weight × reps, counting both sides of a one-sided set (each at its own weight, when split). */
 export function setVolume(s: DoneSet): number {
+  if (s.leftWeight !== undefined && s.rightWeight !== undefined) return s.leftWeight * (s.left ?? 0) + s.rightWeight * (s.right ?? 0);
   return s.weight * setReps(s);
+}
+
+/**
+ * A set with a weight per side counts as its stronger side (higher estimated
+ * 1RM, then reps) for records, advice and charts, so a lighter injured side
+ * never reads as a drop. A side with no reps yet doesn't count.
+ */
+export function splitCanonical(
+  lw: number | null | undefined,
+  l: number | null | undefined,
+  rw: number | null | undefined,
+  r: number | null | undefined,
+): { weight: number | null; reps: number | null } {
+  const L = { weight: lw ?? null, reps: l ?? null };
+  const R = { weight: rw ?? null, reps: r ?? null };
+  if (L.reps === null) return R.reps === null ? { weight: L.weight ?? R.weight, reps: null } : R;
+  if (R.reps === null) return L;
+  const a = e1rm(L.weight ?? 0, L.reps);
+  const b = e1rm(R.weight ?? 0, R.reps);
+  return a > b || (a === b && L.reps >= R.reps) ? L : R;
+}
+
+/** Whether last time this exercise was logged with a weight per side (so it opens that way again). */
+export function splitFromLast(last: readonly DoneSet[]): boolean {
+  return last.some((s) => s.leftWeight !== undefined);
 }
 
 /** Whether an exercise is done one side at a time: the one-arm and one-leg library exercises. */
@@ -587,7 +655,8 @@ export function isOneSide(exerciseId: string): boolean {
  * reps on average.
  */
 export function weakerSide(sets: readonly DoneSet[]): { side: "left" | "right"; by: number } | null {
-  const split = sets.filter((s) => s.left !== undefined && s.right !== undefined && s.left !== s.right);
+  // Sets at a different weight per side aren't a rep race between sides.
+  const split = sets.filter((s) => s.leftWeight === undefined && s.left !== undefined && s.right !== undefined && s.left !== s.right);
   if (split.length === 0) return null;
   const leftBehind = split.every((s) => s.left! < s.right!);
   const rightBehind = split.every((s) => s.right! < s.left!);
@@ -687,6 +756,10 @@ export function bestBefore(workouts: readonly Workout[], exerciseId: string, exc
 export function prefillSets(count: number, last: readonly DoneSet[], bodyweight: boolean): WorkoutSet[] {
   return Array.from({ length: count }, (_, i) => {
     const prev = last[i] ?? last[last.length - 1];
+    // Last time at a weight per side: each side again.
+    if (prev && prev.leftWeight !== undefined && prev.rightWeight !== undefined) {
+      return { weight: prev.weight, reps: prev.reps, done: false, leftWeight: prev.leftWeight, rightWeight: prev.rightWeight, left: prev.left, right: prev.right };
+    }
     return {
       weight: prev ? (bodyweight && prev.weight === 0 ? null : prev.weight) : null,
       reps: prev ? prev.reps : null,
@@ -763,14 +836,16 @@ export function workoutExerciseFor(
   oneSide = false,
 ): WorkoutExercise {
   const bodyweight = exercise?.bodyweight ?? false;
+  const last = lastPerformance(workouts, pe.exerciseId);
   return {
     ...(oneSide ? { oneSide: true } : {}),
+    ...(oneSide && splitFromLast(last) ? { splitWeight: true } : {}),
     exerciseId: pe.exerciseId,
     name: exercise?.name ?? "Unknown exercise",
     bodyweight,
     target: { sets: pe.sets, repsMin: pe.repsMin, repsMax: pe.repsMax },
     restSec: pe.restSec,
-    sets: prefillSets(pe.sets, lastPerformance(workouts, pe.exerciseId), bodyweight),
+    sets: prefillSets(pe.sets, last, bodyweight),
   };
 }
 
@@ -832,14 +907,16 @@ export function swapExercise(
   if (!original || !canSwap(workout, index) || replacement.id === original.exerciseId) return workout;
   const done = original.sets.filter((s) => s.done);
   const remaining = original.sets.length - done.length;
+  const last = lastPerformance(workouts, replacement.id, workout.id);
   const swapped: WorkoutExercise = {
     ...(oneSide ? { oneSide: true } : {}),
+    ...(oneSide && splitFromLast(last) ? { splitWeight: true } : {}),
     exerciseId: replacement.id,
     name: replacement.name,
     bodyweight: replacement.bodyweight,
     target: original.target,
     restSec: original.restSec,
-    sets: prefillSets(remaining, lastPerformance(workouts, replacement.id, workout.id), replacement.bodyweight),
+    sets: prefillSets(remaining, last, replacement.bodyweight),
   };
   const list = [...workout.exercises];
   if (done.length === 0) list[index] = swapped;
@@ -932,6 +1009,11 @@ export function formatLoad(lb: number, unit: WeightUnit): string {
 
 /** One set as text: "185 × 10", "BW × 12" or "BW+25 × 8". */
 export function formatSet(s: DoneSet, unit: WeightUnit, bodyweight: boolean): string {
+  // A weight per side: "L 50 × 12 · R 25 × 12".
+  if (s.leftWeight !== undefined && s.rightWeight !== undefined) {
+    const side = (w: number, r: number) => (bodyweight ? (w > 0 ? `BW+${formatLoad(w, unit)} × ${r}` : `BW × ${r}`) : `${formatLoad(w, unit)} × ${r}`);
+    return `L ${side(s.leftWeight, s.left ?? 0)} · R ${side(s.rightWeight, s.right ?? 0)}`;
+  }
   const reps =
     s.left !== undefined && s.right !== undefined ? `L${s.left}/R${s.right}` : s.sides === 2 ? `${s.reps}/side` : String(s.reps);
   if (bodyweight) return s.weight > 0 ? `BW+${formatLoad(s.weight, unit)} × ${reps}` : `BW × ${reps}`;

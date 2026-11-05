@@ -36,6 +36,8 @@ import {
   formatRir,
   formatSetEffort,
   isOneSide,
+  splitCanonical,
+  splitFromLast,
   weakerSide,
   RIR_CHOICES,
   MAX_RIR,
@@ -60,6 +62,9 @@ const ROW_GRID_GYM = "grid grid-cols-[1.75rem_minmax(0,1.3fr)_minmax(0,1fr)_4.5r
 /** One-side exercises: Set · weight · Left · Right · Done (last time's set goes under the row). */
 const ROW_GRID_SIDES = "grid grid-cols-[1.5rem_minmax(0,1fr)_3.5rem_3.5rem_2.875rem] items-center gap-1.5";
 const ROW_GRID_SIDES_GYM = "grid grid-cols-[1.75rem_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_4.5rem] items-center gap-2";
+/** A weight per side: Set · Leg · weight · reps · Done, a Left and a Right row per set. */
+const ROW_GRID_SPLIT = "grid grid-cols-[1.5rem_3.25rem_minmax(0,1fr)_minmax(0,1fr)_2.875rem] items-center gap-1.5";
+const ROW_GRID_SPLIT_GYM = "grid grid-cols-[1.75rem_3.5rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem] items-center gap-2";
 
 function useNow(intervalMs: number, active: boolean): number {
   const [now, setNow] = React.useState(() => Date.now());
@@ -176,6 +181,7 @@ export function WorkoutLogger({
     const last = lastPerformance(workouts, e.id, workout.id);
     const next: WorkoutExercise = {
       ...(isOneSide(e.id) ? { oneSide: true } : {}),
+      ...(isOneSide(e.id) && splitFromLast(last) ? { splitWeight: true } : {}),
       exerciseId: e.id,
       name: e.name,
       bodyweight: e.bodyweight,
@@ -398,14 +404,38 @@ function ExerciseBlock({
   const rest = exercise.restSec ?? defaultRest;
   const doneCount = exercise.sets.filter((s) => s.done).length;
   const oneSide = exercise.oneSide === true;
-  const behind = oneSide ? weakerSide(last) : null;
+  // A weight per side (e.g. a lighter injured leg): a Left and a Right row on every set.
+  const split = oneSide && exercise.splitWeight === true;
+  const behind = oneSide && !split ? weakerSide(last) : null;
+
+  /** Switch between one weight for both sides and a weight per side, keeping what's typed. */
+  const setSplit = (on: boolean) => {
+    if (on === split) return;
+    const sets: WorkoutSet[] = exercise.sets.map((s) => {
+      if (on) {
+        const l = s.left ?? s.reps ?? undefined;
+        const r = s.right ?? s.reps ?? undefined;
+        return { ...s, leftWeight: s.weight, rightWeight: s.weight, left: l, right: r };
+      }
+      const { leftWeight: _lw, rightWeight: _rw, sideDone: _sd, ...rest } = s;
+      const same = rest.left === rest.right;
+      return { ...rest, ...(same ? { left: undefined, right: undefined } : {}) };
+    });
+    onChange({ ...exercise, splitWeight: on ? true : undefined, sets });
+  };
 
   const setSet = (i: number, s: WorkoutSet) => {
     const sets = exercise.sets.map((x, j) => (j === i ? s : x));
     // Ticking a set fills an empty next set with the same numbers.
     const next = sets[i + 1];
     if (s.done && !exercise.sets[i]!.done && next && !next.done && next.weight === null && next.reps === null) {
-      sets[i + 1] = { ...next, weight: s.weight, reps: s.reps, ...(s.left !== undefined ? { left: s.left, right: s.right } : {}) };
+      sets[i + 1] = {
+        ...next,
+        weight: s.weight,
+        reps: s.reps,
+        ...(s.left !== undefined ? { left: s.left, right: s.right } : {}),
+        ...(s.leftWeight !== undefined ? { leftWeight: s.leftWeight, rightWeight: s.rightWeight } : {}),
+      };
     }
     onChange({ ...exercise, sets });
   };
@@ -420,7 +450,12 @@ function ExerciseBlock({
     const prev = exercise.sets[exercise.sets.length - 1];
     onChange({
       ...exercise,
-      sets: [...exercise.sets, { weight: prev?.weight ?? null, reps: prev?.reps ?? null, done: false }],
+      sets: [
+        ...exercise.sets,
+        split && prev
+          ? { weight: prev.weight, reps: prev.reps, done: false, leftWeight: prev.leftWeight ?? null, rightWeight: prev.rightWeight ?? null, left: prev.left, right: prev.right }
+          : { weight: prev?.weight ?? null, reps: prev?.reps ?? null, done: false },
+      ],
     });
   };
 
@@ -474,10 +509,33 @@ function ExerciseBlock({
           </div>
         </div>
         {oneSide ? (
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-            <span className="rounded-full bg-primary/[0.12] px-2.5 py-1 font-bold text-[hsl(var(--gold-hi))]">One side at a time · reps for each side</span>
-            <span className="text-muted-foreground">Right copies Left as you type; change it if it differed.</span>
-          </p>
+          <div className="space-y-1.5">
+            <div role="radiogroup" aria-label={`${exercise.name}: weight`} className="flex rounded-full bg-muted/50 p-0.5 text-xs font-semibold">
+              {([
+                [false, "Same weight"],
+                [true, "Weight per side"],
+              ] as const).map(([on, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={split === on}
+                  onClick={() => setSplit(on)}
+                  className={cn(
+                    "flex-1 rounded-full px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    split === on ? "bg-primary/[0.15] text-[hsl(var(--gold-hi))]" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {split
+                ? "Each set has a Left and a Right row with its own weight. Tick each side when it's done."
+                : "One side at a time: reps for each side. Right copies Left as you type; change it if it differed."}
+            </p>
+          </div>
         ) : null}
         <p className="tabular text-xs text-muted-foreground">
           {last.length > 0
@@ -498,6 +556,36 @@ function ExerciseBlock({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-1.5 p-4 pt-1 sm:p-6 sm:pt-1">
+        {split ? (
+          <div className={cn(gym ? ROW_GRID_SPLIT_GYM : ROW_GRID_SPLIT, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")} aria-hidden>
+            <span className="text-center">Set</span>
+            <span className="text-center">Side</span>
+            <span className="text-center">{bw ? `+${unit}` : unit}</span>
+            <span className="text-center">Reps</span>
+            <span className="text-center">Done</span>
+          </div>
+        ) : null}
+        {split
+          ? exercise.sets.map((s, i) => (
+              <SplitSetRow
+                key={`${i}-${unit}`}
+                gym={gym}
+                n={i + 1}
+                set={s}
+                prev={last[i] ?? null}
+                unit={unit}
+                bodyweight={bw}
+                pr={isPR(s)}
+                trackRir={trackRir}
+                onChange={(next) => setSet(i, next)}
+                onDone={() => {
+                  if (live) onSetDone();
+                }}
+              />
+            ))
+          : null}
+        {split ? null : (
+        <>
         <div
           className={cn(oneSide ? (gym ? ROW_GRID_SIDES_GYM : ROW_GRID_SIDES) : gym ? ROW_GRID_GYM : ROW_GRID, "px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground")}
           aria-hidden
@@ -533,6 +621,8 @@ function ExerciseBlock({
             }}
           />
         ))}
+        </>
+        )}
         <div className="flex items-center gap-1 pt-1">
           <Button variant={gym ? "outline" : "ghost"} size="sm" className={gym ? "h-12 px-4 text-base" : "h-8 px-2"} onClick={addSet} disabled={exercise.sets.length >= MAX_SETS}>
             <Plus />
@@ -683,6 +773,206 @@ function SwapPicker({ exercise, options, onDone }: { exercise: WorkoutExercise; 
           ) : null
         }
       />
+    </div>
+  );
+}
+
+/** A number box that keeps what's typed and follows values set from outside (copied from the set above). */
+function NumberBox({
+  value,
+  decimal,
+  unit,
+  label,
+  placeholder,
+  invalid,
+  gym,
+  onCommit,
+}: {
+  value: number | null | undefined;
+  /** A weight in lb, shown and typed in the member's unit; otherwise whole reps. */
+  decimal: boolean;
+  unit: WeightUnit;
+  label: string;
+  placeholder: string;
+  invalid?: boolean;
+  gym: boolean;
+  onCommit: (v: number | null) => void;
+}) {
+  const show = (v: number | null | undefined) => (v === null || v === undefined ? "" : decimal ? formatLoad(v, unit) : String(v));
+  const parse = (t: string): number | null | false => {
+    const s = t.trim().replace(",", ".");
+    if (s === "") return null;
+    const n = Number(s);
+    if (!Number.isFinite(n) || n < 0) return false;
+    if (decimal) {
+      const lb = Math.round(toLb(n, unit) * 100) / 100;
+      return lb <= MAX_WEIGHT_LB ? lb : false;
+    }
+    return Number.isInteger(n) && n <= MAX_REPS ? n : false;
+  };
+  const [text, setText] = React.useState(show(value));
+  React.useEffect(() => {
+    const typed = parse(text);
+    if (typed !== false && typed !== (value ?? null)) setText(show(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the stored value changes
+  }, [value]);
+  return (
+    <Input
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const v = parse(e.target.value);
+        if (v !== false) onCommit(v);
+      }}
+      inputMode={decimal ? "decimal" : "numeric"}
+      enterKeyHint="next"
+      placeholder={placeholder}
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      className={cn("px-1.5 text-center", gym ? "h-14 text-xl font-semibold" : SET_BOX, invalid && "border-destructive ring-1 ring-destructive")}
+    />
+  );
+}
+
+/**
+ * A set with a weight per side: a Left and a Right row, each with its own
+ * weight, reps and tick. The set is done when both sides are; weight/reps are
+ * kept as the stronger side's (splitCanonical).
+ */
+function SplitSetRow({
+  gym,
+  n,
+  set,
+  prev,
+  unit,
+  bodyweight,
+  pr,
+  trackRir,
+  onChange,
+  onDone,
+}: {
+  gym: boolean;
+  n: number;
+  set: WorkoutSet;
+  prev: DoneSet | null;
+  unit: WeightUnit;
+  bodyweight: boolean;
+  pr: boolean;
+  trackRir: boolean;
+  onChange: (s: WorkoutSet) => void;
+  onDone: () => void;
+}) {
+  const [missing, setMissing] = React.useState<"left" | "right" | null>(null);
+  const sideDone = (side: "left" | "right") => set.done || set.sideDone === side;
+
+  const update = (patch: Partial<WorkoutSet>, side: "left" | "right") => {
+    const next: WorkoutSet = { ...set, ...patch };
+    // Clearing a side's reps un-ticks it.
+    const reps = side === "left" ? next.left : next.right;
+    if (reps === undefined || reps === null || reps < 1) {
+      if (next.done) {
+        next.done = false;
+        next.rir = null;
+        next.sideDone = side === "left" ? "right" : "left";
+      } else if (next.sideDone === side) next.sideDone = undefined;
+    }
+    const c = splitCanonical(next.leftWeight, next.left, next.rightWeight, next.right);
+    onChange({ ...next, weight: c.weight, reps: c.reps });
+    setMissing(null);
+  };
+
+  const tick = (side: "left" | "right") => {
+    const other = side === "left" ? "right" : "left";
+    if (sideDone(side)) {
+      // Un-tick this side: the other stays ticked.
+      onChange(set.done ? { ...set, done: false, rir: null, sideDone: other } : { ...set, sideDone: undefined });
+      return;
+    }
+    const reps = side === "left" ? set.left : set.right;
+    if (reps === undefined || reps === null || reps < 1) {
+      setMissing(side);
+      return;
+    }
+    if (set.sideDone === other) {
+      onChange({ ...set, done: true, sideDone: undefined });
+      onDone();
+    } else onChange({ ...set, sideDone: side });
+  };
+
+  const row = (side: "left" | "right") => {
+    const on = sideDone(side);
+    const L = side === "left";
+    return (
+      <div className={cn(gym ? ROW_GRID_SPLIT_GYM : ROW_GRID_SPLIT, "px-1 py-0.5")}>
+        <span className={cn("flex justify-center font-extrabold tabular", gym ? "text-base" : "text-sm")}>
+          {L ? (
+            pr ? (
+              <span title="Personal record" className="text-primary">
+                <Trophy className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Set {n}, personal record</span>
+              </span>
+            ) : (
+              n
+            )
+          ) : null}
+        </span>
+        <span
+          className={cn(
+            "flex h-7 items-center justify-center rounded-md text-[12px] font-bold",
+            L ? "bg-primary/[0.12] text-[hsl(var(--gold-hi))]" : "bg-muted text-foreground",
+          )}
+        >
+          {L ? "Left" : "Right"}
+        </span>
+        <NumberBox
+          value={L ? set.leftWeight : set.rightWeight}
+          decimal
+          unit={unit}
+          gym={gym}
+          label={`Set ${n} ${side} ${bodyweight ? "added weight" : "weight"} (${unit})`}
+          placeholder={bodyweight ? "0" : unit}
+          onCommit={(v) => update(L ? { leftWeight: v } : { rightWeight: v }, side)}
+        />
+        <NumberBox
+          value={L ? set.left : set.right}
+          decimal={false}
+          unit={unit}
+          gym={gym}
+          label={`Set ${n} ${side} reps`}
+          placeholder="reps"
+          invalid={missing === side}
+          onCommit={(v) => update(L ? { left: v ?? undefined } : { right: v ?? undefined }, side)}
+        />
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={on}
+          aria-label={`Set ${n} ${side} done`}
+          onClick={() => tick(side)}
+          className={cn(
+            "flex w-full items-center justify-center border transition-colors",
+            gym ? "h-14 rounded-md" : "h-11 rounded-[0.875rem]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+            on
+              ? "border-transparent bg-gradient-to-br from-[hsl(148_62%_70%)] to-[hsl(152_55%_40%)] text-[hsl(150_60%_8%)] shadow-[0_0_14px_hsl(var(--success)/0.4)]"
+              : "border-primary/20 text-muted-foreground hover:bg-muted/50",
+          )}
+        >
+          <Check className={cn(gym ? "h-7 w-7" : "h-4 w-4", !on && "opacity-30", on && "animate-pop")} />
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <div className={cn("rounded-2xl border-t border-border/50 pt-1 transition-colors first-of-type:border-t-0", set.done && "bg-success/[0.08]")}>
+      {row("left")}
+      {row("right")}
+      <p className={cn("tabular px-1 pb-1.5 text-[11px] text-muted-foreground", gym ? "pl-10" : "pl-9")}>
+        {prev ? `Last: ${formatSet(prev, unit, bodyweight)}` : "Last: —"}
+        {missing ? <span className="ml-2 font-semibold text-destructive">Enter the {missing} side&apos;s reps first.</span> : null}
+      </p>
+      {set.done && trackRir ? <RirPicker n={n} value={typeof set.rir === "number" ? set.rir : null} onChange={(rir) => onChange({ ...set, rir })} /> : null}
     </div>
   );
 }
