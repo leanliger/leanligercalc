@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { ProgramEditor } from "@/components/program-editor";
-import { MemberProgramCalendar } from "@/components/program-calendar";
+import { PlanVsActualCard } from "@/components/plan-vs-actual";
+import type { WeightUnit } from "@/lib/types";
 import { NextBlockPanel } from "@/components/coach-next-block";
 import { ScheduleFields, scheduleDraftReady } from "@/components/schedule-fields";
 import { formatShort, todayISO } from "@/lib/dates";
 import type { MemberTraining } from "@/lib/program-edits";
 import { SCHEDULE_NOTE_MAX, defaultWeekdays, nextMonday, type ProgramSchedule } from "@/lib/program-schedule";
-import { findExercise, formatTarget, sanitizeTraining, type Program, type Workout } from "@/lib/training";
+import { findExercise, formatTarget, type Program, type Workout } from "@/lib/training";
 import { cn } from "@/lib/utils";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -33,7 +34,20 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
  * its calendar (start date, training days, weeks, note); the edit reaches the
  * member's app the next time it opens (src/lib/program-edits.ts).
  */
-export function MemberProgramCard({ companyId, memberId, memberName }: { companyId: string; memberId: string; memberName: string }) {
+export function MemberProgramCard({
+  companyId,
+  memberId,
+  memberName,
+  restDays,
+  unit,
+}: {
+  companyId: string;
+  memberId: string;
+  memberName: string;
+  /** Days they ticked "rest day", for Plan vs actual. */
+  restDays: ReadonlySet<string>;
+  unit: WeightUnit;
+}) {
   const [data, setData] = React.useState<MemberTraining | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [programId, setProgramId] = React.useState<string | null>(null);
@@ -87,7 +101,6 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
     };
   }, [anyScheduled, workouts, companyId, memberId]);
 
-  const calendarSettings = React.useMemo(() => ({ ...sanitizeTraining(null), customExercises: data?.customExercises ?? [] }), [data]);
 
   /** Save the program as edited, with its dates: `schedule` (null: off the calendar). */
   const send = async (next: Program, schedule: ProgramSchedule | null, done: () => void) => {
@@ -215,7 +228,7 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {program.schedule
-                          ? `Every workout by date, from what ${first} logged.`
+                          ? `Its dates and training days; below, what ${first} did each day against it.`
                           : `Not on a calendar: ${first} does the days in order, at their own pace.`}
                       </p>
                     </div>
@@ -269,13 +282,16 @@ export function MemberProgramCard({ companyId, memberId, memberName }: { company
                   ) : program.schedule ? (
                     workouts ? (
                       <>
-                        <MemberProgramCalendar
+                        {/* The calendar as Plan vs actual: what was planned each day against what they did (src/lib/plan-actual.ts). */}
+                        <PlanVsActualCard
+                          key={program.id}
                           program={program}
-                          isActive={program.id === data.activeProgramId}
-                          settings={calendarSettings}
                           workouts={workouts}
+                          restDays={restDays}
                           today={today}
-                          memberFirst={first}
+                          unit={unit}
+                          custom={data.customExercises}
+                          who={first}
                         />
                         <NextBlockPanel
                           key={program.id}

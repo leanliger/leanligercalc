@@ -34,6 +34,8 @@ import { NUDGE_IDLE_MIN, NUDGE_REPEAT_MIN } from "@/lib/workout-nudge";
 import { ExerciseThumb } from "@/components/exercise-art";
 import { StrengthTrendsCard } from "@/components/strength-trends-card";
 import { RecentRecordsCard, TrainingVolumeCard, WorkoutAdherenceCard } from "@/components/training-load-card";
+import { PlanVsActualCard } from "@/components/plan-vs-actual";
+import { restDaysOf } from "@/lib/plan-actual";
 import { planToday } from "@/lib/program-schedule";
 import type { NotificationStatus } from "@/components/fasting-card";
 import { ExerciseProgress } from "@/components/exercise-progress";
@@ -154,6 +156,9 @@ export function TrainingTab({
   const rest = useRestTimer();
   const active = activeWorkout(workouts);
   const records = useRecords(workouts);
+  // For Tools' Plan vs actual and workout adherence: their active program and the days they ticked "rest day".
+  const activeProgram = settings.programs.find((p) => p.id === settings.activeProgramId) ?? null;
+  const restDays = React.useMemo(() => restDaysOf(habitLogs), [habitLogs]);
   const custom = settings.customExercises;
   const finished = finishedId ? workouts.find((w) => w.id === finishedId) ?? null : null;
 
@@ -393,7 +398,8 @@ export function TrainingTab({
         </div>
         <div className="space-y-5">
           <MemberLiftGoals workouts={workouts} unit={unit} today={today} cutting={cutting} cloud={cloud} />
-          <WorkoutAdherenceCard workouts={workouts} program={settings.programs.find((p) => p.id === settings.activeProgramId) ?? null} today={today} />
+          <WorkoutAdherenceCard workouts={workouts} program={activeProgram} today={today} restDays={restDays} />
+          <PlanVsActualCard program={activeProgram} workouts={workouts} restDays={restDays} today={today} unit={unit} custom={custom} />
           <TrainingVolumeCard workouts={workouts} unit={unit} today={today} />
           <RecentRecordsCard workouts={workouts} unit={unit} today={today} onOpen={(id) => setView({ kind: "exercise", id })} />
           <StrengthTrendsCard workouts={workouts} unit={unit} today={today} custom={custom} onOpen={(id) => setView({ kind: "exercise", id })} />

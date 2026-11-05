@@ -94,8 +94,21 @@ export function TrainingVolumeCard({ workouts, unit, today, who }: { workouts: r
   );
 }
 
-export function WorkoutAdherenceCard({ workouts, program, today, who }: { workouts: readonly Workout[]; program: Program | null; today: string; who?: string }) {
-  const a = React.useMemo(() => workoutAdherence(workouts, program, today), [workouts, program, today]);
+export function WorkoutAdherenceCard({
+  workouts,
+  program,
+  today,
+  who,
+  restDays,
+}: {
+  workouts: readonly Workout[];
+  program: Program | null;
+  today: string;
+  who?: string;
+  /** Days they ticked "rest day" (excused from planned). */
+  restDays?: ReadonlySet<string>;
+}) {
+  const a = React.useMemo(() => workoutAdherence(workouts, program, today, undefined, restDays), [workouts, program, today, restDays]);
   const top = Math.max(1, ...a.weeks.map((w) => Math.max(w.planned, w.done)));
   return (
     <Card>

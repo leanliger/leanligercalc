@@ -118,6 +118,7 @@ import {
   type QueueKind,
 } from "@/components/coach-today";
 import { reasonLabel, tallyReasons } from "@/lib/miss-reasons";
+import { restDaysOf } from "@/lib/plan-actual";
 import { STATUS_LABEL as ROSTER_STATUS, checkinLabel, rosterInfo, type CoachStatus, type RosterInfo } from "@/lib/roster";
 import { CoachIntakeChart, CoachNutritionReport } from "@/components/coach-member-food";
 import { MemberTimelineCard } from "@/components/coach-member-timeline";
@@ -2554,6 +2555,8 @@ function MemberDetail({
   const [flagsOpen, setFlagsOpen] = React.useState(false);
   // Notes and tags fold to a line each until opened (Add note opens notes).
   const [notesOpen, setNotesOpen] = React.useState(false);
+  // Days they ticked "rest day" (excused in workout adherence and Plan vs actual).
+  const restDays = React.useMemo(() => restDaysOf(m.data.habitLogs), [m.data.habitLogs]);
   const [tagsOpen, setTagsOpen] = React.useState(false);
   // Their workouts, food, check-ins and macros: loaded once for the key insights, History and the client file.
   const loaded = useInsightsData(companyId, m, unit, today);
@@ -3043,7 +3046,14 @@ function MemberDetail({
             <SegmentedControl ariaLabel="Training section" value={trainingView} onValueChange={setTrainingView} options={TRAINING_VIEWS} />
             {trainingView === "program" ? (
               <>
-                <MemberProgramCard key={programVersion} companyId={companyId} memberId={m.data.userId} memberName={m.displayName} />
+                <MemberProgramCard
+                  key={programVersion}
+                  companyId={companyId}
+                  memberId={m.data.userId}
+                  memberName={m.displayName}
+                  restDays={restDays}
+                  unit={unit}
+                />
                 <PhysiqueFocusCard
                   companyId={companyId}
                   memberId={m.data.userId}
@@ -3059,6 +3069,7 @@ function MemberDetail({
                 memberId={m.data.userId}
                 memberName={m.displayName}
                 unit={unit}
+                restDays={restDays}
                 view={trainingView === "program" ? "progress" : trainingView}
               />
             </div>

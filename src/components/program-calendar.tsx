@@ -79,45 +79,6 @@ export function ProgramCalendarPanel({
   );
 }
 
-/**
- * Coach dashboard → a member → Training: the same calendar, read-only. Every
- * workout by date with done, moved, missed or planned, from the member's logs.
- */
-export function MemberProgramCalendar({
-  program,
-  isActive,
-  settings,
-  workouts,
-  today,
-  memberFirst,
-}: {
-  program: Program;
-  isActive: boolean;
-  settings: TrainingSettings;
-  workouts: readonly Workout[];
-  today: string;
-  memberFirst: string;
-}) {
-  if (!program.schedule) return null;
-  return (
-    <ScheduledProgram
-      key={`${program.id}-${program.schedule.startDate}-${program.schedule.weeks}-${program.schedule.weekdays.join("")}`}
-      program={program}
-      programs={[program]}
-      isActive={isActive}
-      settings={settings}
-      workouts={workouts}
-      today={today}
-      live={null}
-      onChoose={noop}
-      onStart={noop}
-      onMakeActive={noop}
-      onResume={noop}
-      coachView={{ first: memberFirst }}
-    />
-  );
-}
-
 function ScheduledProgram({
   program,
   programs,

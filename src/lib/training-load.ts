@@ -5,8 +5,9 @@
  *   - weeklyVolume: total weight moved (weight × reps, both sides of one-sided
  *     sets) and hard sets, Monday–Sunday, for the last LOAD_WEEKS.
  *   - workoutAdherence: workouts done against planned, per week. Planned is
- *     the active program's calendar when it has one, else its days a week;
- *     without an active program there is nothing to measure against.
+ *     the active program's calendar when it has one (less sessions on days they
+ *     ticked "rest day": excused, src/lib/plan-actual.ts), else its days a
+ *     week; without an active program there is nothing to measure against.
  *   - recentRecords: personal records across every lift, newest first.
  */
 
@@ -87,10 +88,18 @@ export interface WorkoutAdherence {
   thisWeek: AdherenceWeek | null;
 }
 
-export function workoutAdherence(workouts: readonly Workout[], program: Program | null, today: string, weeks = ADHERENCE_WEEKS): WorkoutAdherence {
+export function workoutAdherence(
+  workouts: readonly Workout[],
+  program: Program | null,
+  today: string,
+  weeks = ADHERENCE_WEEKS,
+  /** Days they ticked "rest day": a session planned then is excused, unless they trained anyway. */
+  restDays: ReadonlySet<string> = new Set(),
+): WorkoutAdherence {
   const last = weekStartOf(today);
   const basis: WorkoutAdherence["basis"] = !program || program.days.length === 0 ? "none" : program.schedule ? "calendar" : "days";
-  const sessions = program?.schedule ? scheduleSessions(program) : [];
+  const trained = new Set(workouts.filter((w) => w.finishedAt !== null).map((w) => w.date));
+  const sessions = (program?.schedule ? scheduleSessions(program) : []).filter((s) => !restDays.has(s.date) || trained.has(s.date));
   const out: AdherenceWeek[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
     const start = addDays(last, -7 * i);

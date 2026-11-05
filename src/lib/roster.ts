@@ -11,6 +11,7 @@ import { addDays, daysBetween } from "./dates";
 import { ON_TARGET_SHARE, memberTargetFinder } from "./nutrition-report";
 import { weekdayIndex } from "./weekday-pattern";
 import { needsHelp } from "./accountability";
+import { restDaysOf } from "./plan-actual";
 
 /** Adherence windows: the last 14 days to yesterday (today is still going). */
 export const ROSTER_DAYS = 14;
@@ -96,8 +97,10 @@ function workoutShare(m: MemberSummary, today: string): RosterInfo["workouts"] {
   let planned = 0;
   if (p.schedule) {
     const end = addDays(p.schedule.startDate, p.schedule.weeks * 7 - 1);
+    // A rest day ticked on a planned day is excused (src/lib/plan-actual.ts).
+    const rest = restDaysOf(m.data.habitLogs);
     for (let d = from; d <= to; d = addDays(d, 1)) {
-      if (d >= p.schedule.startDate && d <= end && p.schedule.weekdays.includes(weekdayIndex(d))) planned++;
+      if (d >= p.schedule.startDate && d <= end && p.schedule.weekdays.includes(weekdayIndex(d)) && !(rest.has(d) && !m.data.workoutDates.includes(d))) planned++;
     }
   } else {
     planned = Math.round((p.daysPerWeek * ROSTER_DAYS) / 7);
