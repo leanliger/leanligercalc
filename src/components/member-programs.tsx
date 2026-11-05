@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExerciseThumb } from "@/components/exercise-art";
-import { ProgramCalendarPanel } from "@/components/program-calendar";
 import { PlanVsActualCard } from "@/components/plan-vs-actual";
 import type { WeightUnit } from "@/lib/types";
 import { daysBetween, formatShort } from "@/lib/dates";
@@ -136,11 +135,19 @@ export function MemberPrograms({
         onCopy={onCopy}
       />
       {active.schedule ? (
-        <>
-          <ProgramCalendarPanel key={active.id} program={active} settings={settings} workouts={workouts} today={today} live={live} onStart={onStart} onResume={onResume} />
-          {/* What was planned each day against what they did (the coach sees the same card). */}
-          <PlanVsActualCard key={`pva-${active.id}`} program={active} workouts={workouts} restDays={restDays} today={today} unit={unit} custom={settings.customExercises} />
-        </>
+        // Their program's calendar as Plan vs actual (the card the coach sees), with start buttons.
+        <PlanVsActualCard
+          key={active.id}
+          program={active}
+          workouts={workouts}
+          restDays={restDays}
+          today={today}
+          unit={unit}
+          custom={settings.customExercises}
+          live={live}
+          onStart={(day) => onStart(active, day)}
+          onResume={onResume}
+        />
       ) : (
         <NextUp program={active} workouts={workouts} live={live} onStart={onStart} onResume={onResume} />
       )}

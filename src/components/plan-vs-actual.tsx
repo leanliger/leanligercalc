@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { CalendarCheck, ChevronLeft, ChevronRight, Trophy } from "lucide-react";
+import { CalendarCheck, ChevronLeft, ChevronRight, Play, Redo2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatShort } from "@/lib/dates";
 import type { Exercise } from "@/lib/exercises";
 import { dayLines, planVsActual, type DayKind, type PlanDay } from "@/lib/plan-actual";
-import type { Program, Workout } from "@/lib/training";
+import type { Program, ProgramDay, Workout } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
 import { weekdayIndex } from "@/lib/weekday-pattern";
@@ -16,7 +16,12 @@ import { cn } from "@/lib/utils";
 /**
  * Plan vs actual (src/lib/plan-actual.ts): a month of days, each with what
  * the program planned and what they did, and a day's exercises side by side.
- * Coaches: a member → Training → Program & calendar; members: Training → Tools.
+ * Coaches: a member → Training → Program & calendar; members: Training →
+ * Programs, where it is their program's calendar (with start buttons).
+ *
+ * A day's box holds its date and one line: the session's whole name (or
+ * "Rest"), shrunk to fit rather than wrapped; how it went is the box's colour
+ * (legend below), and the day panel spells it out.
  */
 
 const KIND: Record<DayKind, { label: string; cell: string; text: string }> = {
@@ -40,6 +45,9 @@ export function PlanVsActualCard({
   unit,
   custom,
   who,
+  live,
+  onStart,
+  onResume,
 }: {
   /** Their active program; its calendar is the plan. */
   program: Program | null;
@@ -51,6 +59,10 @@ export function PlanVsActualCard({
   custom: readonly Exercise[];
   /** The member's first name on the coach's copy. */
   who?: string;
+  /** Member's copy: a workout in progress, and starting a planned session. */
+  live?: Workout | null;
+  onStart?: (day: ProgramDay) => void;
+  onResume?: () => void;
 }) {
   const [month, setMonth] = React.useState(today.slice(0, 7));
   const [picked, setPicked] = React.useState(today);
@@ -65,8 +77,9 @@ export function PlanVsActualCard({
   };
   const monthName = new Date(`${month}-15T00:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
   const lead = weekdayIndex(days[0]!.date);
+  // The planned session's name; a session moved elsewhere keeps its name (struck through) here.
   const name = (d: PlanDay) =>
-    d.kind === "extra" ? "Extra" : d.kind === "off" ? (d.movedTo ? "Moved" : "Rest") : d.plan?.name ?? (d.workouts[0]?.name || "Workout");
+    d.kind === "extra" ? "Extra" : d.kind === "off" ? (d.movedTo ? (d.plan?.name ?? "Moved") : "Rest") : d.plan?.name ?? (d.workouts[0]?.name || "Workout");
 
   return (
     <Card>
@@ -88,7 +101,9 @@ export function PlanVsActualCard({
         </div>
         <CardDescription>
           {program?.schedule
-            ? `Each day of ${program.name}'s calendar against what ${who ? `${who} did` : "you did"}. A rest day ticked on a planned day is excused: it doesn't count against workout adherence.`
+            ? onStart
+              ? "Each day of your plan against what you did. Tap a day to see it, or to start today's workout."
+              : `Each day of ${program.name}'s calendar against what ${who ? `${who} did` : "you did"}. A rest day ticked on a planned day is excused: it doesn't count against workout adherence.`
             : `${who ? `${who}'s` : "Your"} workouts and rest days. Put a program on a calendar to compare them with a plan.`}
         </CardDescription>
       </CardHeader>
@@ -121,18 +136,23 @@ export function PlanVsActualCard({
                     aria-pressed={d.date === picked}
                     aria-label={`${formatShort(d.date)}: ${name(d)}, ${k.label}`}
                     className={cn(
-                      "flex min-h-[3.75rem] flex-col items-start gap-0.5 rounded-lg border p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "flex h-11 min-w-0 flex-col justify-between overflow-hidden rounded-lg border px-0.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-14 sm:px-1",
                       k.cell,
+                      d.movedTo && "border-dashed border-border",
                       d.date === picked && "outline outline-2 outline-primary",
                     )}
                   >
-                    <span className="tabular flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <span className="tabular flex w-full items-center justify-between gap-0.5 text-[9px] leading-none text-muted-foreground sm:text-[10px]">
                       {Number(d.date.slice(8))}
-                      {d.record ? <Trophy className="h-2.5 w-2.5 text-primary" aria-label="record" /> : null}
-                      {d.movedFrom ? <span aria-label="moved">↪</span> : null}
+                      <span className="flex items-center gap-0.5">
+                        {d.record ? <Trophy className="h-2.5 w-2.5 text-primary" aria-label="record" /> : null}
+                        {d.movedFrom || d.movedTo ? <Redo2 className={cn("h-2.5 w-2.5", d.movedFrom ? k.text : "text-muted-foreground")} aria-label="moved" /> : null}
+                      </span>
                     </span>
-                    <span className={cn("line-clamp-2 text-[10px] font-semibold leading-tight sm:text-[11px]", k.text)}>{name(d)}</span>
-                    {d.kind !== "off" && d.kind !== "planned" ? <span className="hidden text-[10px] text-muted-foreground sm:block">{k.label}</span> : null}
+                    <FitText
+                      text={name(d)}
+                      className={cn("font-semibold", d.movedTo ? "font-normal text-muted-foreground line-through" : d.kind === "off" ? "font-normal text-muted-foreground" : k.text)}
+                    />
                   </button>
                 );
               })}
@@ -147,18 +167,41 @@ export function PlanVsActualCard({
               <span className="flex items-center gap-1">
                 <Trophy className="h-3 w-3 text-primary" aria-hidden /> record
               </span>
-              <span>↪ moved</span>
+              <span className="flex items-center gap-1">
+                <Redo2 className="h-3 w-3" aria-hidden /> moved
+              </span>
             </div>
           </div>
 
-          <DayDetail day={day} unit={unit} custom={custom} who={who} today={today} />
+          <DayDetail day={day} unit={unit} custom={custom} who={who} today={today} live={live ?? null} onStart={onStart} onResume={onResume} />
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function DayDetail({ day: d, unit, custom, who, today }: { day: PlanDay; unit: WeightUnit; custom: readonly Exercise[]; who?: string; today: string }) {
+function DayDetail({
+  day: d,
+  unit,
+  custom,
+  who,
+  today,
+  live,
+  onStart,
+  onResume,
+}: {
+  day: PlanDay;
+  unit: WeightUnit;
+  custom: readonly Exercise[];
+  who?: string;
+  today: string;
+  live: Workout | null;
+  onStart?: (day: ProgramDay) => void;
+  onResume?: () => void;
+}) {
+  // Member's copy: today's session, a missed one, or a later one done today instead.
+  const startable = onStart && d.plan && (d.kind === "today" || d.kind === "missed" || d.kind === "planned") ? d.plan : null;
+  const startLabel = !startable ? "" : d.kind === "today" ? `Start ${startable.name}` : d.kind === "missed" ? `Do ${startable.name} today` : "Do it today instead";
   const w = d.workouts[0] ?? null;
   const lines = d.kind === "off" && !w ? [] : dayLines(d.plan, w, custom);
   const lb = (x: number) => Math.round(fromLb(x, unit) * 10) / 10;
@@ -170,7 +213,7 @@ function DayDetail({ day: d, unit, custom, who, today }: { day: PlanDay; unit: W
           {weekday} {formatShort(d.date)} · {d.kind === "extra" ? "Extra workout" : d.plan ? d.plan.name : d.kind === "off" ? "Rest" : (w?.name ?? "Workout")}
         </p>
         <p className={cn("text-[12px]", KIND[d.kind].text)}>
-          {KIND[d.kind].label}
+          {d.movedTo ? "Moved" : KIND[d.kind].label}
           {d.movedFrom ? ` · moved from ${formatShort(d.movedFrom)}` : ""}
           {d.movedTo ? ` · done on ${formatShort(d.movedTo)} instead` : ""}
         </p>
@@ -180,7 +223,9 @@ function DayDetail({ day: d, unit, custom, who, today }: { day: PlanDay; unit: W
           {who ?? "You"} ticked &ldquo;rest day&rdquo;{d.plan ? ` instead of ${d.plan.name}` : ""}. It&apos;s excused: it doesn&apos;t count against workout adherence.
         </p>
       ) : d.kind === "off" && !w ? (
-        <p className="text-muted-foreground">{d.movedTo ? "The session planned today was done on another day." : "Nothing planned, nothing logged: a normal day off."}</p>
+        <p className="text-muted-foreground">
+          {d.movedTo ? `${d.plan?.name ?? "The session"} was planned today and done on ${formatShort(d.movedTo)}, so it still counts as done.` : "Rest: nothing planned, nothing logged."}
+        </p>
       ) : d.kind === "missed" ? (
         <p className="text-destructive">Planned, but no workout and no rest day ticked.</p>
       ) : null}
@@ -213,7 +258,46 @@ function DayDetail({ day: d, unit, custom, who, today }: { day: PlanDay; unit: W
           <Trophy className="h-3 w-3" aria-hidden /> A personal record that day.
         </p>
       ) : null}
+      {startable ? (
+        live ? (
+          <Button variant="outline" className="w-full" onClick={onResume}>
+            <Play />
+            Resume {live.name} first
+          </Button>
+        ) : (
+          <Button className="w-full" variant={d.kind === "today" ? "default" : "outline"} onClick={() => onStart!(startable)}>
+            <Play />
+            {startLabel}
+          </Button>
+        )
+      ) : null}
     </div>
+  );
+}
+
+/** One line of text, shrunk (down to 6.5px) until it fits its box instead of wrapping. */
+function FitText({ text, className }: { text: string; className?: string }) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = "";
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > el.clientWidth && size > 6.5) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
+  return (
+    <span ref={ref} className={cn("block w-full whitespace-nowrap text-center text-[9px] leading-tight tracking-tight sm:text-[11px]", className)}>
+      {text}
+    </span>
   );
 }
 
