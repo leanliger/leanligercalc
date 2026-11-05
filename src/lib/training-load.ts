@@ -127,6 +127,63 @@ export function workoutAdherence(
   };
 }
 
+export const CONSISTENCY_WEEKS = 16;
+
+/** One day on the consistency heatmap. */
+export type ConsistencyKind = "done" | "rest" | "missed" | "planned" | "none" | "future";
+
+export interface Consistency {
+  /** Oldest first, Monday to Sunday; the last week is this week. */
+  weeks: { weekStart: string; days: { date: string; kind: ConsistencyKind }[] }[];
+  /** Weeks in a row hitting the plan, up to now (this week counts once hit; until then it doesn't break the run). */
+  streak: number;
+  /** The longest such run in the last two years. */
+  best: number;
+  basis: WorkoutAdherence["basis"];
+  /** Workouts finished in the weeks shown. */
+  total: number;
+}
+
+/**
+ * Training → Tools: the last CONSISTENCY_WEEKS as a day-by-day heatmap, and
+ * the run of weeks that hit the plan: every planned session done (a ticked
+ * rest day excuses one), or with no plan, at least one workout or rest day.
+ */
+export function consistency(
+  workouts: readonly Workout[],
+  program: Program | null,
+  today: string,
+  restDays: ReadonlySet<string> = new Set(),
+  weeks = CONSISTENCY_WEEKS,
+): Consistency {
+  const finished = workouts.filter((w) => w.finishedAt !== null);
+  const trained = new Set(finished.map((w) => w.date));
+  const planned = new Set((program?.schedule ? scheduleSessions(program) : []).map((s) => s.date));
+  const kind = (d: string): ConsistencyKind =>
+    trained.has(d) ? "done" : restDays.has(d) ? "rest" : planned.has(d) ? (d < today ? "missed" : "planned") : d > today ? "future" : "none";
+  const first = addDays(weekStartOf(today), -7 * (weeks - 1));
+  const grid = Array.from({ length: weeks }, (_, i) => {
+    const weekStart = addDays(first, 7 * i);
+    return { weekStart, days: Array.from({ length: 7 }, (_, j) => ({ date: addDays(weekStart, j), kind: kind(addDays(weekStart, j)) })) };
+  });
+
+  // Week by week over two years, for the streak and the best run.
+  const a = workoutAdherence(workouts, program, today, 104, restDays);
+  const restIn = (start: string) => Array.from({ length: 7 }, (_, j) => addDays(start, j)).some((d) => restDays.has(d));
+  const hit = a.weeks.map((w) => (w.planned > 0 ? w.done >= w.planned : w.done >= 1 || restIn(w.weekStart)));
+  const current = hit[hit.length - 1]!;
+  let streak = current ? 1 : 0;
+  for (let i = hit.length - 2; i >= 0 && hit[i]; i--) streak++;
+  let best = 0;
+  let run = 0;
+  for (const h of hit) {
+    run = h ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  const shownFrom = grid[0]!.weekStart;
+  return { weeks: grid, streak, best: Math.max(best, streak), basis: a.basis, total: finished.filter((w) => w.date >= shownFrom && w.date <= today).length };
+}
+
 export const RECORD_WEEKS = 8;
 
 export interface RecentRecord {

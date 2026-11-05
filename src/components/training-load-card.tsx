@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, CalendarCheck, Trophy } from "lucide-react";
+import { BarChart3, CalendarCheck, Flame, Trophy } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatShort } from "@/lib/dates";
 import { SegmentedControl } from "@/components/ui/segmented";
-import { LOAD_WEEKS, RECORD_WEEKS, recentRecords, volumeChange, weeklyVolume, workoutAdherence, type VolumeMeasure } from "@/lib/training-load";
+import { CONSISTENCY_WEEKS, LOAD_WEEKS, RECORD_WEEKS, consistency, recentRecords, type ConsistencyKind, volumeChange, weeklyVolume, workoutAdherence, type VolumeMeasure } from "@/lib/training-load";
 import type { Program, Workout } from "@/lib/training";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
@@ -174,6 +174,98 @@ export function WorkoutAdherenceCard({
         {a.basis !== "none" ? (
           <p className="text-[11px] text-muted-foreground">Dashed line: planned. Amber: fewer than planned. The last bar is this week, still going.</p>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+const HEAT: Record<ConsistencyKind, { cell: string; label: string }> = {
+  done: { cell: "bg-success", label: "Trained" },
+  rest: { cell: "bg-muted-foreground/35", label: "Rest day" },
+  missed: { cell: "bg-destructive/70", label: "Missed" },
+  planned: { cell: "border border-dashed border-foreground/40", label: "Planned" },
+  none: { cell: "bg-muted/60", label: "Nothing logged" },
+  future: { cell: "", label: "" },
+};
+
+/** The last 16 weeks day by day, and the run of weeks hitting the plan. */
+export function ConsistencyCard({
+  workouts,
+  program,
+  today,
+  restDays,
+}: {
+  workouts: readonly Workout[];
+  program: Program | null;
+  today: string;
+  restDays?: ReadonlySet<string>;
+}) {
+  const c = React.useMemo(() => consistency(workouts, program, today, restDays), [workouts, program, today, restDays]);
+  const legend = (["done", "rest", "missed", "planned"] as const).filter((k) => c.basis === "calendar" || (k !== "missed" && k !== "planned"));
+  return (
+    <Card>
+      <CardHeader className="space-y-1 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Flame className="h-4 w-4 text-primary" />
+          Consistency
+        </CardTitle>
+        <CardDescription>
+          The last {CONSISTENCY_WEEKS} weeks, one square a day. {c.total} workout{c.total === 1 ? "" : "s"} in that time.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p>
+            <span className={cn("tabular text-2xl font-semibold", c.streak > 0 ? "text-success" : "text-muted-foreground")}>{c.streak}</span>{" "}
+            <span className="text-sm text-muted-foreground">
+              week{c.streak === 1 ? "" : "s"} in a row {c.basis === "none" ? "training" : "hitting your plan"}
+            </span>
+          </p>
+          <p className="tabular text-sm text-muted-foreground">Best: {c.best}</p>
+        </div>
+        <div className="flex gap-1.5">
+          <div className="grid shrink-0 grid-rows-7 gap-[3px] text-[9px] leading-none text-muted-foreground" aria-hidden>
+            {["M", "", "W", "", "F", "", "S"].map((l, i) => (
+              <span key={i} className="flex aspect-square w-2.5 items-center">
+                {l}
+              </span>
+            ))}
+          </div>
+          <div
+            className="grid min-w-0 flex-1 grid-flow-col grid-rows-7 gap-[3px]"
+            style={{ gridTemplateColumns: `repeat(${CONSISTENCY_WEEKS}, minmax(0, 1fr))` }}
+            role="img"
+            aria-label={`${c.total} workouts in the last ${CONSISTENCY_WEEKS} weeks; ${c.streak} weeks in a row hitting the plan.`}
+          >
+            {c.weeks.flatMap((w) =>
+              w.days.map((d) => (
+                <span
+                  key={d.date}
+                  title={d.kind === "future" ? undefined : `${formatShort(d.date)}: ${HEAT[d.kind].label}`}
+                  className={cn("aspect-square rounded-[3px]", HEAT[d.kind].cell, d.date === today && "ring-1 ring-foreground ring-offset-1 ring-offset-card")}
+                />
+              )),
+            )}
+          </div>
+        </div>
+        <div className="flex justify-between pl-4 text-[10px] text-muted-foreground">
+          <span>{formatShort(c.weeks[0]!.weekStart)}</span>
+          <span>{formatShort(c.weeks[Math.floor(c.weeks.length / 2)]!.weekStart)}</span>
+          <span>This week</span>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+          {legend.map((k) => (
+            <span key={k} className="flex items-center gap-1.5">
+              <span aria-hidden className={cn("inline-block h-2.5 w-2.5 rounded-[3px]", HEAT[k].cell)} />
+              {HEAT[k].label}
+            </span>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {c.basis === "none"
+            ? "A week counts when you trained at least once (or ticked a rest day)."
+            : "A week counts when every planned workout was done; a ticked rest day excuses one. This week counts once you've hit it."}
+        </p>
       </CardContent>
     </Card>
   );

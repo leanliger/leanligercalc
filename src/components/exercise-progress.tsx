@@ -217,6 +217,9 @@ export function ExerciseProgress({
         </CardContent>
       </Card>
 
+      {/* Logged with a weight per side: each side's own line. */}
+      <SidesCard history={history} unit={unit} />
+
       {!exercise.bodyweight ? <RepRecords history={history} unit={unit} /> : null}
 
       <Card>
@@ -415,6 +418,134 @@ function niceTicks(min: number, max: number): number[] {
   const out: number[] = [];
   for (let v = lo; v <= hi + step / 2; v += step) out.push(Math.round(v * 100) / 100);
   return out;
+}
+
+interface SidePoint {
+  t: number;
+  date: string;
+  left: number;
+  right: number;
+  sets: string;
+}
+
+/**
+ * Left vs right, for a one-sided exercise logged with a weight per side
+ * (e.g. a lighter injured leg): each side's heaviest weight per session, and
+ * how close the lighter side now is to the other. Hidden until such a session.
+ */
+function SidesCard({ history, unit }: { history: ExerciseSession[]; unit: WeightUnit }) {
+  const data = React.useMemo(
+    () =>
+      history.flatMap((s, i): SidePoint[] => {
+        const split = s.sets.filter((x) => x.leftWeight !== undefined && x.rightWeight !== undefined);
+        if (split.length === 0) return [];
+        const best = (side: "l" | "r") => {
+          const done = split.filter((x) => (side === "l" ? x.left : x.right) ?? 0);
+          return done.length ? Math.max(...done.map((x) => (side === "l" ? x.leftWeight! : x.rightWeight!))) : 0;
+        };
+        return [
+          {
+            t: Date.parse(`${s.date}T00:00:00Z`) + i,
+            date: s.date,
+            left: Math.round(fromLb(best("l"), unit) * 10) / 10,
+            right: Math.round(fromLb(best("r"), unit) * 10) / 10,
+            sets: split.map((x) => formatSet(x, unit, false)).join("\n"),
+          },
+        ];
+      }),
+    [history, unit],
+  );
+  if (data.length === 0) return null;
+
+  const last = data[data.length - 1]!;
+  const first = data[0]!;
+  // The lighter side as a share of the other, now and at the first session.
+  const lighter: "left" | "right" | null = last.left === last.right ? null : last.left < last.right ? "left" : "right";
+  const share = (p: SidePoint, side: "left" | "right") => {
+    const other = side === "left" ? p.right : p.left;
+    return other > 0 ? Math.round((p[side] / other) * 100) : null;
+  };
+  const now = lighter ? share(last, lighter) : 100;
+  const then = lighter && data.length > 1 ? share(first, lighter) : null;
+  const Name = (s: "left" | "right") => (s === "left" ? "Left" : "Right");
+  const ticks = niceTicks(Math.min(...data.flatMap((p) => [p.left, p.right])), Math.max(...data.flatMap((p) => [p.left, p.right])));
+
+  return (
+    <Card>
+      <CardHeader className="space-y-1 pb-2">
+        <CardTitle className="text-sm">Left vs right</CardTitle>
+        <CardDescription className="text-xs">Each side&apos;s heaviest weight per session, from the sets you logged with a weight per side.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm">
+          {lighter === null ? (
+            <>Both sides are at the same weight now.</>
+          ) : (
+            <>
+              {Name(lighter)} is at <span className="tabular font-semibold text-primary">{now}%</span> of {Name(lighter === "left" ? "right" : "left").toLowerCase()}
+              {then !== null && then !== now ? (
+                <span className="text-muted-foreground">
+                  , {then < now! ? "up" : "down"} from {then}% on {formatShort(first.date)}
+                </span>
+              ) : null}
+              .
+            </>
+          )}
+        </p>
+        {data.length < 2 ? (
+          <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+            One session so far: {Name("left")} {last.left} {unit}, {Name("right")} {last.right} {unit}. The chart appears after the next one.
+          </p>
+        ) : (
+          <div className="h-56 w-full sm:h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 12, right: 8, bottom: 4, left: -4 }}>
+                <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="t"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
+                  tickLine={false}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(t: number) => formatShort(new Date(t).toISOString().slice(0, 10))}
+                  minTickGap={24}
+                />
+                <YAxis domain={[ticks[0]!, ticks[ticks.length - 1]!]} ticks={ticks} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={44} />
+                <Tooltip
+                  cursor={{ stroke: "hsl(var(--border))" }}
+                  content={({ active, payload }) => {
+                    const p = active ? (payload?.[0]?.payload as SidePoint | undefined) : undefined;
+                    if (!p) return null;
+                    return (
+                      <div className="max-w-[16rem] rounded-lg border border-border bg-popover p-3 text-xs shadow-lg">
+                        <p className="font-semibold">{formatShort(p.date)}</p>
+                        <p className="tabular mt-1">
+                          <span className="text-foreground">Left {p.left}</span> · <span className="text-primary">Right {p.right}</span> {unit}
+                        </p>
+                        <p className="tabular mt-1 whitespace-pre-line text-muted-foreground">{p.sets}</p>
+                      </div>
+                    );
+                  }}
+                />
+                <Line dataKey="left" name="Left" type="monotone" stroke="hsl(var(--foreground))" strokeWidth={2.5} dot={{ r: 2.5, fill: "hsl(var(--foreground))" }} isAnimationActive={false} />
+                <Line dataKey="right" name="Right" type="monotone" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 2.5, fill: "hsl(var(--primary))" }} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-0.5 w-4 rounded bg-foreground" /> Left {last.left} {unit}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-0.5 w-4 rounded bg-primary" /> Right {last.right} {unit}
+          </span>
+          <span>latest session</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ProgressChart({ history, metric, unit }: { history: ExerciseSession[]; metric: Metric; unit: WeightUnit }) {
