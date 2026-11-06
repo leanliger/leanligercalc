@@ -3,7 +3,8 @@
  * the member actually did (coach: a member → Training → Program & calendar;
  * member: Training → Tools).
  *
- *   done    the planned session (on its day, or moved: done within a few days)
+ *   done    the planned session (on its day, or moved: done within a few days),
+ *           or another day of the program done in its place (swapped)
  *   part    the planned session, cut short: a planned exercise skipped or
  *           fewer sets than planned
  *   missed  planned, nothing logged and no rest day marked
@@ -37,6 +38,8 @@ export interface PlanDay {
   movedFrom: string | null;
   /** Planned here but done on another day. */
   movedTo: string | null;
+  /** Another program day was done instead of the planned one: the planned day's name (`plan` is then the day done). */
+  swappedFrom: string | null;
   /** A personal record in one of the day's workouts. */
   record: boolean;
 }
@@ -91,16 +94,25 @@ export function planVsActual(
   const doneOn = new Map<string, (typeof states)[number]>();
   for (const s of states) if (s.workout && s.moved) doneOn.set(s.workout.date, s);
 
+  // A different program day done for a session (Lower A on Upper A's day) counts as done, not
+  // cut short: it's shown as the day they did, swapped for the planned one.
+  const doneAs = (planDay: ProgramDay, w: Workout) => {
+    const other = w.dayId && w.dayId !== planDay.id ? program?.days.find((x) => x.id === w.dayId) : undefined;
+    return other
+      ? { plan: other, swappedFrom: planDay.name, kind: "done" as const }
+      : { plan: planDay, swappedFrom: null, kind: cutShort(planDay, w) ? ("part" as const) : ("done" as const) };
+  };
+
   const days: PlanDay[] = [];
   for (let d = first; d.slice(0, 7) === first.slice(0, 7); d = addDays(d, 1)) {
     const own = finished.filter((w) => w.date === d);
     const s = planned.get(d);
     const moved = doneOn.get(d);
-    const base = { date: d, plan: s?.day ?? null, movedFrom: null as string | null, movedTo: null as string | null, record: own.some((w) => records.has(w.id)) };
+    const base = { date: d, plan: s?.day ?? null, movedFrom: null as string | null, movedTo: null as string | null, swappedFrom: null as string | null, record: own.some((w) => records.has(w.id)) };
     let day: PlanDay;
     if (s) {
       if (s.workout && !s.moved) {
-        day = { ...base, kind: cutShort(s.day, s.workout) ? "part" : "done", workouts: [s.workout, ...own.filter((w) => w.id !== s.workout!.id)] };
+        day = { ...base, ...doneAs(s.day, s.workout), workouts: [s.workout, ...own.filter((w) => w.id !== s.workout!.id)] };
       } else if (s.workout && s.moved) {
         // Done another day: shown there; here it's the plan that moved.
         day = { ...base, kind: own.length ? "extra" : "off", workouts: own, movedTo: s.workout.date };
@@ -111,7 +123,7 @@ export function planVsActual(
       }
     } else if (moved) {
       const w = moved.workout!;
-      day = { ...base, plan: moved.day, kind: cutShort(moved.day, w) ? "part" : "done", workouts: [w, ...own.filter((x) => x.id !== w.id)], movedFrom: moved.date };
+      day = { ...base, ...doneAs(moved.day, w), workouts: [w, ...own.filter((x) => x.id !== w.id)], movedFrom: moved.date };
     } else if (own.length) {
       // On the plan's calendar but not matched to a session, or no calendar at all.
       day = { ...base, kind: inPlan(d) && own.every((w) => !matched.has(w.id)) ? "extra" : "done", workouts: own };

@@ -261,6 +261,7 @@ function DayDetail({
         </p>
         <p className={cn("text-[12px]", KIND[d.kind].text)}>
           {d.movedTo ? "Moved" : KIND[d.kind].label}
+          {d.swappedFrom ? ` · swapped, done instead of ${d.swappedFrom}` : ""}
           {d.movedFrom ? ` · moved from ${formatShort(d.movedFrom)}` : ""}
           {d.movedTo ? ` · done on ${formatShort(d.movedTo)} instead` : ""}
         </p>
