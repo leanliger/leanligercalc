@@ -98,11 +98,13 @@ const ROWS: Row[] = [
   ["incline-db-press", "Incline dumbbell press", "chest", "dumbbell", "Bench at about 30°", "Elbows slightly tucked, not flared"],
   ["machine-chest-press", "Machine chest press", "chest", "machine", "Handles level with mid-chest", "Shoulder blades stay back on the pad"],
   ["plate-loaded-chest-press", "Plate-loaded chest press", "chest", "machine", "Seat so the handles line up with mid-chest", "Shoulder blades back on the pad, control the plates down"],
+  ["flat-plate-loaded-chest-press", "Flat plate-loaded chest press", "chest", "machine", "Seat so the handles line up with mid-chest, back flat on the pad", "Press straight out, control the plates down"],
   ["incline-machine-press", "Incline machine chest press", "chest", "machine", "Seat so the handles line up with your upper chest", "Shoulder blades back on the pad, press up and out"],
   ["smith-bench-press", "Smith machine bench press", "chest", "smith", "Set the bench so the bar meets mid-chest", "Shoulder blades pinched, control the lowering"],
   ["smith-incline-press", "Smith machine incline bench press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
   ["cable-fly", "Cable fly", "chest", "cable", "Slight bend in the elbows, fixed throughout", "Squeeze hands together in front of the chest"],
   ["pec-deck", "Pec deck", "chest", "machine", "Elbows level with shoulders", "Pause at the squeeze"],
+  ["incline-plate-loaded-fly", "Incline plate-loaded pec fly", "chest", "machine", "Seat so the handles line up with your upper chest", "Soft elbows, bring the handles up and together, slow on the way back"],
   ["db-fly", "Dumbbell fly", "chest", "dumbbell", "Wide arc with soft elbows", "Stop at a comfortable stretch"],
   ["push-up", "Push-up", "chest", "bodyweight", "Body in one straight line", "Chest to just above the floor"],
   ["chest-dip", "Chest dip", "chest", "bodyweight", "Lean forward slightly", "Lower until shoulders are just below elbows"],
@@ -198,6 +200,8 @@ const ART_OF: Partial<Record<string, string>> = {
   "machine-reverse-v-squat": "hack-squat",
   "cable-lat-pullover": "straight-arm-pulldown",
   "plate-loaded-chest-press": "machine-chest-press",
+  "flat-plate-loaded-chest-press": "machine-chest-press",
+  "incline-plate-loaded-fly": "pec-deck",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
@@ -216,6 +220,8 @@ const ALIASES: Partial<Record<string, string>> = {
   "triceps-dip-machine": "seated dip machine",
   "leg-press-calf-raise": "calf press",
   "plate-loaded-chest-press": "plate loaded hammer strength chest press iso lateral",
+  "flat-plate-loaded-chest-press": "plate loaded hammer strength flat bench chest press iso lateral",
+  "incline-plate-loaded-fly": "incline chest fly plate loaded pec fly machine",
   "cable-hammer-curl": "rope hammer curl",
 };
 
