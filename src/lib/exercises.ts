@@ -103,6 +103,7 @@ const ROWS: Row[] = [
   ["smith-bench-press", "Smith machine bench press", "chest", "smith", "Set the bench so the bar meets mid-chest", "Shoulder blades pinched, control the lowering"],
   ["smith-incline-press", "Smith machine incline bench press", "chest", "smith", "Set the bench so the bar meets upper chest", "Control the lowering"],
   ["cable-fly", "Cable fly", "chest", "cable", "Slight bend in the elbows, fixed throughout", "Squeeze hands together in front of the chest"],
+  ["low-to-high-cable-fly", "Low-to-high cable fly", "chest", "cable", "Pulleys at the bottom, soft elbows fixed throughout", "Sweep up and together to about chin height"],
   ["pec-deck", "Pec deck", "chest", "machine", "Elbows level with shoulders", "Pause at the squeeze"],
   ["incline-plate-loaded-fly", "Incline plate-loaded pec fly", "chest", "machine", "Seat so the handles line up with your upper chest", "Soft elbows, bring the handles up and together, slow on the way back"],
   ["db-fly", "Dumbbell fly", "chest", "dumbbell", "Wide arc with soft elbows", "Stop at a comfortable stretch"],
@@ -202,6 +203,7 @@ const ART_OF: Partial<Record<string, string>> = {
   "plate-loaded-chest-press": "machine-chest-press",
   "flat-plate-loaded-chest-press": "machine-chest-press",
   "incline-plate-loaded-fly": "pec-deck",
+  "low-to-high-cable-fly": "cable-fly",
 };
 
 /** Optional demo videos for built-in exercises, by id (https links). */
@@ -222,6 +224,7 @@ const ALIASES: Partial<Record<string, string>> = {
   "plate-loaded-chest-press": "plate loaded hammer strength chest press iso lateral",
   "flat-plate-loaded-chest-press": "plate loaded hammer strength flat bench chest press iso lateral",
   "incline-plate-loaded-fly": "incline chest fly plate loaded pec fly machine",
+  "low-to-high-cable-fly": "low to high upward cable crossover upper chest fly",
   "cable-hammer-curl": "rope hammer curl",
 };
 
