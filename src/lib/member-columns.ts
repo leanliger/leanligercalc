@@ -127,7 +127,9 @@ export function weightTrend(weighIns: readonly { date: string; weightLb: number 
 
 /** When they'd reach their goal weight at their current rate (as on their Insights tab); null without one. */
 export function goalDate(m: MemberSummary, today: string): string | null {
-  const goal = m.state.fatLoss.goalType === "weight" ? m.state.fatLoss.targetWeight : null;
+  // A lean bulk heads for its projected end weight.
+  const goal =
+    m.state.fatLoss.phase === "bulk" ? (m.timeline?.endWeight ?? null) : m.state.fatLoss.goalType === "weight" ? m.state.fatLoss.targetWeight : null;
   if (goal === null) return null;
   const sixWeeks = weightChangeOver(m.data.weighIns, today);
   const rate = m.progress?.observedRate ?? (sixWeeks === null ? null : -sixWeeks / 6);

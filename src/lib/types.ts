@@ -60,10 +60,22 @@ export type ActivityLevel =
 export type ActivitySource = "steps" | "level";
 
 /**
+ * Which way the Timeline plans: a cut down to a goal, or a lean bulk for a
+ * number of weeks (src/lib/lean-bulk.ts).
+ */
+export type PlanPhase = "cut" | "bulk";
+
+/**
  * Timeline settings. Biometrics live on `BiometricProfile` and are passed
  * alongside these, so the same person can be evaluated against several plans.
  */
 export interface FatLossInputs {
+  /** Cut (the default, and every plan made before bulks existed) or lean bulk. */
+  phase: PlanPhase;
+  /** Lean bulk: how many weeks it runs. */
+  bulkWeeks: number;
+  /** Lean bulk: weekly gain as a fraction of body weight, e.g. 0.0025 for 0.25%. */
+  gainRate: number;
   goalType: GoalType;
   /** Target scale weight in pounds. Used when `goalType === "weight"`. */
   targetWeight: number;
@@ -147,7 +159,14 @@ export interface TimelineWarning {
   detail: string;
 }
 
+/**
+ * A Timeline plan. For a lean bulk (`phase: "bulk"`) the same fields hold a
+ * gain as negative numbers: weeklyLoss, cumulativeLoss, totalLoss, fatLoss,
+ * leanLoss, dailyDeficit and averageDailyDeficit are all below zero (a
+ * surplus), so any maths on them works both ways; only the words differ.
+ */
 export interface FatLossResult {
+  phase: PlanPhase;
   /** Week-by-week projection, index 0 being the starting point. */
   projection: WeekProjection[];
   /** Whole weeks required to reach the goal. */

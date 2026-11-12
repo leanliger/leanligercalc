@@ -190,7 +190,9 @@ function PlanWeekLine({ week, unit, onOpenTimeline }: { week: PlanWeek; unit: We
         ? week.afterLabel
           ? `Your plan finished ${formatShort(week.goalDate)}: ${week.afterLabel.toLowerCase()}, set on the Timeline`
           : `Your plan finished ${formatShort(week.goalDate)}: these are its last week`
-        : `Week ${week.index + 1} of ${week.count} of your plan`;
+        : week.phase === "bulk"
+          ? `Week ${week.index + 1} of ${week.count} of your lean bulk`
+          : `Week ${week.index + 1} of ${week.count} of your plan`;
   const weight = week.index > 0 ? ` · planned weight ${formatWeight(week.weight, unit)}` : "";
   return (
     <p className="tabular text-xs leading-relaxed text-muted-foreground">
@@ -360,13 +362,15 @@ export function CarbCyclingCalculator({
                   hint={
                     planWeek.index === 0
                       ? maintenanceNote
-                      : "Lower than at the start: it falls as your weight comes down."
+                      : planWeek.phase === "bulk"
+                        ? "Higher than at the start: it rises as your weight goes up."
+                        : "Lower than at the start: it falls as your weight comes down."
                   }
                 />
                 <PlanNumber
                   label="Daily calorie target"
                   value={inputs.dailyCalorieTarget ?? derivedTarget}
-                  hint={`Reaches your goal by ${formatShort(planWeek.goalDate)}${
+                  hint={`${planWeek.phase === "bulk" ? `${Math.max(0, Math.round((inputs.dailyCalorieTarget ?? derivedTarget) - inputs.tdee)).toLocaleString()} kcal over maintenance, until ${formatShort(planWeek.goalDate)}` : `Reaches your goal by ${formatShort(planWeek.goalDate)}`}${
                     planWeek.adjustment
                       ? `, with your check-in change of ${planWeek.adjustment > 0 ? "+" : "−"}${Math.abs(planWeek.adjustment)} kcal`
                       : ""

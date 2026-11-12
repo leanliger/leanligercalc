@@ -313,7 +313,15 @@ export function CheckinTab({
   const checkinPlan = React.useMemo(() => {
     const goal = fatLoss.goalType === "weight" ? fatLoss.targetWeight : null;
     const direction: "lose" | "gain" | "maintain" =
-      goal === null ? "lose" : goal < profile.weight - 0.5 ? "lose" : goal > profile.weight + 0.5 ? "gain" : "maintain";
+      fatLoss.phase === "bulk"
+        ? "gain"
+        : goal === null
+          ? "lose"
+          : goal < profile.weight - 0.5
+            ? "lose"
+            : goal > profile.weight + 0.5
+              ? "gain"
+              : "maintain";
     const t = today ? weekTargets(weekStartOf(today)) : null;
     return {
       direction,
@@ -649,12 +657,17 @@ export function CheckinTab({
                     }
                   />
                   <Stat
-                    label="Loss rate"
-                    value={analysis.observedRate === null ? "—" : `${round(fromLb(analysis.observedRate, unit), 2)} ${unit}/wk`}
+                    // Rates are stored as loss (gain negative); a bulk shows them as gain.
+                    label={timeline.phase === "bulk" ? "Gain rate" : "Loss rate"}
+                    value={
+                      analysis.observedRate === null
+                        ? "—"
+                        : `${round(fromLb(timeline.phase === "bulk" ? -analysis.observedRate : analysis.observedRate, unit), 2)} ${unit}/wk`
+                    }
                     sub={
                       analysis.plannedRate === null
                         ? "needs more weigh-ins"
-                        : `plan: ${round(fromLb(analysis.plannedRate, unit), 2)} ${unit}/wk`
+                        : `plan: ${round(fromLb(timeline.phase === "bulk" ? -analysis.plannedRate : analysis.plannedRate, unit), 2)} ${unit}/wk`
                     }
                   />
                   <Stat
@@ -667,7 +680,7 @@ export function CheckinTab({
                     }
                   />
                   <Stat
-                    label="Goal at this rate"
+                    label={timeline.phase === "bulk" ? "End weight at this rate" : "Goal at this rate"}
                     value={analysis.projectedGoalDate ? formatShort(analysis.projectedGoalDate) : "—"}
                     sub={`plan: ${formatShort(timeline.finishDate)}`}
                   />

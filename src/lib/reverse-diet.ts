@@ -77,7 +77,9 @@ export function afterGoalPlan(
   timeline: FatLossResult,
   adjustments: readonly CalorieAdjustment[],
 ): AfterGoalPlan | null {
-  if (fatLoss.afterGoal === "stay") return null;
+  // A lean bulk always ends at maintenance at the new weight: there's no surplus to keep or reverse from.
+  const afterGoal = timeline.phase === "bulk" ? "maintain" : fatLoss.afterGoal;
+  if (afterGoal === "stay") return null;
   const count = timeline.weeksRequired;
   if (!timeline.feasible || count <= 0) return null;
   const last = timeline.projection[count - 1];
@@ -91,7 +93,7 @@ export function afterGoalPlan(
   const step = Math.min(Math.max(Math.round(fatLoss.reverseStep), REVERSE_STEP_LIMITS.min), REVERSE_STEP_LIMITS.max);
 
   const weeks: ReverseWeek[] = [];
-  if (fatLoss.afterGoal === "reverse") {
+  if (afterGoal === "reverse") {
     for (let i = 0; i < MAX_REVERSE_WEEKS; i++) {
       const calories = fromCalories + step * (i + 1);
       if (calories >= maintenance) break;
@@ -99,7 +101,7 @@ export function afterGoalPlan(
     }
   }
   return {
-    mode: fatLoss.afterGoal,
+    mode: afterGoal,
     startDate,
     fromCalories,
     maintenance,

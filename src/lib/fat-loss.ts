@@ -16,6 +16,7 @@
 
 import { kcalPerThousandSteps, maintenanceBreakdown, type ActivityInputs } from "./activity";
 import { minimumSafeBodyFat, resolveBodyFat } from "./body-composition";
+import { calculateLeanBulkTimeline } from "./lean-bulk";
 import { addWeeks, todayISO, weeksBetween } from "./dates";
 import type {
   BiometricProfile,
@@ -497,11 +498,14 @@ function buildWarnings(
   return warnings;
 }
 
-/** Main entry point: solve the timeline for a person and a plan. */
+/** Main entry point: solve the timeline for a person and a plan (a cut, or a lean bulk). */
 export function calculateFatLossTimeline(
   profile: BiometricProfile,
   inputs: FatLossInputs,
 ): FatLossResult {
+  if (inputs.phase === "bulk") {
+    return calculateLeanBulkTimeline(profile, inputs, (weight) => tdeeAtWeight(profile, weight, inputs, inputs.tdeeOverride));
+  }
   const startWeight = Math.max(safeNumber(profile.weight, 0), 0);
   const startBodyFat = clamp(resolveBodyFat(profile), 1, 70);
   const rate = clamp(safeNumber(inputs.weeklyRate, RATE_PRESETS.moderate), 0.001, 0.03);
@@ -576,6 +580,7 @@ export function calculateFatLossTimeline(
   }
 
   const base: Omit<FatLossResult, "warnings"> = {
+    phase: "cut",
     projection,
     weeksRequired,
     preciseWeeks: round(preciseWeeks, 1),
@@ -619,6 +624,22 @@ export function formatTimelineSummary(
   const bodyFatSource =
     profile.bodyFatOverride === null ? " (estimated)" : " (measured)";
   const fmt = (lb: number) => `${round(convert(lb), 1)} ${unitLabel}`;
+  if (result.phase === "bulk") {
+    return [
+      "LEAN BULK",
+      `Start: ${fmt(profile.weight)} at ${round(startBodyFat, 1)}% body fat${bodyFatSource}`,
+      `Projected end: ${fmt(result.endWeight)} at ${round(result.endBodyFat, 1)}% body fat`,
+      `Rate: ${(inputs.gainRate * 100).toFixed(2)}% of body weight per week`,
+      "",
+      `Duration: ${result.weeksRequired} weeks`,
+      `Start date: ${result.requiredStartDate}`,
+      `Finish date: ${result.finishDate}`,
+      "",
+      `Total gain: ${fmt(-result.totalLoss)} (${fmt(-result.leanLoss)} lean, ${fmt(-result.fatLoss)} fat, estimated)`,
+      `Average intake: ${result.averageTargetCalories} kcal/day`,
+      `Average surplus: ${-result.averageDailyDeficit} kcal/day`,
+    ].join("\n");
+  }
   const lines = [
     "FAT LOSS TIMELINE",
     `Start: ${fmt(profile.weight)} at ${round(startBodyFat, 1)}% body fat${bodyFatSource}`,

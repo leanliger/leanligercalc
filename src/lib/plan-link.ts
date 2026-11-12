@@ -25,10 +25,12 @@ import { calculateFatLossTimeline } from "./fat-loss";
 import { weekCalorieTarget } from "./roadmap";
 import { afterGoalDay, afterGoalLabel, afterGoalPlan } from "./reverse-diet";
 import type { CalorieAdjustment } from "./tracking";
-import type { BiometricProfile, CarbCyclingInputs, FatLossInputs } from "./types";
+import type { BiometricProfile, CarbCyclingInputs, FatLossInputs, PlanPhase } from "./types";
 
 /** The week of the Timeline that Macros shows today. */
 export interface PlanWeek {
+  /** A cut or a lean bulk. */
+  phase: PlanPhase;
   /** 0-based week of the plan. */
   index: number;
   /** Weeks of dieting in the plan. */
@@ -71,6 +73,7 @@ export function currentPlanWeek(
   const afterDay = after && today ? afterGoalDay(after, today) : null;
   if (after && afterDay) {
     return {
+      phase: t.phase,
       index,
       count,
       when,
@@ -86,6 +89,7 @@ export function currentPlanWeek(
   }
   const { target, adjustment } = weekCalorieTarget(row, addDays(startDate, index * 7), adjustments);
   return {
+    phase: t.phase,
     index,
     count,
     when,
@@ -98,6 +102,28 @@ export function currentPlanWeek(
     bodyFat: row.bodyFat,
     afterLabel: null,
   };
+}
+
+/**
+ * The weight a plan is heading for, for "to go", forecasts and progress bars:
+ * a cut's goal weight (null for a body fat goal, as before), or a lean bulk's
+ * projected end weight.
+ */
+export function goalWeightOf(profile: BiometricProfile, fatLoss: FatLossInputs): number | null {
+  if (fatLoss.phase === "bulk") {
+    const t = calculateFatLossTimeline(profile, fatLoss);
+    return t.feasible ? t.endWeight : null;
+  }
+  return fatLoss.goalType === "weight" ? fatLoss.targetWeight : null;
+}
+
+/** "Lean bulk to ~185 lb" or "Get to 175 lb" / "12% body fat", for coach screens. */
+export function goalText(profile: BiometricProfile, fatLoss: FatLossInputs, w: (lb: number) => string): string {
+  if (fatLoss.phase === "bulk") {
+    const end = goalWeightOf(profile, fatLoss);
+    return end === null ? "Lean bulk" : `Lean bulk to ~${w(end)}`;
+  }
+  return fatLoss.goalType === "weight" ? w(fatLoss.targetWeight) : `${fatLoss.targetBodyFat}% body fat`;
 }
 
 /** Where the Timeline's maintenance comes from, in words: "2,248 base + 254 steps + 156 training". */

@@ -45,9 +45,13 @@ export function FatLossAdvancedFields({
   };
   const firstRate = rateAt(1);
   const lastRate = rateAt(result.projection.length - 1);
+  // A lean bulk has no deficit or adaptation to set: just maintenance.
+  const bulking = inputs.phase === "bulk";
 
   return (
     <>
+      {bulking ? null : (
+      <>
       <NumberField
         label="Daily deficit instead of speed"
         value={typedDeficit}
@@ -87,6 +91,8 @@ export function FatLossAdvancedFields({
           onCheckedChange={(on) => onChange(on ? { fixedDeficit: typedDeficit } : { fixedDeficit: null })}
         />
       </div>
+      </>
+      )}
 
       <NumberField
         label="Known maintenance calories"
@@ -99,7 +105,9 @@ export function FatLossAdvancedFields({
         placeholder="Optional"
         hint={
           inputs.tdeeOverride
-            ? "Overrides the estimate, and still falls as you get lighter."
+            ? bulking
+              ? "Overrides the estimate, and still rises as you gain."
+              : "Overrides the estimate, and still falls as you get lighter."
             : `Leave blank to estimate (${formatCalories(firstWeek?.tdee ?? 0)} from ${
                 inputs.activitySource === "steps" ? "your steps and training" : "your activity level"
               }).`
@@ -107,6 +115,7 @@ export function FatLossAdvancedFields({
         help="If you have tracked your intake at stable weight, enter it here. A measured maintenance figure beats any formula."
       />
 
+      {bulking ? null : (
       <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-border p-3">
         <span className="space-y-0.5">
           <span className="block text-sm font-medium">Metabolic adaptation</span>
@@ -118,6 +127,7 @@ export function FatLossAdvancedFields({
           aria-label="Model metabolic adaptation"
         />
       </label>
+      )}
     </>
   );
 }

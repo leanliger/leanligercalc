@@ -18,6 +18,9 @@ interface MilestoneTableProps {
 
 export function MilestoneTable({ projection, unit }: MilestoneTableProps) {
   const [expanded, setExpanded] = React.useState(false);
+  // A loss is positive and a gain (lean bulk) negative: show −1.2 or +0.5.
+  const signed = (loss: number, decimals: number) =>
+    loss > 0 ? `−${formatWeight(loss, unit, decimals, false)}` : loss < 0 ? `+${formatWeight(-loss, unit, decimals, false)}` : "—";
 
   if (projection.length === 0) {
     return (
@@ -36,7 +39,7 @@ export function MilestoneTable({ projection, unit }: MilestoneTableProps) {
       <div className="relative scrollbar-thin overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <caption className="sr-only">
-            Week-by-week projected body weight, body fat, cumulative loss, and calorie
+            Week-by-week projected body weight, body fat, total change, and calorie
             targets.
           </caption>
           <thead>
@@ -54,10 +57,10 @@ export function MilestoneTable({ projection, unit }: MilestoneTableProps) {
                 Body fat
               </th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">
-                Weekly loss
+                Weekly change
               </th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">
-                Total lost
+                Total change
               </th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">
                 Intake
@@ -94,14 +97,10 @@ export function MilestoneTable({ projection, unit }: MilestoneTableProps) {
                   </td>
                   <td className="px-3 py-2 text-right tabular">{week.bodyFat}%</td>
                   <td className="px-3 py-2 text-right tabular text-muted-foreground">
-                    {week.weeklyLoss > 0
-                      ? `−${formatWeight(week.weeklyLoss, unit, 2, false)}`
-                      : "—"}
+                    {signed(week.weeklyLoss, 2)}
                   </td>
                   <td className="px-3 py-2 text-right tabular">
-                    {week.cumulativeLoss > 0
-                      ? `−${formatWeight(week.cumulativeLoss, unit, 1, false)}`
-                      : "—"}
+                    {signed(week.cumulativeLoss, 1)}
                   </td>
                   <td className="px-3 py-2 text-right tabular">
                     <span className={cn(week.deficitClamped && "text-warning")}>

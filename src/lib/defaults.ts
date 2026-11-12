@@ -6,6 +6,7 @@ import type {
   WeightUnit,
 } from "./types";
 import { feetInchesToInches } from "./units";
+import { DEFAULT_BULK_WEEKS, GAIN_RATE_PRESETS } from "./lean-bulk";
 
 /** A 30-year-old, 5'10", 200 lb male — a neutral starting point. */
 export const DEFAULT_PROFILE: BiometricProfile = {
@@ -19,6 +20,9 @@ export const DEFAULT_PROFILE: BiometricProfile = {
 };
 
 export const DEFAULT_FAT_LOSS_INPUTS: FatLossInputs = {
+  phase: "cut",
+  bulkWeeks: DEFAULT_BULK_WEEKS,
+  gainRate: GAIN_RATE_PRESETS.standard,
   goalType: "weight",
   targetWeight: 175,
   targetBodyFat: 12,

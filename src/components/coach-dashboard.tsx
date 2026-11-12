@@ -2910,13 +2910,24 @@ function MemberDetail({
                       <Mini
                         label="Goal"
                         value={
-                          m.state.fatLoss.goalType === "bodyFat"
-                            ? `${m.state.fatLoss.targetBodyFat}% body fat`
-                            : weight(m.state.fatLoss.targetWeight, unit, 0)
+                          m.state.fatLoss.phase === "bulk"
+                            ? m.timeline?.feasible
+                              ? `Lean bulk to ~${weight(m.timeline.endWeight, unit, 0)}`
+                              : "Lean bulk"
+                            : m.state.fatLoss.goalType === "bodyFat"
+                              ? `${m.state.fatLoss.targetBodyFat}% body fat`
+                              : weight(m.state.fatLoss.targetWeight, unit, 0)
                         }
                       />
-                      <Mini label="Losing / wk" value={p?.observedRate == null ? "—" : weight(p.observedRate, unit)} />
-                      <Mini label="Plan / wk" value={p?.plannedRate == null ? "—" : weight(p.plannedRate, unit)} />
+                      {/* Rates are stored as loss; a lean bulk shows them as gain. */}
+                      <Mini
+                        label={m.state.fatLoss.phase === "bulk" ? "Gaining / wk" : "Losing / wk"}
+                        value={p?.observedRate == null ? "—" : weight(m.state.fatLoss.phase === "bulk" ? -p.observedRate : p.observedRate, unit)}
+                      />
+                      <Mini
+                        label="Plan / wk"
+                        value={p?.plannedRate == null ? "—" : weight(m.state.fatLoss.phase === "bulk" ? -p.plannedRate : p.plannedRate, unit)}
+                      />
                     </div>
                     {p?.detail ? <p className="text-xs leading-relaxed text-muted-foreground">{p.detail}</p> : null}
                     {m.timeline && m.data.weighIns.length > 0 ? (

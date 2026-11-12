@@ -13,7 +13,7 @@ import type { CheckinAnswers, CheckinStats } from "../src/lib/checkins";
 import { dayTargetFinder } from "../src/lib/day-targets";
 import { isValidISODate } from "../src/lib/dates";
 import { sanitizeAppState } from "../src/lib/persistence";
-import { currentPlanWeek, effectiveCarbInputs } from "../src/lib/plan-link";
+import { currentPlanWeek, effectiveCarbInputs, goalWeightOf } from "../src/lib/plan-link";
 import { askGemini, geminiKey, takeAiUse, type GeminiEnv } from "./gemini";
 import { coachCheck, type SharingEnv, type SharingResult } from "./sharing";
 
@@ -71,7 +71,7 @@ export async function draftCheckinReply(env: Env, viewerId: string, raw: unknown
       const week = currentPlanWeek(plan.profile, plan.fatLoss, plan.tracking.adjustments, stats.to);
       const t = dayTargetFinder(plan.profile, plan.fatLoss, effectiveCarbInputs(plan.carbs, week), plan.tracking.adjustments, coachMacros)(stats.to);
       if (t) targets = { calories: t.calories, protein: t.protein, steps: plan.fatLoss.activitySource === "steps" ? plan.fatLoss.dailySteps : null };
-      if (plan.fatLoss.goalType === "weight") goalWeightLb = plan.fatLoss.targetWeight;
+      goalWeightLb = goalWeightOf(plan.profile, plan.fatLoss);
     } catch {
       /* draft without targets */
     }

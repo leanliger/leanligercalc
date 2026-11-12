@@ -24,7 +24,7 @@ import {
   type InsightsInput,
   type MonthRecap,
 } from "@/lib/member-insights";
-import { currentPlanWeek, effectiveCarbInputs } from "@/lib/plan-link";
+import { currentPlanWeek, effectiveCarbInputs, goalWeightOf } from "@/lib/plan-link";
 import { weightChangeOver } from "@/lib/muscle-check";
 import { MuscleKeptChart } from "@/components/combined-charts";
 import { ClientFile, ClientFileButton, DietBreakCard, NeedleCard, RiskCard, useNeedle } from "@/components/coach-coaching-cards";
@@ -290,7 +290,7 @@ function ForecastCard({
   const [applied, setApplied] = React.useState<string | null>(null);
   const p = summary.progress;
   const plan = summary.state;
-  const goal = plan.fatLoss.goalType === "weight" ? plan.fatLoss.targetWeight : null;
+  const goal = goalWeightOf(plan.profile, plan.fatLoss);
   const trend = p?.trendWeight ?? summary.latestWeightLb;
   // Their plan's measured rate; without one, the last six weeks' trend.
   const sixWeeks = weightChangeOver(summary.data.weighIns, today);

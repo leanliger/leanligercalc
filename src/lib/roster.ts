@@ -53,6 +53,7 @@ const pct = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 100);
 
 export function goalKind(m: MemberSummary): GoalKind {
   if (!m.hasPlan) return "No plan";
+  if (m.state.fatLoss.phase === "bulk") return "Muscle gain";
   const goal = m.state.carbs.goal;
   if (goal === "recomp") return "Recomp";
   if (goal === "maintenance") return "Maintenance";
@@ -64,7 +65,9 @@ export function goalKind(m: MemberSummary): GoalKind {
 function goalProgress(m: MemberSummary, kind: GoalKind): RosterInfo["progress"] {
   if (kind !== "Fat loss" && kind !== "Muscle gain") return null;
   const start = m.state.profile.weight;
-  const goal = m.state.fatLoss.goalType === "weight" ? m.state.fatLoss.targetWeight : (m.timeline?.endWeight ?? null);
+  // A lean bulk's goal is where its projection ends.
+  const goal =
+    m.state.fatLoss.phase !== "bulk" && m.state.fatLoss.goalType === "weight" ? m.state.fatLoss.targetWeight : (m.timeline?.endWeight ?? null);
   const now = m.progress?.trendWeight ?? m.latestWeightLb;
   if (goal === null || now === null || Math.abs(start - goal) < 0.5) return null;
   const total = Math.abs(start - goal);

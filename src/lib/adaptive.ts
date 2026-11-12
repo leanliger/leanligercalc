@@ -32,6 +32,7 @@ import { addDays, daysBetween } from "./dates";
 import type { BiometricProfile, FatLossResult, WeekProjection } from "./types";
 import { adjustmentOn, type CalorieAdjustment, type WeighIn } from "./tracking";
 import { KCAL_PER_LB_FAT, KCAL_PER_LB_LEAN, round } from "./units";
+import { KCAL_PER_LB_GAINED } from "./lean-bulk";
 
 export const ANALYSIS_WINDOW_DAYS = 21;
 export const MIN_WEIGH_INS = 6;
@@ -228,6 +229,7 @@ export function analyzeProgress(
 
   const start = timeline.requiredStartDate;
   const goalDate = timeline.finishDate;
+  const bulk = timeline.phase === "bulk";
   // A week of pre-diet weigh-ins is useful as a baseline; anything older isn't.
   const relevant = weighIns
     .filter((w) => w.date >= addDays(start, -7) && w.date <= today)
@@ -255,7 +257,7 @@ export function analyzeProgress(
       ...base,
       status: "not-started",
       headline: "Plan hasn't started yet",
-      detail: `Your diet begins ${start}. Weigh-ins before then give a baseline but don't count toward the comparison.`,
+      detail: `Your ${bulk ? "lean bulk" : "diet"} begins ${start}. Weigh-ins before then give a baseline but don't count toward the comparison.`,
     };
   }
 
@@ -327,7 +329,8 @@ export function analyzeProgress(
 
   const row = rowFor(timeline, latest.date) ?? timeline.projection[0]!;
   const rateForDensity = observedRate > 0 ? observedRate : Math.max(plannedRate, 0.1);
-  const density = energyPerLb(rateForDensity / trendWeight, row.bodyFat);
+  // A lean bulk prices weight change with its own estimate (src/lib/lean-bulk.ts).
+  const density = bulk ? KCAL_PER_LB_GAINED : energyPerLb(rateForDensity / trendWeight, row.bodyFat);
   const estimatedMaintenance = Math.round(intakeAverage + (observedRate * density) / 7);
 
   const modelRows = new Set<number>();
@@ -342,9 +345,13 @@ export function analyzeProgress(
     : null;
 
   // Projected arrival at the goal weight if the observed rate holds.
+  // (Bulking: when the projected end weight is reached.)
   const goalWeight = timeline.endWeight;
   let projectedGoalDate: string | null = null;
-  if (trendWeight <= goalWeight) projectedGoalDate = latest.date;
+  if (bulk) {
+    if (trendWeight >= goalWeight) projectedGoalDate = latest.date;
+    else if (observedRate < -0.05) projectedGoalDate = addDays(latest.date, Math.round(((goalWeight - trendWeight) / -observedRate) * 7));
+  } else if (trendWeight <= goalWeight) projectedGoalDate = latest.date;
   else if (observedRate > 0.05) {
     projectedGoalDate = addDays(latest.date, Math.round(((trendWeight - goalWeight) / observedRate) * 7));
   }
@@ -382,22 +389,30 @@ export function analyzeProgress(
     };
   }
 
+  // What the weight is doing, in words: losing, or gaining on a bulk (and a cut that's gaining).
+  const moving = (r: number) => (r < 0 ? `gaining ${fmtRate(r)}` : `losing ${fmtRate(r)}`);
   if (Math.abs(gap) <= tolerance) {
     return {
       ...analysed,
       status: "on-track",
-      headline: `On track — losing ${fmtRate(observedRate)}`,
+      headline: `On track — ${moving(observedRate)}`,
       detail: `The plan called for ${fmtRate(plannedRate)} over these ${spanDays} days. No change needed; keep going.${intakeNote}`,
     };
   }
 
-  // Recommend a correction.
+  // Recommend a correction. "Behind" is short of the plan's change: losing too
+  // slowly on a cut, gaining too slowly on a bulk. Either way gap × density
+  // gives the right sign: behind on a cut eats less, behind on a bulk eats more.
   const effectiveFrom = weekStartOnOrAfter(timeline, addDays(today, 1));
-  const behind = gap > 0;
+  const behind = bulk ? gap < 0 : gap > 0;
   const status = behind ? ("behind" as const) : ("ahead" as const);
-  const headline = behind
-    ? `Losing slower than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`
-    : `Losing faster than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`;
+  const headline = bulk
+    ? behind
+      ? `Gaining slower than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`
+      : `Gaining faster than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`
+    : behind
+      ? `Losing slower than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`
+      : `Losing faster than planned — ${fmtRate(observedRate)} vs ${fmtRate(plannedRate)}`;
 
   if (!effectiveFrom) {
     return {
@@ -427,14 +442,21 @@ export function analyzeProgress(
     kcal = floor - current;
   }
 
-  const reason = behind
-    ? `Real maintenance looks ~${Math.abs(Math.round(raw))} kcal/day lower than the model predicted.`
-    : `Real maintenance looks ~${Math.abs(Math.round(raw))} kcal/day higher than the model predicted.`;
+  // raw > 0: real maintenance is higher than the model (eat more), < 0: lower.
+  const reason =
+    raw < 0
+      ? `Real maintenance looks ~${Math.abs(Math.round(raw))} kcal/day lower than the model predicted.`
+      : `Real maintenance looks ~${Math.abs(Math.round(raw))} kcal/day higher than the model predicted.`;
 
+  const maintenanceLine = `Based on ${window.count} weigh-ins over ${spanDays} days, your real maintenance is about ${estimatedMaintenance.toLocaleString()} kcal/day — the model estimated ${modelMaintenance?.toLocaleString() ?? (raw < 0 ? "more" : "less")}.`;
   const detailParts = [
-    behind
-      ? `Based on ${window.count} weigh-ins over ${spanDays} days, your real maintenance is about ${estimatedMaintenance.toLocaleString()} kcal/day — the model estimated ${modelMaintenance?.toLocaleString() ?? "more"}.`
-      : `You're ahead of plan. Losing faster than planned costs more muscle, so the recommendation is to eat a little more.`,
+    bulk
+      ? behind
+        ? `${maintenanceLine} Eating a little more gets the gain back on plan.`
+        : `You're gaining faster than planned, and more of a fast gain is fat, so the recommendation is to eat a little less.`
+      : behind
+        ? maintenanceLine
+        : `You're ahead of plan. Losing faster than planned costs more muscle, so the recommendation is to eat a little more.`,
     Math.abs(raw) > MAX_STEP_KCAL
       ? `The full correction is ~${Math.abs(Math.round(raw / 25) * 25)} kcal/day; this change is capped at ${MAX_STEP_KCAL} to avoid overcorrecting, and the next check-in can go further.`
       : null,

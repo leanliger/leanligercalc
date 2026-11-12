@@ -47,6 +47,8 @@ import { coachCheck, experienceOf, isSharingProgress, type SharingEnv, type Shar
 import { accessLevel, hasWhopKey } from "./whop";
 import { COMPANY_ID_PATTERN } from "../src/lib/coach-api";
 import { DEFAULT_TAGS, sanitizeTags, type MemberTag } from "../src/lib/member-tags";
+import { sanitizeAppState } from "../src/lib/persistence";
+import { goalWeightOf } from "../src/lib/plan-link";
 
 export const NOTE_MAX = 2000;
 const CHECKIN_HISTORY = 26;
@@ -504,10 +506,12 @@ async function reportOf(env: SharingEnv, userId: string, withPhotos: boolean) {
   }
   let goalLb: number | null = null;
   try {
-    const state = JSON.parse(((plan?.results?.[0] ?? null) as { state: string } | null)?.state ?? "null") as {
-      fatLoss?: { goalType?: unknown; targetWeight?: unknown };
-    } | null;
-    if (state?.fatLoss?.goalType === "weight" && typeof state.fatLoss.targetWeight === "number") goalLb = state.fatLoss.targetWeight;
+    const raw = ((plan?.results?.[0] ?? null) as { state: string } | null)?.state ?? null;
+    // A cut's goal weight, or a lean bulk's projected end weight.
+    if (raw) {
+      const state = sanitizeAppState(JSON.parse(raw));
+      goalLb = goalWeightOf(state.profile, state.fatLoss);
+    }
   } catch {
     goalLb = null;
   }

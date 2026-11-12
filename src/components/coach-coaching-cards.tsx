@@ -14,7 +14,7 @@ import { forecast, muscleCheck, patterns } from "@/lib/member-insights";
 import { weightChangeOver } from "@/lib/muscle-check";
 import { changeEffects, dietBreakAdvice, type ChangeEffect, type CoachChange, type DietBreakAdvice } from "@/lib/needle";
 import { dietStartToday } from "@/lib/plateau";
-import { currentPlanWeek, effectiveCarbInputs } from "@/lib/plan-link";
+import { currentPlanWeek, effectiveCarbInputs, goalText, goalWeightOf } from "@/lib/plan-link";
 import { strengthTrends } from "@/lib/strength-trends";
 import type { WeightUnit } from "@/lib/types";
 import { fromLb } from "@/lib/units";
@@ -269,7 +269,7 @@ export function useNeedle(companyId: string, summary: MemberSummary, input: Insi
       ...input.workouts.filter((w) => w.finishedAt !== null).map((w) => w.date),
     ]);
     const plan = summary.state;
-    const gaining = (summary.progress?.plannedRate ?? 1) < 0 || (plan.fatLoss.goalType === "weight" && summary.latestWeightLb !== null && plan.fatLoss.targetWeight > summary.latestWeightLb);
+    const gaining = plan.fatLoss.phase === "bulk" || (summary.progress?.plannedRate ?? 1) < 0 || (plan.fatLoss.goalType === "weight" && summary.latestWeightLb !== null && plan.fatLoss.targetWeight > summary.latestWeightLb);
     return changeEffects({ changes, weighIns: input.weighIns, logDates, today, direction: gaining ? 1 : -1, unit });
   }, [changes, input, summary, today, unit]);
   return { effects, loading: changes === null };
@@ -314,7 +314,7 @@ export function ClientFile({
   const sixWeeks = weightChangeOver(d.weighIns, today);
   const rate = p?.observedRate ?? (sixWeeks === null ? null : -sixWeeks / 6);
   const trendNow = p?.trendWeight ?? summary.latestWeightLb;
-  const goalLb = plan.fatLoss.goalType === "weight" ? plan.fatLoss.targetWeight : null;
+  const goalLb = goalWeightOf(plan.profile, plan.fatLoss);
   const projected = forecast({ today, trendLb: trendNow, rateLb: rate, goalLb, kcalDelta: 0, stepsDelta: 0 }).date;
   const lifts = strengthTrends(input.workouts, today)
     .filter((t) => t.status !== "new" && !t.bodyweight)
@@ -374,7 +374,7 @@ export function ClientFile({
         <div className="grid gap-x-8 sm:grid-cols-2">
           <section>
             <H>Goal and progress</H>
-            <Row k="Goal" v={plan.fatLoss.goalType === "weight" ? w(plan.fatLoss.targetWeight) : `${plan.fatLoss.targetBodyFat}% body fat`} />
+            <Row k="Goal" v={goalText(plan.profile, plan.fatLoss, w)} />
             <Row k="Start" v={first ? `${w(first.weightLb)} (${formatShort(first.date)})` : "—"} />
             <Row k="Now (trend)" v={p?.trendWeight != null ? w(p.trendWeight) : summary.latestWeightLb !== null ? w(summary.latestWeightLb) : "—"} />
             <Row k="Rate" v={rate !== null ? `${rate >= 0 ? "−" : "+"}${w(Math.abs(rate))}/wk${p?.plannedRate != null ? ` (plan ${w(Math.abs(p.plannedRate))})` : ""}` : "—"} />

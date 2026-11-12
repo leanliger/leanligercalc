@@ -20,6 +20,17 @@ import { formatMedium, isValidISODate } from "@/lib/dates";
 import { MAX_RATE, MIN_RATE, RATE_PRESETS, calculateFatLossTimeline, weightAtBodyFat } from "@/lib/fat-loss";
 import { formatWeight } from "@/lib/format";
 import { AFTER_GOAL_OPTIONS } from "@/lib/reverse-diet";
+import {
+  GAIN_RATE_LABELS,
+  GAIN_RATE_PRESETS,
+  MAX_BULK_WEEKS,
+  MAX_GAIN_RATE,
+  MIN_BULK_WEEKS,
+  MIN_GAIN_RATE,
+  clampBulkWeeks,
+  dailySurplusForRate,
+  type GainRatePreset,
+} from "@/lib/lean-bulk";
 import { STEP_LIMITS, TRAINING_DAY_LIMITS, kcalPerThousandSteps, maintenanceBreakdown } from "@/lib/activity";
 import type { CalorieAdjustment } from "@/lib/tracking";
 import type {
@@ -29,6 +40,7 @@ import type {
   CarbCyclingInputs,
   FatLossInputs,
   GoalType,
+  PlanPhase,
   TimelineMode,
   WeightUnit,
 } from "@/lib/types";
@@ -54,11 +66,26 @@ const SPEEDS = [
   { value: "aggressive", label: "Aggressive", rate: RATE_PRESETS.aggressive },
 ] as const;
 
+const GAIN_SPEEDS = (Object.keys(GAIN_RATE_PRESETS) as GainRatePreset[]).map((value) => ({
+  value,
+  label: GAIN_RATE_LABELS[value],
+  rate: GAIN_RATE_PRESETS[value],
+}));
+const PHASE_OPTIONS: readonly { value: PlanPhase; label: string }[] = [
+  { value: "cut", label: "Cut" },
+  { value: "bulk", label: "Lean bulk" },
+];
+
 type GroupId = "about" | "goal" | "speed" | "activity" | "after";
 
 /** The speed's name, or null for a rate between the presets. */
 export function speedName(rate: number): string | null {
   return SPEEDS.find((s) => Math.abs(s.rate - rate) < 1e-6)?.label ?? null;
+}
+
+/** A lean bulk's speed name, or null for a rate between the presets. */
+export function gainSpeedName(rate: number): string | null {
+  return GAIN_SPEEDS.find((s) => Math.abs(s.rate - rate) < 1e-6)?.label ?? null;
 }
 
 /**
@@ -109,7 +136,8 @@ export function PlanSettings({
   const w = (lb: number) => formatWeight(lb, unit);
   const goalWeight =
     inputs.goalType === "weight" ? inputs.targetWeight : weightAtBodyFat(profile.weight * (1 - resolveBodyFat(profile) / 100), inputs.targetBodyFat);
-  const speed = speedName(inputs.weeklyRate);
+  const bulking = inputs.phase === "bulk";
+  const speed = bulking ? gainSpeedName(inputs.gainRate) : speedName(inputs.weeklyRate);
   const afterLabel = AFTER_GOAL_OPTIONS.find((o) => o.value === inputs.afterGoal)?.label ?? "";
 
   const groups: { id: GroupId | "eating"; label: string; value: string; locked?: boolean }[] = [
@@ -117,16 +145,20 @@ export function PlanSettings({
     {
       id: "goal",
       label: "Goal",
-      value: `${inputs.goalType === "weight" ? `Get to ${w(inputs.targetWeight)}` : `${inputs.targetBodyFat}% body fat (about ${w(goalWeight)})`} · ${
-        inputs.mode === "startDate" ? `starts ${formatMedium(inputs.startDate)}` : `show on ${formatMedium(inputs.eventDate)}`
-      }`,
+      value: bulking
+        ? `Lean bulk · ${inputs.bulkWeeks} weeks · starts ${formatMedium(inputs.startDate)}`
+        : `${inputs.goalType === "weight" ? `Get to ${w(inputs.targetWeight)}` : `${inputs.targetBodyFat}% body fat (about ${w(goalWeight)})`} · ${
+            inputs.mode === "startDate" ? `starts ${formatMedium(inputs.startDate)}` : `show on ${formatMedium(inputs.eventDate)}`
+          }`,
     },
     {
       id: "speed",
       label: "Speed",
-      value: inputs.fixedDeficit
-        ? `${inputs.fixedDeficit.toLocaleString()} kcal a day under maintenance${result.feasible ? ` · goal ${formatMedium(result.finishDate)}` : ""}`
-        : `${speed ? `${speed} · ` : ""}${Number((inputs.weeklyRate * 100).toFixed(2))}% a week${result.feasible ? ` · goal ${formatMedium(result.finishDate)}` : ""}`,
+      value: bulking
+        ? `${speed ? `${speed} · ` : ""}${Number((inputs.gainRate * 100).toFixed(2))}% a week${result.feasible ? ` · about ${w(result.endWeight)} by ${formatMedium(result.finishDate)}` : ""}`
+        : inputs.fixedDeficit
+          ? `${inputs.fixedDeficit.toLocaleString()} kcal a day under maintenance${result.feasible ? ` · goal ${formatMedium(result.finishDate)}` : ""}`
+          : `${speed ? `${speed} · ` : ""}${Number((inputs.weeklyRate * 100).toFixed(2))}% a week${result.feasible ? ` · goal ${formatMedium(result.finishDate)}` : ""}`,
       locked: coach,
     },
     {
@@ -143,15 +175,20 @@ export function PlanSettings({
       value: carbs.cycleCarbs ? `Carb cycling · ${carbs.highDays} high, ${carbs.mediumDays} medium, ${carbs.lowDays} low` : "Same every day",
       locked: coach,
     },
-    {
-      id: "after",
-      label: "After the goal",
-      value: inputs.afterGoal === "reverse" ? `Reverse diet · +${inputs.reverseStep} kcal a week` : afterLabel,
-    },
+    // A lean bulk always ends at maintenance, so there's nothing to choose.
+    ...(bulking
+      ? []
+      : [
+          {
+            id: "after" as const,
+            label: "After the goal",
+            value: inputs.afterGoal === "reverse" ? `Reverse diet · +${inputs.reverseStep} kcal a week` : afterLabel,
+          },
+        ]),
   ];
 
-  const advancedChanged = inputs.fixedDeficit !== null || inputs.tdeeOverride !== null;
-  const advancedCount = carbs.cycleCarbs ? 9 : 7;
+  const advancedChanged = (!bulking && inputs.fixedDeficit !== null) || inputs.tdeeOverride !== null;
+  const advancedCount = (carbs.cycleCarbs ? 9 : 7) - (bulking ? 3 : 0);
 
   if (open) {
     const title = groups.find((g) => g.id === open)!.label;
@@ -176,15 +213,19 @@ export function PlanSettings({
               {open === "speed" && coach ? (
                 <CardDescription className="flex items-center gap-1.5 text-primary">
                   <Lock className="h-3.5 w-3.5" />
-                  Your coach sets your daily calories, so this only moves your goal date.
+                  {bulking ? "Your coach sets your daily calories, so this only moves your projected weight." : "Your coach sets your daily calories, so this only moves your goal date."}
                 </CardDescription>
               ) : null}
             </CardHeader>
             <CardContent className="space-y-5">
               {open === "goal" ? (
-                <GoalFields profile={profile} inputs={inputs} onChange={onChange} unit={unit} endBodyFat={result.endBodyFat} goalWeight={goalWeight} />
+                <GoalFields profile={profile} inputs={inputs} onChange={onChange} unit={unit} endBodyFat={result.endBodyFat} goalWeight={goalWeight} endWeight={result.endWeight} />
               ) : open === "speed" ? (
-                <SpeedFields profile={profile} inputs={inputs} onChange={onChange} firstDeficit={result.feasible ? (result.projection[0]?.dailyDeficit ?? null) : null} />
+                bulking ? (
+                  <GainSpeedFields profile={profile} inputs={inputs} onChange={onChange} unit={unit} />
+                ) : (
+                  <SpeedFields profile={profile} inputs={inputs} onChange={onChange} firstDeficit={result.feasible ? (result.projection[0]?.dailyDeficit ?? null) : null} />
+                )
               ) : (
                 <ActivityFields profile={profile} inputs={inputs} onChange={onChange} />
               )}
@@ -263,6 +304,7 @@ function GoalFields({
   unit,
   endBodyFat,
   goalWeight,
+  endWeight,
 }: {
   profile: BiometricProfile;
   inputs: FatLossInputs;
@@ -270,9 +312,47 @@ function GoalFields({
   unit: WeightUnit;
   endBodyFat: number;
   goalWeight: number;
+  endWeight: number;
 }) {
+  const phase = (
+    <Field label="Plan">
+      <SegmentedControl ariaLabel="Plan" value={inputs.phase} onValueChange={(value) => onChange({ phase: value })} options={PHASE_OPTIONS} size="sm" />
+    </Field>
+  );
+  if (inputs.phase === "bulk") {
+    return (
+      <>
+        {phase}
+        <NumberField
+          label="Length"
+          value={inputs.bulkWeeks}
+          onValueChange={(value) => onChange({ bulkWeeks: clampBulkWeeks(value) })}
+          suffix="weeks"
+          min={MIN_BULK_WEEKS}
+          max={MAX_BULK_WEEKS}
+          step={1}
+          decimals={0}
+          hint={`Projects to about ${formatWeight(endWeight, unit)} at ${round(endBodyFat, 1)}% body fat`}
+        />
+        <Field label="Start date" htmlFor="plan-date">
+          <div className="relative">
+            <Input
+              id="plan-date"
+              type="date"
+              value={inputs.startDate}
+              onChange={(event) => isValidISODate(event.target.value) && onChange({ startDate: event.target.value })}
+              className="pr-10"
+            />
+            <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          </div>
+        </Field>
+        <p className="text-xs text-muted-foreground">When the bulk ends, calories hold at maintenance for your new weight.</p>
+      </>
+    );
+  }
   return (
     <>
+      {phase}
       <Field label="Goal type">
         <SegmentedControl ariaLabel="Goal type" value={inputs.goalType} onValueChange={(value) => onChange({ goalType: value })} options={GOAL_OPTIONS} size="sm" />
       </Field>
@@ -385,6 +465,64 @@ function SpeedFields({
       <p className="text-xs text-muted-foreground">
         Loss is a percentage of your <em>current</em> weight each week, so the pounds a week and the deficit shrink as you do. Faster means
         fewer weeks, but less food and more hunger.
+      </p>
+    </div>
+  );
+}
+
+/** The lean bulk's speed: weekly gain as a % of body weight, with what each preset adds to eat. */
+function GainSpeedFields({
+  profile,
+  inputs,
+  onChange,
+  unit,
+}: {
+  profile: BiometricProfile;
+  inputs: FatLossInputs;
+  onChange: (patch: Partial<FatLossInputs>) => void;
+  unit: WeightUnit;
+}) {
+  const active = GAIN_SPEEDS.find((s) => Math.abs(s.rate - inputs.gainRate) < 1e-6);
+  const surplus = Math.round(dailySurplusForRate(profile.weight, inputs.gainRate));
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-medium">Weekly gain</span>
+        <span className="tabular text-lg font-semibold text-primary">{(inputs.gainRate * 100).toFixed(2)}% a week</span>
+      </div>
+      <p className="tabular -mt-2 text-right text-xs text-muted-foreground">
+        About {formatWeight(profile.weight * inputs.gainRate, unit)} a week · {surplus.toLocaleString()} kcal a day over maintenance to start
+      </p>
+      <Slider
+        value={[inputs.gainRate * 1000]}
+        onValueChange={([value]) => onChange({ gainRate: (value ?? 2.5) / 1000 })}
+        min={MIN_GAIN_RATE * 1000}
+        max={MAX_GAIN_RATE * 1000}
+        step={0.05}
+        aria-label="Weekly gain rate as a percentage of body weight"
+      />
+      <div className="flex justify-between text-[12px] text-muted-foreground">
+        <span>0.10% · slowest</span>
+        <span>1.00% · ceiling</span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {GAIN_SPEEDS.map((s) => (
+          <Button
+            key={s.value}
+            variant={active?.value === s.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange({ gainRate: s.rate })}
+            className="h-auto flex-col gap-0 py-1.5"
+          >
+            <span>{s.label}</span>
+            <span className="text-[11px] font-normal opacity-80">{(s.rate * 100).toFixed(2)}%</span>
+            <span className="tabular text-[11px] font-normal opacity-80">+{Math.round(dailySurplusForRate(profile.weight, s.rate)).toLocaleString()} kcal/day</span>
+          </Button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Gain is a percentage of your current weight each week. Faster adds more weight, but more of it is fat; most people do best at 0.25–0.5% a
+        week. The surplus is an estimate, and check-ins adjust it to your real rate of gain.
       </p>
     </div>
   );

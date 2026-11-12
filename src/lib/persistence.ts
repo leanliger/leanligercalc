@@ -26,12 +26,14 @@ import type {
   CarbGoal,
   FatLossInputs,
   GoalType,
+  PlanPhase,
   ProteinBasis,
   Sex,
   TimelineMode,
   WeightUnit,
 } from "./types";
 import { clamp } from "./units";
+import { MAX_BULK_WEEKS, MAX_GAIN_RATE, MIN_BULK_WEEKS, MIN_GAIN_RATE } from "./lean-bulk";
 import { patternFromString, patternToString } from "./weekday-pattern";
 import { sanitizeAdjustments, type CalorieAdjustment } from "./tracking";
 import { DEFAULT_HABITS, sanitizeHabitDefs, type HabitDef } from "./habits";
@@ -154,6 +156,10 @@ export function sanitizeProfile(
 export function sanitizeFatLoss(raw: Partial<Record<keyof FatLossInputs, unknown>>): FatLossInputs {
   const d = DEFAULT_FAT_LOSS_INPUTS;
   return {
+    // Plans saved before lean bulks existed are cuts.
+    phase: oneOf<PlanPhase>(raw.phase, ["cut", "bulk"], d.phase),
+    bulkWeeks: Math.round(num(raw.bulkWeeks, d.bulkWeeks, MIN_BULK_WEEKS, MAX_BULK_WEEKS)),
+    gainRate: num(raw.gainRate, d.gainRate, MIN_GAIN_RATE, MAX_GAIN_RATE),
     goalType: oneOf<GoalType>(raw.goalType, ["weight", "bodyFat"], d.goalType),
     targetWeight: num(raw.targetWeight, d.targetWeight, 50, 1000),
     targetBodyFat: num(raw.targetBodyFat, d.targetBodyFat, 3, 60),
@@ -301,6 +307,9 @@ const URL_KEYS = {
   ma: "includeMetabolicAdaptation",
   ag: "afterGoal",
   rs: "reverseStep",
+  ph: "phase",
+  bw: "bulkWeeks",
+  gr: "gainRate",
   tdee: "tdee",
   g: "goal",
   dct: "dailyCalorieTarget",
@@ -321,7 +330,7 @@ type UrlKey = keyof typeof URL_KEYS;
 
 const PROFILE_KEYS: UrlKey[] = ["w", "h", "a", "s", "bfo"];
 const FAT_LOSS_KEYS: UrlKey[] = [
-  "gt", "tw", "tbf", "r", "fd", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma", "ag", "rs",
+  "gt", "tw", "tbf", "r", "fd", "m", "sd", "ed", "as", "al", "st", "td", "tdo", "ma", "ag", "rs", "ph", "bw", "gr",
 ];
 const CARB_KEYS: UrlKey[] = [
   "tdee", "g", "dct", "pb", "ppl", "ffp", "ffg", "hd", "md", "ld", "hcb", "lcc", "wp", "cc",

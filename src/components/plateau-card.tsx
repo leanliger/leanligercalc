@@ -31,7 +31,8 @@ export function PlateauCard({
   weightLb: number;
 }) {
   const plateau = React.useMemo(() => detectPlateau(weighIns, today, dietStartToday(timeline, today)), [weighIns, timeline, today]);
-  if (!plateau || !timeline) return null;
+  // Its advice (diet breaks, refeeds) is for a cut; on a lean bulk, check-ins raise calories instead.
+  if (!plateau || !timeline || timeline.phase === "bulk") return null;
 
   const weeksIn = Math.floor(daysBetween(timeline.requiredStartDate, today) / 7);
   const stepsKcal = Math.round(kcalPerThousandSteps(weightLb) * 2);

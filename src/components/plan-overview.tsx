@@ -113,17 +113,22 @@ export function PlanOverview({
   const daysIn = daysBetween(start, today);
   const weekNo = Math.min(totalWeeks, Math.floor(daysIn / 7) + 1);
   const afterDay = after ? afterGoalDay(after, today) : null;
+  const bulking = timeline.phase === "bulk";
+  const phaseName = bulking ? "Lean bulk" : "Cut";
   const phaseLine =
     daysIn < 0
       ? `Starts ${formatShort(start)}`
       : today < finish
-        ? `Cut · week ${weekNo} of ${totalWeeks}`
+        ? `${phaseName} · week ${weekNo} of ${totalWeeks}`
         : after && afterDay
           ? afterGoalLabel(after, afterDay)
           : "Goal date reached";
   const progressPct = Math.max(0, Math.min(100, (daysIn / Math.max(1, daysBetween(start, finish))) * 100));
-  const goalText =
-    fatLoss.goalType === "bodyFat" ? `${fatLoss.targetBodyFat}% body fat by ${formatShort(finish)}` : `${w(fatLoss.targetWeight, 0)} by ${formatShort(finish)}`;
+  const goalText = bulking
+    ? `Lean bulk to about ${w(timeline.endWeight, 0)} by ${formatShort(finish)}`
+    : fatLoss.goalType === "bodyFat"
+      ? `${fatLoss.targetBodyFat}% body fat by ${formatShort(finish)}`
+      : `${w(fatLoss.targetWeight, 0)} by ${formatShort(finish)}`;
   const startWeight = timeline.projection[0]?.weight ?? profile.weight;
 
   // Today's targets, and the next week whose average day changes.
@@ -149,15 +154,16 @@ export function PlanOverview({
   // Phases: the cut, then the reverse (if any) and maintenance.
   const reverseWeeks = after?.mode === "reverse" ? after.weeks.length : 0;
   const phases = [
-    { label: `Cut · ${totalWeeks} wk`, weeks: totalWeeks, className: "bg-primary/25 text-primary" },
+    { label: `${phaseName} · ${totalWeeks} wk`, weeks: totalWeeks, className: "bg-primary/25 text-primary" },
     ...(reverseWeeks > 0 ? [{ label: `Reverse · ${reverseWeeks} wk`, weeks: reverseWeeks, className: "bg-macro-carb/20 text-macro-carb" }] : []),
     ...(after ? [{ label: "Maintain", weeks: MAINTAIN_BAR_WEEKS, className: "bg-success/15 text-success" }] : []),
   ];
   const barWeeks = phases.reduce((s, p) => s + p.weeks, 0);
   const todayPct = Math.max(0, Math.min(100, (daysIn / 7 / barWeeks) * 100));
   const status = STATUS[analysis.status];
-  const goalLb = fatLoss.goalType === "bodyFat" ? timeline.endWeight : fatLoss.targetWeight;
-  const toGo = Math.max(0, (trendNow ?? startWeight) - goalLb);
+  const goalLb = bulking || fatLoss.goalType === "bodyFat" ? timeline.endWeight : fatLoss.targetWeight;
+  // How far is left to lose, or (bulking) to gain.
+  const toGo = Math.max(0, bulking ? goalLb - (trendNow ?? startWeight) : (trendNow ?? startWeight) - goalLb);
 
   // This week, Monday to Sunday: each day's type and where the plan has you by Sunday.
   const weekDays = Array.from({ length: 7 }, (_, i) => {
@@ -210,12 +216,14 @@ export function PlanOverview({
                 <p className="font-semibold">{trendNow === null ? "—" : w(trendNow)}</p>
               </div>
               <div className="hidden lg:block">
-                <p className="text-[12px] text-muted-foreground">To go</p>
+                <p className="text-[12px] text-muted-foreground">{bulking ? "To gain" : "To go"}</p>
                 <p className="font-semibold">{w(toGo)}</p>
               </div>
               <div className="text-right lg:text-left">
-                <p className="text-[12px] text-muted-foreground">Goal</p>
-                <p className="font-semibold">{fatLoss.goalType === "bodyFat" ? `${fatLoss.targetBodyFat}%` : w(fatLoss.targetWeight, 0)}</p>
+                <p className="text-[12px] text-muted-foreground">{bulking ? "End (projected)" : "Goal"}</p>
+                <p className="font-semibold">
+                  {bulking ? w(timeline.endWeight, 0) : fatLoss.goalType === "bodyFat" ? `${fatLoss.targetBodyFat}%` : w(fatLoss.targetWeight, 0)}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -324,7 +332,7 @@ export function PlanOverview({
               ))}
             </div>
             <p className="tabular text-[13px] text-muted-foreground">
-              {aimBySunday !== null ? `Aim: ${w(aimBySunday)} by Sunday` : "Outside the cut"}
+              {aimBySunday !== null ? `Aim: ${w(aimBySunday)} by Sunday` : bulking ? "Outside the bulk" : "Outside the cut"}
               {thisAvg !== null ? ` · averaging ${thisAvg.toLocaleString()} kcal a day` : ""}
             </p>
           </CardContent>
@@ -357,7 +365,9 @@ export function PlanOverview({
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Phases</CardTitle>
             <CardDescription>
-              {after
+              {bulking && after
+                ? `After the bulk, calories hold at maintenance for your new weight (${after.maintenance.toLocaleString()} kcal).`
+                : after
                 ? after.mode === "reverse"
                   ? `After the cut, calories step up ${after.step} kcal a week to maintenance (${after.maintenance.toLocaleString()}).`
                   : `After the cut, straight to maintenance (${after.maintenance.toLocaleString()} kcal).`
