@@ -52,12 +52,13 @@ export interface MonthSummary {
   extra: number;
 }
 
+/** The workout's entries that count for a planned exercise: it, and anything swapped in for it. */
+const forPlanned = (w: Workout | null, id: string) =>
+  (w?.exercises ?? []).filter((e) => e.exerciseId === id || e.swappedFrom === id);
+
 /** Is a planned workout cut short: a planned exercise skipped, or fewer sets than planned? */
 export function cutShort(plan: ProgramDay, w: Workout): boolean {
-  return plan.exercises.some((pe) => {
-    const done = w.exercises.filter((e) => e.exerciseId === pe.exerciseId).flatMap(doneSets).length;
-    return done < pe.sets;
-  });
+  return plan.exercises.some((pe) => forPlanned(w, pe.exerciseId).flatMap(doneSets).length < pe.sets);
 }
 
 /** Workouts with a personal record (the logger's own rule: e1RM or weight, or reps for bodyweight). */
@@ -159,8 +160,8 @@ export interface ExerciseLine {
 /** A planned day against a workout, exercise by exercise; exercises they added come last. */
 export function dayLines(plan: ProgramDay | null, workout: Workout | null, custom: readonly Exercise[]): ExerciseLine[] {
   const nameOf = (id: string) => workout?.exercises.find((e) => e.exerciseId === id)?.name ?? findExercise(id, custom)?.name ?? "Exercise";
-  const setsOf = (id: string) =>
-    (workout?.exercises ?? []).filter((e) => e.exerciseId === id).flatMap(doneSets)
+  const setsOf = (id: string, planned = false) =>
+    (planned ? forPlanned(workout, id) : (workout?.exercises ?? []).filter((e) => e.exerciseId === id)).flatMap(doneSets)
       .map((s) => ({
         weight: s.weight,
         reps: s.reps,
@@ -168,17 +169,19 @@ export function dayLines(plan: ProgramDay | null, workout: Workout | null, custo
         ...(s.leftWeight !== undefined && s.rightWeight !== undefined ? { side: { lw: s.leftWeight, l: s.left ?? 0, rw: s.rightWeight, r: s.right ?? 0 } } : {}),
       }));
   const lines: ExerciseLine[] = (plan?.exercises ?? []).map((pe) => {
-    const sets = setsOf(pe.exerciseId);
+    const sets = setsOf(pe.exerciseId, true);
+    // Swapped mid-workout: "Bench press → Machine chest press".
+    const swaps = [...new Set((workout?.exercises ?? []).filter((e) => e.swappedFrom === pe.exerciseId && e.exerciseId !== pe.exerciseId).map((e) => e.name))];
     return {
       exerciseId: pe.exerciseId,
-      name: nameOf(pe.exerciseId),
+      name: swaps.length ? `${nameOf(pe.exerciseId)} → ${swaps.join(", ")}` : nameOf(pe.exerciseId),
       target: `${pe.sets}×${pe.repsMin === pe.repsMax ? pe.repsMin : `${pe.repsMin}–${pe.repsMax}`}`,
       sets,
       status: !workout ? "skipped" : sets.length === 0 ? "skipped" : sets.length < pe.sets ? "short" : "hit",
     };
   });
   for (const e of workout?.exercises ?? []) {
-    if (plan?.exercises.some((pe) => pe.exerciseId === e.exerciseId) || lines.some((l) => l.exerciseId === e.exerciseId)) continue;
+    if (plan?.exercises.some((pe) => pe.exerciseId === e.exerciseId || pe.exerciseId === e.swappedFrom) || lines.some((l) => l.exerciseId === e.exerciseId)) continue;
     const sets = setsOf(e.exerciseId);
     // "Added" only against a plan; without one it's simply what they did.
     if (sets.length) lines.push({ exerciseId: e.exerciseId, name: e.name, target: null, sets, status: plan ? "extra" : "hit" });

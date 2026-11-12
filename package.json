@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "dev:worker": "npm run build:static && wrangler d1 migrations apply leanligercalc --local && wrangler dev",
     "db:migrate": "wrangler d1 migrations apply leanligercalc --remote",
-    "deploy": "npm run build:static && wrangler deploy"
+    "deploy": "npm run build:static && wrangler deploy",
+    "test": "vitest run"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.2",
@@ -42,6 +43,7 @@
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.7.3",
+    "vitest": "^3.2.7",
     "wrangler": "^4.145.0"
   }
 }

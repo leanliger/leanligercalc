@@ -148,6 +148,11 @@ export interface WorkoutExercise {
   oneSide?: boolean;
   /** One-sided, with a weight for each side (WorkoutSet.leftWeight / rightWeight). */
   splitWeight?: boolean;
+  /**
+   * Swapped in for this exercise mid-workout (the bench was taken): its sets
+   * count toward that exercise's planned sets. Older workouts never have it.
+   */
+  swappedFrom?: string;
 }
 
 export interface Workout {
@@ -299,6 +304,7 @@ export function validateWorkout(raw: unknown, id: string, now: Date = new Date()
       sets,
       ...(e.oneSide === true ? { oneSide: true } : {}),
       ...(e.oneSide === true && e.splitWeight === true ? { splitWeight: true } : {}),
+      ...(typeof e.swappedFrom === "string" && ID_PATTERN.test(e.swappedFrom) && e.swappedFrom !== exerciseId ? { swappedFrom: e.swappedFrom } : {}),
     });
   }
 
@@ -918,6 +924,10 @@ export function swapExercise(
     restSec: original.restSec,
     sets: prefillSets(remaining, last, replacement.bodyweight),
   };
+  // Swapping a swap keeps the exercise it first replaced, so the plan still matches
+  // (and swapping back to that one is just that exercise again).
+  const from = original.swappedFrom ?? original.exerciseId;
+  if (from !== replacement.id) swapped.swappedFrom = from;
   const list = [...workout.exercises];
   if (done.length === 0) list[index] = swapped;
   else list.splice(index, 1, { ...original, sets: done }, swapped);
